@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { getLegalMoves } from '../src/index.js';
 import { c, expectError, handOf, makeState, play } from './helpers.js';
 

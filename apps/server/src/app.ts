@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Server } from 'socket.io';
+import type { HealthReport } from './backend.js';
 import { DEFAULT_CORS_ORIGINS } from './config.js';
 import type { Repositories } from './repositories/interfaces.js';
 import { createInMemoryRepositories } from './repositories/inMemory/index.js';
@@ -20,6 +21,10 @@ export interface BuildServerOptions {
   readonly corsOrigins?: readonly string[];
   readonly logger?: boolean;
   readonly now?: () => number;
+  /** Backend health probe for GET /health (defaults to in-memory: always ok). */
+  readonly health?: () => Promise<HealthReport>;
+  /** Called after sockets and HTTP are closed (e.g. to quit Redis). */
+  readonly onClose?: () => Promise<void>;
 }
 
 export interface DurakServer {
@@ -47,13 +52,19 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
 
   registerHandlers({ io, rooms, games, log: app.log });
 
-  app.get('/health', async () => ({ status: 'ok' }));
+  const health = options.health ?? (async (): Promise<HealthReport> => ({ ok: true, repository: 'memory' }));
+  app.get('/health', async (_request, reply) => {
+    const report = await health();
+    return reply.code(report.ok ? 200 : 503).send(report);
+  });
 
   // Drop socket connections first so the HTTP server can close promptly.
   app.addHook('preClose', async () => {
     io.disconnectSockets(true);
     io.engine.close();
   });
+  const onClose = options.onClose;
+  if (onClose) app.addHook('onClose', async () => onClose());
 
   return { app, io, repos, rooms, games };
 }

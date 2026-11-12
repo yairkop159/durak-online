@@ -45,10 +45,28 @@ Layers, one folder each; dependencies point downward only:
 
 **Sessions:** `room:create` / `room:join` issue a `crypto.randomBytes(32)` base64url token mapped to `{ roomId, role, id }`; ids are server-generated. A connection holds at most one session: repeated create/join re-emits the existing session, and joining a different room gives `INVALID_SESSION`. Joining a full lobby or a started game makes you a spectator. When a player's last socket disconnects, the member is marked `connected: false` (no forfeit yet, 3c); `session:resume` reconnects them and re-sends `room:state` + `game:state`. Seeds come from `crypto.randomInt` and are stored with the game.
 
+### Persistence (Phase 3b)
+`REPOSITORY=memory|redis` (default: `redis` if `REDIS_URL` is set, else `memory`), `REDIS_URL`, `REDIS_PREFIX` (default `durak:`). `src/backend.ts` builds the backend; `GET /health` reports `{ ok, repository, redis: 'PONG'|'down' }` and returns 503 when Redis is down. Shutdown closes sockets → HTTP → Redis.
+
+| Key | Value | TTL (sliding, reset on every save) |
+|---|---|---|
+| `${prefix}room:<roomId>` | `{"v":1,"data":Room}` | 6h while lobby/playing, 30m when finished |
+| `${prefix}game:<roomId>` | `{"v":1,"data":StoredGame}` | 6h while running, 30m when finished; saving a game also refreshes its room's TTL |
+| `${prefix}session:<token>` | `{"v":1,"data":Session}` | 24h, slid forward by `GETEX` on every successful read (`session:resume`) |
+
+- TTL policy lives in `repositories/ttl.ts` and the in-memory store applies it too (entries expire there as well).
+- **Validation on read:** values are wrapped in a `{ v: 1, data }` envelope and validated with Zod (`repositories/redis/codec.ts`). Bad JSON, an unknown envelope version or a schema mismatch is logged and returned as `null`, never thrown. The callers already handle `null` (`GAME_NOT_STARTED`, `ROOM_NOT_FOUND`). Bump `ENVELOPE_VERSION` on incompatible format changes.
+- **Schema drift guard:** every persisted record has a Zod schema in `repositories/redis/codec.ts`, guarded by `AssertEqual` in `schemaGuards.ts`. When you change a domain type (`Room`, `Session`, `StoredGame`, `GameState`, …), update the schema too; `npm run typecheck` fails until they match exactly.
+- **Atomic room + game writes:** any operation that writes or deletes a room and its game together goes through `repos.atomic` (`RoomGameTransaction`: `saveRoomAndGame` / `deleteRoomAndGame`), which is a single `MULTI`/`EXEC` in Redis. Never call `rooms.save` and `games.save` back to back for one logical change.
+- **Ghost-connection reset:** on startup (before `listen`) the Redis backend `SCAN`s `${prefix}room:*` (never `KEYS`) and marks every member `connected: false`, preserving TTLs with `KEEPTTL`. Sockets never survive a restart, and a dead process can't emit `disconnect`. Without the reset, rooms would claim players are online forever; the 3c grace timer relies on the flag being truthful.
+- **Orphaned sessions:** if `session:resume` finds a valid session whose room is gone, it deletes the session and returns `ROOM_NOT_FOUND`.
+
+> **Single instance only.** `KeyedMutex` is an in-process lock. Running more than one server instance against the same Redis is **NOT supported**: concurrent moves on the same room could interleave. Supporting it requires a distributed per-room lock (e.g. Redis `SET NX PX` with fencing tokens) or sticky routing of each room to one instance.
+
 ## Development Workflow & Commands
 - Build all workspaces: `npm run build --workspaces`
 - Run engine tests: `npm test --workspace=packages/game-engine`
-- Run server tests: `npm test --workspace=apps/server`
+- Run server tests: `npm test --workspace=apps/server` (Redis tests need `docker-compose up -d` or any Redis at `REDIS_URL`; without one they are skipped with a warning)
 - Run the server in dev mode: `npm run dev --workspace=apps/server` (env: `PORT`, `HOST`, `CORS_ORIGINS`)
 - Start local infrastructure: `docker-compose up -d`
 

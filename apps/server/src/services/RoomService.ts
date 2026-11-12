@@ -110,8 +110,7 @@ export class RoomService {
       await repos.sessions.delete(session.token);
 
       if (updated.members.length === 0) {
-        await repos.rooms.delete(room.id);
-        await repos.games.delete(room.id);
+        await repos.atomic.deleteRoomAndGame(room.id);
       } else {
         await repos.rooms.save(updated);
       }
@@ -128,7 +127,11 @@ export class RoomService {
 
     return mutex.runExclusive(session.roomId, async () => {
       const room = await repos.rooms.get(session.roomId);
-      if (!room) return fail('ROOM_NOT_FOUND', 'Room no longer exists');
+      if (!room) {
+        // Orphaned session (room expired or deleted): clean it up so it cannot be reused.
+        await repos.sessions.delete(token);
+        return fail('ROOM_NOT_FOUND', 'Room no longer exists');
+      }
       const updated: Room =
         session.role === 'player'
           ? {
@@ -184,8 +187,7 @@ export class RoomService {
 
       const game: StoredGame = { roomId: room.id, seed, version: 0, state: created.value, startedAt: this.deps.now() };
       const updated: Room = { ...room, status: 'playing' };
-      await repos.games.save(game);
-      await repos.rooms.save(updated);
+      await repos.atomic.saveRoomAndGame(updated, game);
       notifier.roomState(updated);
       notifier.gameState(updated, game);
       return ok(game);

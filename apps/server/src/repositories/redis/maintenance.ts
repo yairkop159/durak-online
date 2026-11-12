@@ -1,0 +1,49 @@
+import type { Redis } from 'ioredis';
+import type { Room } from '../../domain/types.js';
+import { RoomSchema, decode, encode, type RepoLogger } from './codec.js';
+import type { RedisKeys } from './keys.js';
+
+/** Iterates keys matching `pattern` with SCAN (never KEYS, which blocks Redis). */
+export async function* scanKeys(redis: Redis, pattern: string, count = 100): AsyncGenerator<string[]> {
+  let cursor = '0';
+  do {
+    const [next, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+    cursor = next;
+    if (keys.length > 0) yield keys;
+  } while (cursor !== '0');
+}
+
+/**
+ * Startup step: no socket survives a restart, so every stored member is offline until they
+ * resume. Without this, rooms would claim "connected: true" forever for players whose sockets
+ * died with the old process (their disconnect event can never fire).
+ * Must run before the server starts listening. TTLs are preserved (KEEPTTL).
+ */
+export async function markAllMembersDisconnected(
+  redis: Redis,
+  keys: RedisKeys,
+  log: RepoLogger,
+): Promise<{ scanned: number; updated: number }> {
+  let scanned = 0;
+  let updated = 0;
+  for await (const batch of scanKeys(redis, keys.roomPattern)) {
+    for (const key of batch) {
+      scanned++;
+      const room = decode(RoomSchema, await redis.get(key), key, log);
+      if (!room || room.members.every((m) => !m.connected)) continue;
+      const offline: Room = { ...room, members: room.members.map((m) => ({ ...m, connected: false })) };
+      await redis.set(key, encode(offline), 'KEEPTTL');
+      updated++;
+    }
+  }
+  return { scanned, updated };
+}
+
+/** Deletes every key under the prefix (tests / tooling). */
+export async function deleteAllWithPrefix(redis: Redis, keys: RedisKeys): Promise<number> {
+  let deleted = 0;
+  for await (const batch of scanKeys(redis, keys.allPattern)) {
+    deleted += await redis.del(...batch);
+  }
+  return deleted;
+}

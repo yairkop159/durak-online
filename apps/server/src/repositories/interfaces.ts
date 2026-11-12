@@ -24,8 +24,17 @@ export interface SessionRepository {
   delete(token: string): Promise<void>;
 }
 
+/** Writes that must touch a room and its game together (Redis: one MULTI/EXEC). */
+export interface RoomGameTransaction {
+  /** Persists both records or neither. */
+  saveRoomAndGame(room: Room, game: StoredGame): Promise<void>;
+  /** Deletes both records or neither. */
+  deleteRoomAndGame(roomId: string): Promise<void>;
+}
+
 export interface Repositories {
   readonly rooms: RoomRepository;
   readonly games: GameRepository;
   readonly sessions: SessionRepository;
+  readonly atomic: RoomGameTransaction;
 }

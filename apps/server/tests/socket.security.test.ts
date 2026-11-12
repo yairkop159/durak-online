@@ -1,7 +1,8 @@
 import type { GameState } from '@durak/game-engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { StoredGame } from '../src/domain/types.js';
-import { InMemoryGameRepository, createInMemoryRepositories } from '../src/repositories/inMemory/index.js';
+import { createInMemoryRepositories } from '../src/repositories/inMemory/index.js';
+import type { Repositories } from '../src/repositories/interfaces.js';
 import { autoPlay } from './helpers/autoPlay.js';
 import { setupRoom, startGame, startTestServer, type TestClient, type TestHarness } from './helpers/testServer.js';
 
@@ -112,19 +113,42 @@ describe('a player cannot act for another player', () => {
   });
 });
 
-/** Records a snapshot of the authoritative state for every version that is saved. */
-class RecordingGameRepository extends InMemoryGameRepository {
-  readonly snapshots = new Map<number, GameState>();
-  override async save(game: StoredGame): Promise<void> {
-    this.snapshots.set(game.version, structuredClone(game.state));
-    await super.save(game);
-  }
+/**
+ * Wraps the in-memory repositories and records a snapshot of the authoritative state for
+ * every saved version — through both games.save and atomic.saveRoomAndGame.
+ */
+function recordingRepositories(): { repos: Repositories; snapshots: Map<number, GameState> } {
+  const base = createInMemoryRepositories();
+  const snapshots = new Map<number, GameState>();
+  const record = (game: StoredGame) => snapshots.set(game.version, structuredClone(game.state));
+  return {
+    snapshots,
+    repos: {
+      ...base,
+      games: {
+        get: (roomId) => base.games.get(roomId),
+        delete: (roomId) => base.games.delete(roomId),
+        save: async (game) => {
+          record(game);
+          await base.games.save(game);
+        },
+      },
+      atomic: {
+        deleteRoomAndGame: (roomId) => base.atomic.deleteRoomAndGame(roomId),
+        saveRoomAndGame: async (room, game) => {
+          record(game);
+          await base.atomic.saveRoomAndGame(room, game);
+        },
+      },
+    },
+  };
 }
 
 describe('hand privacy', () => {
   it('no game:state payload ever contains an opponent card or the stock order', async () => {
-    const games = new RecordingGameRepository();
-    harness = await startTestServer({ repos: { ...createInMemoryRepositories(), games }, seedSource: () => 4242 });
+    const { repos, snapshots } = recordingRepositories();
+    const games = { snapshots };
+    harness = await startTestServer({ repos, seedSource: () => 4242 });
     const host = await harness.connect();
     const guest = await harness.connect();
     const { roomId, sessions } = await setupRoom(host, [guest]);

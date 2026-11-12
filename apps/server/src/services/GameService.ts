@@ -41,10 +41,13 @@ export class GameService {
       if (!result.ok) return fail(result.error.code, result.error.message);
 
       const next: StoredGame = { ...game, version: game.version + 1, state: result.value };
-      await repos.games.save(next);
       const finished = next.state.phase.kind === 'finished';
       const updatedRoom = finished ? { ...room, status: 'finished' as const } : room;
-      if (finished) await repos.rooms.save(updatedRoom);
+      if (finished) {
+        await repos.atomic.saveRoomAndGame(updatedRoom, next);
+      } else {
+        await repos.games.save(next);
+      }
 
       notifier.gameState(updatedRoom, next);
       if (finished) notifier.gameOver(updatedRoom, next);
