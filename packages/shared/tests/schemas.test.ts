@@ -45,9 +45,19 @@ describe('ClientMoveSchema', () => {
 
 describe('event payload schemas', () => {
   it('validates game:move payloads', () => {
-    expect(MakeMovePayloadSchema.safeParse({ roomId: 'abcd1234', move: { type: 'pass' } }).success).toBe(true);
-    expect(MakeMovePayloadSchema.safeParse({ roomId: '../etc', move: { type: 'pass' } }).success).toBe(false);
-    expect(MakeMovePayloadSchema.safeParse({ roomId: 'abcd1234', move: { type: 'pass' }, extra: 1 }).success).toBe(false);
+    const valid = { roomId: 'abcd1234', move: { type: 'pass' }, expectedVersion: 0 };
+    expect(MakeMovePayloadSchema.safeParse(valid).success).toBe(true);
+    expect(MakeMovePayloadSchema.safeParse({ ...valid, expectedVersion: 42 }).success).toBe(true);
+    expect(MakeMovePayloadSchema.safeParse({ ...valid, roomId: '../etc' }).success).toBe(false);
+    expect(MakeMovePayloadSchema.safeParse({ ...valid, extra: 1 }).success).toBe(false);
+  });
+
+  it('requires a non-negative integer expectedVersion on game:move', () => {
+    const base = { roomId: 'abcd1234', move: { type: 'pass' } };
+    expect(MakeMovePayloadSchema.safeParse(base).success).toBe(false);
+    for (const expectedVersion of [-1, 1.5, '3', null]) {
+      expect(MakeMovePayloadSchema.safeParse({ ...base, expectedVersion }).success).toBe(false);
+    }
   });
 
   it('limits room size to 2-6 players and trims nicknames', () => {

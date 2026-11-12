@@ -51,8 +51,11 @@ export const MakeMovePayloadSchema = z
   .object({
     roomId: RoomIdSchema,
     move: ClientMoveSchema,
-    /** State version the client acted on, so the server can reject moves made against a stale state. */
-    expectedVersion: z.number().int().min(0).optional(),
+    /**
+     * Required. Must equal the `version` of the last `game:state` the client received;
+     * the server rejects moves made against a stale state.
+     */
+    expectedVersion: z.number().int().min(0),
   })
   .strict();
 
