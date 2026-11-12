@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { GameConfigInputSchema, MAX_PLAYERS, MIN_PLAYERS } from './config.js';
 import { ClientMoveSchema } from './moves.js';
+import type { GameErrorCode } from './errors.js';
 import type { PlayerView } from './view.js';
 
 /** Socket.io event names, client -> server. */
@@ -94,6 +95,7 @@ export interface RoomStatePayload {
   readonly hostId: string;
   readonly maxPlayers: number;
   readonly members: readonly RoomMember[];
+  readonly spectatorCount: number;
   readonly status: 'lobby' | 'playing' | 'finished';
 }
 
@@ -115,8 +117,23 @@ export interface SessionIssuedPayload {
   readonly roomId: string;
 }
 
+/** Error codes produced by the server itself (engine rule violations use GameErrorCode). */
+export const SERVER_ERROR_CODES = [
+  'INVALID_PAYLOAD',
+  'NOT_IN_ROOM',
+  'ROOM_NOT_FOUND',
+  'NOT_HOST',
+  'NOT_ENOUGH_PLAYERS',
+  'GAME_NOT_STARTED',
+  'GAME_IN_PROGRESS',
+  'STALE_STATE',
+  'INVALID_SESSION',
+  'INTERNAL',
+] as const;
+export type ServerErrorCode = (typeof SERVER_ERROR_CODES)[number];
+
 export interface ErrorPayload {
-  readonly code: string;
+  readonly code: ServerErrorCode | GameErrorCode;
   readonly message: string;
 }
 

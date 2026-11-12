@@ -33,9 +33,23 @@ This is the single source of truth for the server, bot and UI. Any change here m
 - **Finishing:** players only go out at the end of a bout. After drawing, if the stock is empty, every player with 0 cards goes out (recorded in seating order starting from the main attacker). When ≤1 player remains the game is over: `durak` = the remaining player, or `null` (a draw) if the last players went out together.
 - **Determinism:** a game is fully determined by the seed, player order, config and the sequence of moves.
 
+## Server Architecture (`apps/server`)
+Layers, one folder each; dependencies point downward only:
+- **`transport/`**: Socket.io handlers. Every incoming event is parsed with its schema from `ClientEventSchemas` before anything else; an invalid payload or unknown event gets an `error` event (`INVALID_PAYLOAD`) and never throws. Every handler is wrapped so an unexpected exception becomes `error {INTERNAL}`. `SocketNotifier` builds every `game:state` per recipient through `sanitizeStateForPlayer` (spectators get the `null` view); there is never one shared payload. Socket.io limits: `maxHttpBufferSize` 16 KB, CORS from `CORS_ORIGINS`.
+- **`services/`**: `RoomService` (create/join/leave/resume/start/disconnect) and `GameService` (moves, resync). They use the engine only through `createGame` / `applyMove`; sanitizing happens in transport. The acting `playerId` comes only from the server-side `Session`, never from a payload. Services talk outward through the `RoomNotifier` port (`services/ports.ts`).
+- **`repositories/`**: `RoomRepository`, `GameRepository`, `SessionRepository` interfaces (all async), plus in-memory implementations that deep-copy on read and write, as Redis will. Redis (3b) must be a drop-in replacement.
+
+**Per-room serial queue:** every mutation for a room runs inside `KeyedMutex.runExclusive(roomId, …)`: load → validate → apply → save → notify. Broadcasts are sent **inside** the lock, so clients receive versions in order. The mutex is process-local; running more than one server instance requires a distributed lock or sticky room routing (3b).
+
+**Versioning:** `StoredGame.version` starts at 0 and is incremented on every successful move. A `game:move` whose `expectedVersion` ≠ the current version is rejected with `STALE_STATE`, and that player is immediately re-sent their current `game:state`.
+
+**Sessions:** `room:create` / `room:join` issue a `crypto.randomBytes(32)` base64url token mapped to `{ roomId, role, id }`; ids are server-generated. A connection holds at most one session: repeated create/join re-emits the existing session, and joining a different room gives `INVALID_SESSION`. Joining a full lobby or a started game makes you a spectator. When a player's last socket disconnects, the member is marked `connected: false` (no forfeit yet, 3c); `session:resume` reconnects them and re-sends `room:state` + `game:state`. Seeds come from `crypto.randomInt` and are stored with the game.
+
 ## Development Workflow & Commands
 - Build all workspaces: `npm run build --workspaces`
 - Run engine tests: `npm test --workspace=packages/game-engine`
+- Run server tests: `npm test --workspace=apps/server`
+- Run the server in dev mode: `npm run dev --workspace=apps/server` (env: `PORT`, `HOST`, `CORS_ORIGINS`)
 - Start local infrastructure: `docker-compose up -d`
 
 ## Implementation Roadmap (Execute Step-by-Step)

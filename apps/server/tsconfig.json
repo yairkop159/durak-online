@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@durak/shared": ["../../packages/shared/src/index.ts"],
+      "@durak/game-engine": ["../../packages/game-engine/src/index.ts"]
+    }
+  },
+  "include": ["src", "tests"]
+}
