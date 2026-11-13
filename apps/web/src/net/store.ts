@@ -76,6 +76,14 @@ export function canAct(state: ClientState): boolean {
   return state.connection === 'connected' && state.bound && state.session !== null;
 }
 
+/**
+ * In a room, but this connection can't act for it yet: disconnected, or (re)binding the seat with
+ * session:resume. The UI shows "reconnecting" and blocks input.
+ */
+export function isReconnecting(state: ClientState): boolean {
+  return (state.session !== null && !canAct(state)) || state.resumeStatus === 'pending';
+}
+
 export function reducer(state: ClientState, action: ClientAction): ClientState {
   switch (action.type) {
     case 'connection':
@@ -125,6 +133,11 @@ export function reducer(state: ClientState, action: ClientAction): ClientState {
       const { code, message } = action.payload;
       // The server re-sends the current game:state right after a STALE_STATE; nothing to show.
       if (code === 'STALE_STATE') return state;
+      // We hold a session but the server doesn't know this socket: it lost the binding (e.g. a
+      // reconnect raced us). Not the player's fault, so no toast: GameClient re-binds and resyncs.
+      if (code === 'NOT_IN_ROOM' && state.session !== null) {
+        return state.resumeStatus === 'pending' ? state : { ...state, bound: false };
+      }
       const resumeFailed = state.resumeStatus === 'pending' && RESUME_FAILURES.has(code);
       const lastError = { code, message, id: (state.lastError?.id ?? 0) + 1 };
       // Our seat is gone (expired session, deleted room): forget the room we were showing.

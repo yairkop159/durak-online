@@ -56,6 +56,9 @@ export class GameClient {
       const pendingRoom = this.state.resumeStatus === 'pending' ? this.routeRoomId : null;
       store.dispatch({ type: 'error', payload });
       if (pendingRoom !== null && this.state.resumeStatus === 'failed') this.tokens.remove(pendingRoom);
+      // NOT_IN_ROOM while we hold a session: the reducer marked us unbound; resume, which also
+      // re-sends room:state and game:state (a full resync).
+      if (payload.code === 'NOT_IN_ROOM' && this.state.session !== null) this.tryResume();
     });
     if (transport.connected) store.dispatch({ type: 'connection', status: 'connected' });
   }

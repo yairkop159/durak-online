@@ -13,7 +13,7 @@ export interface Strings {
     readonly you: string;
     readonly backHome: string;
   };
-  readonly connection: { readonly connecting: string; readonly disconnected: string };
+  readonly connection: { readonly connecting: string; readonly disconnected: string; readonly reconnecting: string };
   readonly home: {
     readonly subtitle: string;
     readonly nickname: string;
@@ -115,6 +115,8 @@ export const he: Strings = {
   connection: {
     connecting: 'מתחבר לשרת…',
     disconnected: 'החיבור לשרת נותק. מנסה להתחבר מחדש…',
+    /** In a room while disconnected or re-binding the seat; input is blocked meanwhile. */
+    reconnecting: 'מתחבר מחדש...',
   },
   home: {
     subtitle: 'משחק הקלפים הרוסי, עם חברים, בזמן אמת',

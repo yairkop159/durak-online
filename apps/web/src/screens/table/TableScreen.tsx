@@ -20,6 +20,7 @@ import { sortHand } from '../../game/sortHand';
 import { t } from '../../i18n';
 import { useCountdown } from '../../net/clock';
 import { useClient, useClientState } from '../../net/react';
+import { isReconnecting } from '../../net/store';
 import { GameOverOverlay } from './GameOverOverlay';
 import { HandFan } from './HandFan';
 import { ActionBar, Countdown, StatusBanner } from './parts';
@@ -55,7 +56,10 @@ function useDelayed(key: number, delayMs: number): boolean {
 
 export function TableScreen() {
   const client = useClient();
-  const { game, room, gameOver, lastError } = useClientState();
+  const state = useClientState();
+  const { game, room, gameOver, lastError } = state;
+  // Disconnected or re-binding the seat: moves would be dropped, so don't offer any.
+  const reconnecting = isReconnecting(state);
   // Selection belongs to one game version: any new state (ours or anyone's move) clears it.
   const [picked, setPicked] = useState<{ version: number; selection: Selection }>({ version: -1, selection: NO_SELECTION });
   const remaining = useCountdown(game, client.now);
@@ -101,7 +105,7 @@ export function TableScreen() {
   const nameOf = (id: string) => nicknameOf(id, members);
   const spectator = view.viewerId === null;
   const finished = view.phase.kind === 'finished' || room?.status === 'finished';
-  const interactive = !spectator && !finished;
+  const interactive = !spectator && !finished && !reconnecting;
   const me = view.players.find((p) => p.id === view.viewerId);
   const awaited = awaitedPlayers(view, interactive ? moves : []);
   const ringOf = (id: string): TurnRing => ({

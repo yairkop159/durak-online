@@ -1,6 +1,7 @@
 import { useEffect, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { t } from '../i18n';
 import { useClient, useClientState } from '../net/react';
+import { isReconnecting } from '../net/store';
 
 type Variant = 'primary' | 'secondary' | 'danger';
 
@@ -160,11 +161,17 @@ export function ErrorToast() {
 }
 
 export function ConnectionBanner() {
-  const { connection } = useClientState();
-  if (connection === 'connected') return null;
+  const state = useClientState();
+  const reconnecting = isReconnecting(state);
+  if (state.connection === 'connected' && !reconnecting) return null;
+  const text = reconnecting
+    ? t.connection.reconnecting
+    : state.connection === 'connecting'
+      ? t.connection.connecting
+      : t.connection.disconnected;
   return (
-    <div role="status" className="bg-warn/90 px-4 py-1.5 text-center text-sm font-semibold text-bg-0">
-      {connection === 'connecting' ? t.connection.connecting : t.connection.disconnected}
+    <div role="status" aria-live="polite" className="sticky top-0 z-50 bg-warn/90 px-4 py-1.5 text-center text-sm font-semibold text-bg-0">
+      {text}
     </div>
   );
 }
