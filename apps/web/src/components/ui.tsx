@@ -5,38 +5,130 @@ import { useClient, useClientState } from '../net/react';
 type Variant = 'primary' | 'secondary' | 'danger';
 
 const VARIANT: Record<Variant, string> = {
-  primary: 'bg-amber-400 text-slate-900 hover:bg-amber-300 disabled:bg-amber-400/40',
-  secondary: 'bg-white/10 text-white hover:bg-white/20 border border-white/25',
-  danger: 'bg-rose-600 text-white hover:bg-rose-500',
+  primary: 'bg-accent text-accent-ink hover:bg-accent-strong disabled:bg-accent/35 disabled:text-accent-ink/60',
+  secondary: 'bg-surface-2 text-text ring-1 ring-line-strong hover:bg-surface-3',
+  danger: 'bg-take text-white hover:brightness-110',
 };
 
+/** Real, clickable actions: solid fill, rounded, shadow — never confused with a Pill. */
 export function Button({
   variant = 'primary',
+  size = 'md',
   className = '',
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: 'md' | 'lg' }) {
+  const sizing = size === 'lg' ? 'min-h-12 px-7 text-lg' : 'min-h-10 px-4';
   return (
     <button
       type="button"
-      className={`rounded-lg px-4 py-2 font-semibold transition-colors disabled:cursor-not-allowed ${VARIANT[variant]} ${className}`}
+      className={`rounded-btn font-bold shadow-btn transition-[background-color,filter,translate] duration-(--dur-hover) active:translate-y-px disabled:cursor-not-allowed disabled:shadow-none ${sizing} ${VARIANT[variant]} ${className}`}
       {...props}
     />
   );
 }
 
 export function Panel({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-2xl bg-emerald-950/60 p-5 shadow-xl ring-1 ring-white/10 ${className}`}>{children}</div>;
+  return <div className={`rounded-[22px] bg-surface/90 p-5 shadow-panel ring-1 ring-line backdrop-blur ${className}`}>{children}</div>;
 }
 
-export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'red' | 'blue' | 'amber' | 'gray' }) {
-  const tones = {
-    neutral: 'bg-white/15 text-white',
-    red: 'bg-rose-600 text-white',
-    blue: 'bg-sky-600 text-white',
-    amber: 'bg-amber-400 text-slate-900',
-    gray: 'bg-slate-500 text-white',
-  } as const;
-  return <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${tones[tone]}`}>{children}</span>;
+export type PillTone = 'neutral' | 'attack' | 'defend' | 'accent' | 'warn' | 'muted';
+
+const PILL: Record<PillTone, string> = {
+  neutral: 'bg-white/8 text-text/85 ring-line',
+  attack: 'bg-role-attack/12 text-role-attack ring-role-attack/30',
+  defend: 'bg-role-defend/12 text-role-defend ring-role-defend/30',
+  accent: 'bg-accent/12 text-accent ring-accent/30',
+  warn: 'bg-warn/12 text-warn ring-warn/30',
+  muted: 'bg-white/5 text-muted ring-line',
+};
+
+/** Status label (role, AFK, offline…). A plain span: not focusable, no hover, no pointer. */
+export function Pill({ children, tone = 'neutral' }: { children: ReactNode; tone?: PillTone }) {
+  return (
+    <span
+      className={`pointer-events-none inline-flex items-center gap-1 rounded-pill px-2 py-px text-[10px] leading-4 font-semibold whitespace-nowrap ring-1 select-none ${PILL[tone]}`}
+    >
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-current opacity-80" />
+      {children}
+    </span>
+  );
+}
+
+const AVATAR_HUES = [172, 262, 199, 330, 38, 145];
+
+function hueOf(id: string): number {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATAR_HUES[h % AVATAR_HUES.length]!;
+}
+
+/**
+ * Initial in a circle, with an optional countdown ring (`progress` 1 -> 0) around it:
+ * turquoise, amber under 50%, red under 20%, pulsing in the last seconds.
+ */
+export function Avatar({
+  id,
+  name,
+  size = 40,
+  progress,
+  urgent = false,
+  dim = false,
+}: {
+  id: string;
+  name: string;
+  size?: number;
+  progress?: number | null;
+  urgent?: boolean;
+  dim?: boolean;
+}) {
+  const initial = [...name.trim()][0]?.toUpperCase() ?? '?';
+  const hue = hueOf(id);
+  const ring = size + 8;
+  const r = ring / 2 - 2;
+  const length = 2 * Math.PI * r;
+  const p = progress ?? null;
+  const color = p === null ? '' : p < 0.2 ? 'var(--color-danger)' : p < 0.5 ? 'var(--color-warn)' : 'var(--color-accent)';
+  return (
+    <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: ring, height: ring }}>
+      <span
+        aria-hidden="true"
+        className={`flex items-center justify-center rounded-full font-black ${dim ? 'opacity-50' : ''}`}
+        style={{
+          width: size,
+          height: size,
+          fontSize: size * 0.42,
+          color: `hsl(${hue} 90% 88%)`,
+          background: `radial-gradient(circle at 30% 25%, hsl(${hue} 55% 42%), hsl(${hue} 60% 22%))`,
+          boxShadow: 'inset 0 0 0 1px rgb(255 255 255 / 0.12)',
+        }}
+      >
+        {initial}
+      </span>
+      {p !== null && (
+        <svg
+          aria-hidden="true"
+          data-testid={`ring-${id}`}
+          className={`absolute inset-0 -rotate-90 ${urgent ? 'animate-pulse-ring' : ''}`}
+          width={ring}
+          height={ring}
+        >
+          <circle cx={ring / 2} cy={ring / 2} r={r} fill="none" stroke="rgb(255 255 255 / 0.08)" strokeWidth={3} />
+          <circle
+            cx={ring / 2}
+            cy={ring / 2}
+            r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeDasharray={length}
+            strokeDashoffset={length * (1 - Math.max(0, Math.min(1, p)))}
+            style={{ transition: 'stroke-dashoffset 250ms linear, stroke 300ms', filter: `drop-shadow(0 0 4px ${color})` }}
+          />
+        </svg>
+      )}
+    </span>
+  );
 }
 
 /** Shows the last server error in Hebrew for a few seconds. */
@@ -50,7 +142,10 @@ export function ErrorToast() {
   }, [client, lastError]);
   if (!lastError) return null;
   return (
-    <div role="alert" className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-md rounded-lg bg-rose-700 px-4 py-3 text-center text-white shadow-2xl">
+    <div
+      role="alert"
+      className="fixed inset-x-4 bottom-24 z-50 mx-auto max-w-md rounded-btn bg-surface-2 px-4 py-3 text-center text-text shadow-panel ring-1 ring-danger/60"
+    >
       {t.errors[lastError.code]}
     </div>
   );
@@ -60,8 +155,12 @@ export function ConnectionBanner() {
   const { connection } = useClientState();
   if (connection === 'connected') return null;
   return (
-    <div role="status" className="bg-amber-500 px-4 py-1.5 text-center text-sm font-medium text-slate-900">
+    <div role="status" className="bg-warn/90 px-4 py-1.5 text-center text-sm font-semibold text-bg-0">
       {connection === 'connecting' ? t.connection.connecting : t.connection.disconnected}
     </div>
   );
 }
+
+/** Text input styled for the dark theme. */
+export const inputClass =
+  'rounded-btn bg-bg-0/70 px-3 py-2.5 text-text placeholder:text-muted/70 ring-1 ring-line-strong outline-none focus:ring-2 focus:ring-accent';

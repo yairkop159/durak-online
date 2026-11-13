@@ -57,6 +57,11 @@ export interface Strings {
     readonly transferHere: string;
     readonly spectating: string;
     readonly emptyTable: string;
+    readonly discardPile: string;
+    readonly lastBout: string;
+    readonly deckEmpty: string;
+    readonly yourTurn: string;
+    readonly actions: string;
     readonly secondsLeft: (seconds: number) => string;
     readonly status: {
       readonly youAttack: string;
@@ -141,6 +146,11 @@ export const he: Strings = {
     transferHere: 'העברה',
     spectating: 'מצב צפייה',
     emptyTable: 'השולחן ריק',
+    discardPile: 'ערימת ההשלכה',
+    lastBout: 'הסיבוב הקודם',
+    deckEmpty: 'החפיסה נגמרה',
+    yourTurn: 'התור שלך',
+    actions: 'פעולות',
     secondsLeft: (seconds) => `${seconds} שנ׳`,
     status: {
       youAttack: 'תורך לתקוף: בחר קלף',

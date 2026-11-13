@@ -4,10 +4,11 @@
  * removed, renamed or retyped on one side only — `npm run typecheck` fails here.
  */
 import type { GameState, PlayerState } from '@durak/game-engine';
-import type { TablePair } from '@durak/shared';
+import type { BoutSummary, TablePair } from '@durak/shared';
 import type { z } from 'zod';
 import type { Room, RoomMember, Session, Spectator, StoredGame } from '../../domain/types.js';
 import type {
+  BoutSummarySchema,
   GameStateSchema,
   PlayerStateSchema,
   RoomMemberSchema,
@@ -40,6 +41,7 @@ export const schemaGuards: {
   gameState: Same<typeof GameStateSchema, GameState>;
   playerState: Same<typeof PlayerStateSchema, PlayerState>;
   tablePair: Same<typeof TablePairSchema, TablePair>;
+  boutSummary: Same<typeof BoutSummarySchema, BoutSummary>;
 } = {
   room: true,
   member: true,
@@ -49,4 +51,5 @@ export const schemaGuards: {
   gameState: true,
   playerState: true,
   tablePair: true,
+  boutSummary: true,
 };

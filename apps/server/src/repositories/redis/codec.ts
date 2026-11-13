@@ -47,6 +47,14 @@ export const PlayerStateSchema = z.object({ id: z.string(), hand: z.array(CardSc
 
 export const TablePairSchema = z.object({ attack: CardSchema, defense: CardSchema.nullable() }).strict();
 
+export const BoutSummarySchema = z
+  .object({
+    table: z.array(TablePairSchema),
+    outcome: z.enum(['beaten', 'taken']),
+    defenderId: z.string(),
+  })
+  .strict();
+
 export const GamePhaseSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('awaitingAttack') }).strict(),
   z.object({ kind: z.literal('bout'), taking: z.boolean(), passed: z.array(z.string()) }).strict(),
@@ -66,6 +74,8 @@ export const GameStateSchema = z
     phase: GamePhaseSchema,
     boutNumber: z.number().int(),
     finishOrder: z.array(z.string()),
+    // Default lets games written before Phase 5b decode without a format bump.
+    lastBout: BoutSummarySchema.nullable().default(null),
   })
   .strict();
 

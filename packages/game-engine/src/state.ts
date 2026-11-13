@@ -1,4 +1,4 @@
-import type { Card, GameConfig, GamePhase, PlayerId, TablePair } from '@durak/shared';
+import type { BoutSummary, Card, GameConfig, GamePhase, PlayerId, TablePair } from '@durak/shared';
 
 export interface PlayerState {
   readonly id: PlayerId;
@@ -27,4 +27,9 @@ export interface GameState {
   readonly boutNumber: number;
   /** Players who have gone out, in the order they went out. */
   readonly finishOrder: readonly PlayerId[];
+  /**
+   * Public copy of the last resolved bout's final table. Not a card location: those cards are in
+   * `discard` or in the defender's hand. Set by every bout resolution and kept until the next one.
+   */
+  readonly lastBout: BoutSummary | null;
 }

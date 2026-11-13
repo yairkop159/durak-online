@@ -40,6 +40,27 @@ function checkInvariants(state: GameState): void {
   expect(getPlayersToAct(state).length).toBeGreaterThan(0);
 }
 
+/**
+ * On the step that resolves a bout: `lastBout` is the previous table plus at most the one closing
+ * card, and every card in it ended up in the discard (beaten) or the defender's hand (taken).
+ */
+function checkLastBout(before: GameState, after: GameState): void {
+  const last = after.lastBout;
+  expect(last).not.toBeNull();
+  if (!last) return;
+  const ids = (pairs: GameState['table']) => pairs.flatMap((p) => (p.defense ? [p.attack, p.defense] : [p.attack])).map(cardId);
+  const lastIds = ids(last.table);
+  const beforeIds = ids(before.table);
+  expect(beforeIds.every((id) => lastIds.includes(id))).toBe(true);
+  expect(lastIds.length - beforeIds.length).toBeLessThanOrEqual(1);
+  expect(last.defenderId).toBe(before.players[before.defenderIndex]!.id);
+  const where =
+    last.outcome === 'beaten'
+      ? after.discard.map(cardId)
+      : after.players.find((p) => p.id === last.defenderId)!.hand.map(cardId);
+  for (const id of lastIds) expect(where).toContain(id);
+}
+
 function moveKey(move: ClientMove): string {
   switch (move.type) {
     case 'attack':
@@ -93,7 +114,13 @@ function playRandomGame(players: number, mode: GameMode, seed: number): GameStat
 
     const result = applyMove(state, move); // throws if the engine mutates the frozen input
     if (!result.ok) throw new Error(`Legal move rejected: ${JSON.stringify(move)} -> ${result.error.code}`);
+    const before = state;
     state = deepFreeze(result.value);
+    if (state.boutNumber !== before.boutNumber || (state.phase.kind === 'finished' && before.phase.kind === 'bout')) {
+      checkLastBout(before, state);
+    } else {
+      expect(state.lastBout).toEqual(before.lastBout);
+    }
 
     // The sanitized view must always be consistent with the real state.
     const view = sanitizeStateForPlayer(state, actor);

@@ -1,3 +1,4 @@
+import { MotionConfig } from 'motion/react';
 import { useEffect } from 'react';
 import { ConnectionBanner, ErrorToast } from './components/ui';
 import { useClient } from './net/react';
@@ -15,10 +16,13 @@ export function App() {
   }, [client, roomId]);
 
   return (
-    <div dir="rtl" className="flex min-h-dvh flex-col bg-emerald-900 text-white">
-      <ConnectionBanner />
-      <main className="flex flex-1 flex-col">{roomId === null ? <HomeScreen /> : <RoomRoute roomId={roomId} />}</main>
-      <ErrorToast />
-    </div>
+    // reducedMotion="user": with prefers-reduced-motion, Framer skips transform/layout animations.
+    <MotionConfig reducedMotion="user">
+      <div dir="rtl" className="flex min-h-dvh flex-col text-text">
+        <ConnectionBanner />
+        <main className="flex flex-1 flex-col">{roomId === null ? <HomeScreen /> : <RoomRoute roomId={roomId} />}</main>
+        <ErrorToast />
+      </div>
+    </MotionConfig>
   );
 }

@@ -16,7 +16,7 @@ export function RoomRoute({ roomId }: { roomId: string }) {
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center p-4">
         <Panel className="flex flex-col gap-4 text-center">
           <h1 className="text-2xl font-bold">{t.notFound.title}</h1>
-          <p className="text-emerald-100/80">{t.notFound.body}</p>
+          <p className="text-muted">{t.notFound.body}</p>
           <Button onClick={() => navigate('/')}>{t.common.backHome}</Button>
         </Panel>
       </div>
@@ -35,5 +35,5 @@ export function RoomRoute({ roomId }: { roomId: string }) {
 }
 
 function Loading() {
-  return <div className="flex flex-1 items-center justify-center text-emerald-100/80">{t.common.loading}</div>;
+  return <div className="flex flex-1 items-center justify-center text-muted">{t.common.loading}</div>;
 }

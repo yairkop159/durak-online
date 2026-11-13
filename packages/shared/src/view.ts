@@ -15,6 +15,17 @@ export type GamePhase =
     }
   | { readonly kind: 'finished'; readonly durak: PlayerId | null };
 
+/**
+ * Public summary of the most recently resolved bout: the final table (including a closing
+ * defense or throw-in that never appeared on its own), how it ended and who defended.
+ * Kept until the next bout resolves.
+ */
+export interface BoutSummary {
+  readonly table: readonly TablePair[];
+  readonly outcome: 'beaten' | 'taken';
+  readonly defenderId: PlayerId;
+}
+
 export interface PublicPlayer {
   readonly id: PlayerId;
   readonly handCount: number;
@@ -41,4 +52,6 @@ export interface PlayerView {
   readonly boutNumber: number;
   readonly finishOrder: readonly PlayerId[];
   readonly config: GameConfig;
+  /** The last resolved bout (public), or `null` before the first one ends. */
+  readonly lastBout: BoutSummary | null;
 }

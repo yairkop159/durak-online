@@ -75,4 +75,20 @@ describe('sanitizeStateForPlayer', () => {
     (view.trumpCard as { rank: number }).rank = 6;
     expect(JSON.stringify(state)).toBe(before);
   });
+
+  it('copies lastBout (public) to every viewer, spectators included', () => {
+    let s = makeState({ hands: { a: '6S 9D', b: '7S KH QH', c: '8D 10H' }, deck: 'JS JD JC QS', attacker: 'a', defender: 'b' });
+    expect(sanitizeStateForPlayer(s, 'a').lastBout).toBeNull();
+    s = play(s, { type: 'attack', playerId: 'a', card: c('6S') });
+    s = play(s, { type: 'defend', playerId: 'b', attackIndex: 0, card: c('7S') });
+    for (const viewer of ['a', 'b', 'c', null]) {
+      const view = sanitizeStateForPlayer(s, viewer);
+      expect(view.lastBout).toEqual(s.lastBout);
+      expect(view.lastBout).not.toBe(s.lastBout);
+    }
+    const before = JSON.stringify(s);
+    const view = sanitizeStateForPlayer(s, 'a');
+    (view.lastBout!.table[0]!.attack as { rank: number }).rank = 14;
+    expect(JSON.stringify(s)).toBe(before);
+  });
 });

@@ -123,3 +123,66 @@ describe('drawing cards', () => {
     expect(s.deck).toHaveLength(2);
   });
 });
+
+// Regression (Phase 5b): a closing defense or throw-in ends the bout inside the same applyMove,
+// so it never appeared on any table. `lastBout` keeps the final table public.
+describe('lastBout: public summary of the last resolved bout', () => {
+  const twoPlayers = () =>
+    makeState({
+      hands: { a: '6S 9D', b: '7S KH QH', c: '8D 10H' },
+      deck: 'JS JD JC QS QD QC KS KD KC',
+      attacker: 'a',
+      defender: 'b',
+    });
+
+  it('is null until a bout resolves', () => {
+    expect(twoPlayers().lastBout).toBeNull();
+    expect(play(twoPlayers(), { type: 'attack', playerId: 'a', card: c('6S') }).lastBout).toBeNull();
+  });
+
+  it('includes the defense that covered the last card and ended the bout', () => {
+    let s = play(twoPlayers(), { type: 'attack', playerId: 'a', card: c('6S') });
+    s = play(s, { type: 'defend', playerId: 'b', attackIndex: 0, card: c('7S') });
+    expect(s.table).toEqual([]);
+    expect(s.lastBout).toEqual({
+      table: [{ attack: c('6S'), defense: c('7S') }],
+      outcome: 'beaten',
+      defenderId: 'b',
+    });
+  });
+
+  it('records a take with every table card, covered or not', () => {
+    const s0 = makeState({
+      hands: { a: '6S 6H 9D', b: '7S KH QH', c: '8D 10H' },
+      deck: 'JS JD JC QS QD QC KS KD KC',
+      attacker: 'a',
+      defender: 'b',
+    });
+    let s = play(s0, { type: 'attack', playerId: 'a', card: c('6S') });
+    s = play(s, { type: 'defend', playerId: 'b', attackIndex: 0, card: c('7S') });
+    s = play(s, { type: 'attack', playerId: 'a', card: c('6H') });
+    // Nobody can throw in any more, so the take ends the bout at once.
+    s = play(s, { type: 'take', playerId: 'b' });
+    expect(s.table).toEqual([]);
+    expect(s.lastBout).toEqual({
+      table: [
+        { attack: c('6S'), defense: c('7S') },
+        { attack: c('6H'), defense: null },
+      ],
+      outcome: 'taken',
+      defenderId: 'b',
+    });
+    expect(handOf(s, 'b')).toEqual(expect.arrayContaining(cards('6S 7S 6H')));
+  });
+
+  it('survives the next opening attack and is replaced by the next resolution', () => {
+    let s = play(twoPlayers(), { type: 'attack', playerId: 'a', card: c('6S') });
+    s = play(s, { type: 'defend', playerId: 'b', attackIndex: 0, card: c('7S') });
+    const first = s.lastBout;
+    const opener = handOf(s, 'b')[0]!;
+    s = play(s, { type: 'attack', playerId: 'b', card: opener });
+    expect(s.lastBout).toEqual(first);
+    s = play(s, { type: 'take', playerId: 'c' });
+    expect(s.lastBout).toEqual({ table: [{ attack: opener, defense: null }], outcome: 'taken', defenderId: 'c' });
+  });
+});

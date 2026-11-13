@@ -313,6 +313,11 @@ function endBout(state: GameState, outcome: 'beaten' | 'taken'): GameState {
     discard,
     table: [],
     finishOrder,
+    lastBout: {
+      table: state.table.map((p) => ({ attack: p.attack, defense: p.defense })),
+      outcome,
+      defenderId: (state.players[state.defenderIndex] as PlayerState).id,
+    },
   };
 
   const remaining = base.players.filter((p) => !finishOrder.includes(p.id));

@@ -117,6 +117,7 @@ export function makeView(spec: ViewSpec = {}): PlayerView {
     boutNumber: spec.boutNumber ?? 2,
     finishOrder: spec.finished ?? [],
     config: { ...DEFAULT_GAME_CONFIG, ...spec.config },
+    lastBout: null,
   };
 }
 

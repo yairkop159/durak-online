@@ -80,6 +80,7 @@ export function makeState(spec: StateSpec): GameState {
       spec.phase ?? (table.length > 0 ? { kind: 'bout', taking: false, passed: [] } : { kind: 'awaitingAttack' }),
     boutNumber: spec.boutNumber ?? 2,
     finishOrder: spec.finishOrder ?? [],
+    lastBout: null,
   };
 }
 

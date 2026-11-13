@@ -168,12 +168,20 @@ describe('hand privacy', () => {
         const snapshot = games.snapshots.get(payload.version);
         expect(snapshot, `snapshot for version ${payload.version}`).toBeDefined();
         const json = JSON.stringify(payload);
+        // Public by design: the face-up trump, and the last resolved bout's table (everyone saw
+        // those cards on the table; `lastBout` keeps them after they moved to the discard/a hand).
+        const lastBoutCards = (snapshot!.lastBout?.table ?? []).flatMap((p) => (p.defense ? [p.attack, p.defense] : [p.attack]));
+        const isPublic = (c: { suit: string; rank: number }) =>
+          (c.suit === snapshot!.trumpCard.suit && c.rank === snapshot!.trumpCard.rank) ||
+          lastBoutCards.some((l) => l.suit === c.suit && l.rank === c.rank);
         const hidden = [
           ...snapshot!.players.filter((p) => p.id !== viewerId).flatMap((p) => p.hand),
           ...snapshot!.deck,
           ...snapshot!.discard,
-        ].filter((c) => !(c.suit === snapshot!.trumpCard.suit && c.rank === snapshot!.trumpCard.rank));
+        ].filter((c) => !isPublic(c));
         for (const card of hidden) expect(json).not.toContain(serialized(card));
+        // ...and lastBout reveals exactly the stored summary, nothing more.
+        expect(payload.view.lastBout).toEqual(snapshot!.lastBout);
         expect(Object.keys(payload.view)).not.toContain('deck');
         expect(Object.keys(payload.view)).not.toContain('discard');
         for (const p of payload.view.players) expect(Object.keys(p).sort()).toEqual(['finished', 'handCount', 'id']);

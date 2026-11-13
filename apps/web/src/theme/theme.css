@@ -1,0 +1,107 @@
+/*
+ * Design tokens — "modern dark". Every color, radius, shadow and CSS duration of the app lives
+ * here (Tailwind v4 turns them into utilities: bg-surface, text-muted, shadow-card, rounded-card…).
+ * Framer Motion timings live in motion.ts.
+ */
+@theme {
+  /* page */
+  --color-bg-0: #070b14;
+  --color-bg-1: #0d1526;
+  --color-glow: rgb(45 212 191 / 0.1);
+
+  /* surfaces */
+  --color-surface: #111a2e;
+  --color-surface-2: #18233b;
+  --color-surface-3: #22304d;
+  --color-line: rgb(148 163 184 / 0.14);
+  --color-line-strong: rgb(148 163 184 / 0.28);
+
+  /* text */
+  --color-text: #e6edf7;
+  --color-muted: #8b98b0;
+
+  /* accents */
+  --color-accent: #2dd4bf; /* turquoise: your legal moves, your turn */
+  --color-accent-strong: #14b8a6;
+  --color-accent-ink: #042f2e;
+  --color-select: #a78bfa; /* violet: selection, targets */
+  --color-select-strong: #7c3aed;
+  --color-warn: #f59e0b; /* countdown running low */
+  --color-danger: #ef4444; /* countdown almost out */
+  --color-take: #e11d48; /* the Take button */
+
+  /* role pills */
+  --color-role-attack: #fb7185;
+  --color-role-defend: #38bdf8;
+
+  /* cards */
+  --color-card: #fbfcfe;
+  --color-card-edge: #e2e8f0;
+  --color-card-ink: #0f172a;
+  --color-card-red: #dc2626;
+  --color-back: #0b1222;
+  --color-back-line: #1e293b;
+
+  /* radii */
+  --radius-card: 10px;
+  --radius-card-sm: 7px;
+  --radius-table: 28px;
+  --radius-btn: 14px;
+  --radius-pill: 999px;
+
+  /* shadows */
+  --shadow-card: 0 2px 4px rgb(0 0 0 / 0.4), 0 8px 20px rgb(0 0 0 / 0.33);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.4), 0 12px 28px rgb(0 0 0 / 0.45), 0 0 0 2px var(--color-accent),
+    0 0 18px rgb(45 212 191 / 0.45);
+  --shadow-selected: 0 2px 4px rgb(0 0 0 / 0.4), 0 16px 32px rgb(0 0 0 / 0.5), 0 0 0 3px var(--color-select),
+    0 0 22px rgb(167 139 250 / 0.5);
+  --shadow-target: 0 0 0 2px var(--color-select), 0 0 16px rgb(167 139 250 / 0.45);
+  --shadow-table: inset 0 0 60px rgb(45 212 191 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.04), 0 30px 80px rgb(0 0 0 / 0.55);
+  --shadow-panel: 0 20px 60px rgb(0 0 0 / 0.5);
+  --shadow-btn: 0 8px 22px rgb(0 0 0 / 0.35);
+
+  /* card sizes (phone first; sm: breakpoint grows them) */
+  --card-hand-w: 60px;
+  --card-hand-h: 86px;
+  --card-hand-w-lg: 72px;
+  --card-hand-h-lg: 104px;
+  --card-table-w: 54px;
+  --card-table-h: 78px;
+  --card-table-w-lg: 64px;
+  --card-table-h-lg: 92px;
+  --card-seat-w: 20px;
+  --card-seat-h: 29px;
+
+  /* CSS durations (Framer timings: motion.ts) */
+  --dur-hover: 120ms;
+  --dur-fade: 150ms;
+  --dur-shake: 300ms;
+
+  --animate-shake: shake var(--dur-shake) ease-in-out;
+  --animate-pulse-ring: pulse-ring 1s ease-in-out infinite;
+
+  @keyframes shake {
+    0%,
+    100% {
+      translate: 0 var(--lift, 0);
+    }
+    20% {
+      translate: -6px var(--lift, 0);
+    }
+    40% {
+      translate: 6px var(--lift, 0);
+    }
+    60% {
+      translate: -4px var(--lift, 0);
+    }
+    80% {
+      translate: 4px var(--lift, 0);
+    }
+  }
+
+  @keyframes pulse-ring {
+    50% {
+      opacity: 0.55;
+    }
+  }
+}

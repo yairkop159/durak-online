@@ -34,5 +34,15 @@ export function sanitizeStateForPlayer(state: GameState, viewerId: PlayerId | nu
     boutNumber: state.boutNumber,
     finishOrder: [...state.finishOrder],
     config: { ...state.config },
+    lastBout: state.lastBout
+      ? {
+          table: state.lastBout.table.map((p) => ({
+            attack: { suit: p.attack.suit, rank: p.attack.rank },
+            defense: p.defense ? { suit: p.defense.suit, rank: p.defense.rank } : null,
+          })),
+          outcome: state.lastBout.outcome,
+          defenderId: state.lastBout.defenderId,
+        }
+      : null,
   };
 }

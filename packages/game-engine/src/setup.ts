@@ -82,6 +82,7 @@ export function createGameWithDeck(
     phase: { kind: 'awaitingAttack' },
     boutNumber: 1,
     finishOrder: [],
+    lastBout: null,
   });
 }
 

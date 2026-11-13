@@ -1,6 +1,6 @@
 import { GAME_MODES, MAX_PLAYERS, MIN_PLAYERS, type GameMode } from '@durak/shared';
 import { useEffect, useState, type FormEvent } from 'react';
-import { Button, Panel } from '../components/ui';
+import { Button, Panel, inputClass } from '../components/ui';
 import { t } from '../i18n';
 import { useClient, useClientState } from '../net/react';
 import { navigate, roomPath } from '../routing';
@@ -31,8 +31,9 @@ export function HomeScreen() {
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 p-4">
       <header className="text-center">
+        <div aria-hidden="true" className="mb-3 text-3xl tracking-[0.3em] text-accent drop-shadow-[0_0_12px_rgb(45_212_191/0.5)]">♠︎♥︎♣︎♦︎</div>
         <h1 className="text-4xl font-black tracking-tight">{t.appTitle}</h1>
-        <p className="mt-2 text-emerald-100/80">{t.home.subtitle}</p>
+        <p className="mt-2 text-muted">{t.home.subtitle}</p>
       </header>
       <Panel>
         <form onSubmit={submit} className="flex flex-col gap-5">
@@ -45,7 +46,7 @@ export function HomeScreen() {
               required
               autoFocus
               placeholder={t.home.nicknamePlaceholder}
-              className="rounded-lg bg-white px-3 py-2 text-slate-900 outline-none focus:ring-2 focus:ring-amber-400"
+              className={inputClass}
             />
           </label>
 
@@ -58,7 +59,7 @@ export function HomeScreen() {
                   type="button"
                   aria-pressed={players === n}
                   onClick={() => setPlayers(n)}
-                  className={`rounded-lg py-2 font-bold ${players === n ? 'bg-amber-400 text-slate-900' : 'bg-white/10 hover:bg-white/20'}`}
+                  className={`rounded-btn py-2 font-bold ring-1 transition-colors ${players === n ? 'bg-accent text-accent-ink ring-accent shadow-[0_0_16px_rgb(45_212_191/0.35)]' : 'bg-surface-2 ring-line hover:bg-surface-3'}`}
                 >
                   {n}
                 </button>
@@ -71,13 +72,13 @@ export function HomeScreen() {
             {GAME_MODES.map((m) => (
               <label
                 key={m}
-                className={`flex cursor-pointer flex-col rounded-lg px-3 py-2 ring-1 ${mode === m ? 'bg-white/15 ring-amber-400' : 'ring-white/15 hover:bg-white/5'}`}
+                className={`flex cursor-pointer flex-col rounded-btn px-3 py-2.5 ring-1 transition-colors ${mode === m ? 'bg-accent/8 ring-accent' : 'bg-surface-2/50 ring-line hover:bg-surface-2'}`}
               >
                 <span className="flex items-center gap-2 font-semibold">
-                  <input type="radio" name="mode" value={m} checked={mode === m} onChange={() => setMode(m)} className="accent-amber-400" />
+                  <input type="radio" name="mode" value={m} checked={mode === m} onChange={() => setMode(m)} className="accent-teal-400" />
                   {t.home.modes[m]}
                 </span>
-                <span className="ms-6 text-xs text-emerald-100/70">{t.home.modeHints[m]}</span>
+                <span className="ms-6 text-xs text-muted">{t.home.modeHints[m]}</span>
               </label>
             ))}
           </fieldset>

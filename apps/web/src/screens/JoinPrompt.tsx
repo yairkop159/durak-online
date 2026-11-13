@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Button, Panel } from '../components/ui';
+import { Button, Panel, inputClass } from '../components/ui';
 import { t } from '../i18n';
 import { useClient } from '../net/react';
 
@@ -34,7 +34,7 @@ export function JoinPrompt({ roomId }: { roomId: string }) {
               required
               autoFocus
               placeholder={t.home.nicknamePlaceholder}
-              className="rounded-lg bg-white px-3 py-2 text-slate-900 outline-none focus:ring-2 focus:ring-amber-400"
+              className={inputClass}
             />
           </label>
           <Button type="submit" disabled={!nickname.trim() || sent}>

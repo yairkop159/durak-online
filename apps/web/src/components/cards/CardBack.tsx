@@ -1,36 +1,45 @@
-import type { CardSize } from './PlayingCard';
+import type { CSSProperties, Ref } from 'react';
+import { CARD_SIZE, type CardSize } from './PlayingCard';
 
-const SIZE: Record<CardSize, string> = {
-  sm: 'w-6 h-9 sm:w-7 sm:h-10',
-  md: 'w-12 h-[4.5rem] sm:w-14 sm:h-20',
-  lg: 'w-14 h-20 sm:w-16 sm:h-24',
+export type BackSize = CardSize | 'seat';
+
+const SIZE: Record<BackSize, string> = {
+  ...CARD_SIZE,
+  seat: 'w-(--card-seat-w) h-(--card-seat-h) rounded-[4px]',
 };
 
-/** A face-down card: a patterned back drawn with CSS gradients. */
-export function CardBack({ size = 'sm', className = '' }: { size?: CardSize; className?: string }) {
-  return (
-    <div
-      aria-hidden="true"
-      className={`shrink-0 rounded-sm border border-white/70 shadow ${SIZE[size]} ${className}`}
-      style={{
-        backgroundColor: '#1e3a8a',
-        backgroundImage:
-          'repeating-linear-gradient(45deg, rgba(255,255,255,0.18) 0 2px, transparent 2px 6px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.18) 0 2px, transparent 2px 6px)',
-      }}
-    />
-  );
+/**
+ * A face-down card. Backs are generic: they carry no card identity (no id, no layoutId, no
+ * data attributes), so nothing about a hidden card can leak through the DOM.
+ */
+export function CardBack({
+  size = 'seat',
+  className = '',
+  style,
+  ref,
+}: {
+  size?: BackSize;
+  className?: string;
+  style?: CSSProperties;
+  ref?: Ref<HTMLDivElement>;
+}) {
+  return <div ref={ref} aria-hidden="true" style={style} className={`card-back shrink-0 ${SIZE[size]} ${className}`} />;
 }
 
-/** A small fanned stack of card backs plus the exact count (stack capped so 20 cards stay compact). */
-export function CardBackStack({ count, max = 6 }: { count: number; max?: number }) {
+/** A small fan of backs for an opponent's hand (capped, so 20 cards stay compact). */
+export function CardBackFan({ count, max = 5 }: { count: number; max?: number }) {
   const shown = Math.min(count, max);
+  const mid = (shown - 1) / 2;
   return (
-    <div className="flex items-center gap-1" dir="ltr">
-      <div className="flex">
-        {Array.from({ length: shown }, (_, i) => (
-          <CardBack key={i} size="sm" className={i === 0 ? '' : '-ms-4'} />
-        ))}
-      </div>
+    <div className="flex h-9 items-end justify-center" dir="ltr" aria-hidden="true">
+      {Array.from({ length: shown }, (_, i) => (
+        <CardBack
+          key={i}
+          size="seat"
+          className={i === 0 ? '' : '-ms-3'}
+          style={{ rotate: `${(i - mid) * 9}deg`, translate: `0 ${Math.abs(i - mid) * 2}px`, transformOrigin: '50% 120%' }}
+        />
+      ))}
     </div>
   );
 }
