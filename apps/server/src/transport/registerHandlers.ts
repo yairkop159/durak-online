@@ -41,8 +41,10 @@ export function registerHandlers(deps: HandlerDeps): void {
 
   // Refuse the handshake (client gets connect_error "TOO_MANY_CONNECTIONS", no retry loop).
   deps.io.use((socket, next) => {
-    if (shared.connections.canOpen(deps.ipOf(socket))) next();
-    else next(new Error('TOO_MANY_CONNECTIONS'));
+    const ip = deps.ipOf(socket);
+    if (shared.connections.canOpen(ip)) return next();
+    deps.log.warn({ ip, code: 'TOO_MANY_CONNECTIONS' }, 'connection refused');
+    next(new Error('TOO_MANY_CONNECTIONS'));
   });
 
   deps.io.on('connection', (socket) => {
@@ -58,7 +60,21 @@ export function registerHandlers(deps: HandlerDeps): void {
 
 function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedLimiters): void {
   const { io, rooms, games, log } = deps;
-  const sendError = (error: ErrorPayload) => socket.emit('error', error);
+  /**
+   * Who this socket is, for log lines: never the session token, never a payload (payloads can
+   * carry tokens and are attacker-controlled).
+   */
+  const who = () => {
+    const session = socket.data.session;
+    return session
+      ? { ip, roomId: session.roomId, playerId: session.id, role: session.role }
+      : { ip, roomId: null, playerId: null, role: null };
+  };
+  /** Every error a client receives goes through here and is logged with its code (only). */
+  const sendError = (error: ErrorPayload, event?: string) => {
+    log.info({ ...who(), code: error.code, ...(event ? { event } : {}) }, 'error sent to client');
+    socket.emit('error', error);
+  };
 
   // Rate limit every incoming event (known or not) before validation or any handler runs.
   const limiter = new SocketEventLimiter(deps.limits, deps.now);
@@ -86,12 +102,12 @@ function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedL
     (socket.on as (ev: string, listener: (raw: unknown) => void) => void)(event, (raw: unknown) => {
       const parsed = parsePayload(event, raw);
       if (!parsed.ok) {
-        sendError(parsed.error);
+        sendError(parsed.error, event);
         return;
       }
       handler(parsed.value).catch((error: unknown) => {
         log.error({ err: error, event }, 'socket handler failed');
-        sendError({ code: 'INTERNAL', message: 'Internal server error' });
+        sendError({ code: 'INTERNAL', message: 'Internal server error' }, event);
       });
     });
   };
@@ -127,7 +143,7 @@ function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedL
   };
 
   socket.onAny((event: string) => {
-    if (!KNOWN_EVENTS.has(event)) sendError({ code: 'INVALID_PAYLOAD', message: `Unknown event ${event}` });
+    if (!KNOWN_EVENTS.has(event)) sendError({ code: 'INVALID_PAYLOAD', message: `Unknown event ${event}` }, 'unknown');
   });
 
   on(ClientEvents.CreateRoom, async (payload) => {
@@ -216,13 +232,21 @@ function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedL
   on(ClientEvents.ResumeSession, async (payload) => {
     const existing = socket.data.session;
     if (existing && existing.token !== payload.sessionToken) {
-      { sendError({ code: 'INVALID_SESSION', message: 'This connection already holds another session' }); return; }
+      log.info({ ...who(), code: 'INVALID_SESSION' }, 'session resume failed');
+      sendError({ code: 'INVALID_SESSION', message: 'This connection already holds another session' }, 'session:resume');
+      return;
     }
     const result = await rooms.resume(payload.sessionToken, bind);
-    if (!result.ok) sendError(result.error);
+    if (result.ok) {
+      log.info(who(), 'session resumed');
+    } else {
+      log.info({ ...who(), code: result.error.code }, 'session resume failed');
+      sendError(result.error, 'session:resume');
+    }
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason: string) => {
+    log.info({ ...who(), reason, shuttingDown: deps.isShuttingDown() }, 'socket disconnected');
     const session = socket.data.session;
     if (!session || session.role !== 'player' || deps.isShuttingDown()) return;
     const isStillOffline = async () => (await io.in(channels.player(session.id)).fetchSockets()).length === 0;

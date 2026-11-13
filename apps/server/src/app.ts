@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { Server } from 'socket.io';
 import type { HealthReport } from './backend.js';
 import type { BotPolicies, BotRunner } from './bot/job.js';
@@ -46,7 +46,8 @@ export interface BuildServerOptions {
   readonly repos?: Repositories;
   readonly seedSource?: SeedSource;
   readonly corsOrigins?: readonly string[];
-  readonly logger?: boolean;
+  /** true = Fastify's default logger; tests pass `{ level, stream }` to capture log lines. */
+  readonly logger?: FastifyServerOptions['logger'];
   /** Time source for deadlines and timestamps (tests inject a fake clock). */
   readonly clock?: Clock;
   /** Timer backend (tests inject a fake scheduler; default: setTimeout). */
@@ -108,6 +109,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
       const forwardedHost = trustProxy !== false ? req.headers['x-forwarded-host'] : undefined;
       const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) ?? req.headers.host;
       const allowed = isOriginAllowed(req.headers.origin, host, corsOrigins);
+      if (!allowed) app.log.warn({ origin: req.headers.origin, host }, 'handshake refused: origin not allowed');
       callback(allowed ? null : 'Origin not allowed', allowed);
     },
   });
