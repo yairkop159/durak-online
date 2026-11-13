@@ -10,6 +10,7 @@ import type {
 } from '@durak/shared';
 import { io as connectClient, type Socket } from 'socket.io-client';
 import { buildServer, type BuildServerOptions, type DurakServer } from '../../src/app.js';
+import { FakeTime } from './fakeTime.js';
 
 export interface ReceivedEvents {
   'room:state': RoomStatePayload;
@@ -103,12 +104,17 @@ export class TestClient {
 export interface TestHarness {
   readonly server: DurakServer;
   readonly url: string;
+  /** Fake clock + scheduler driving every server timer: nothing fires until the test advances it. */
+  readonly time: FakeTime;
   connect(): Promise<TestClient>;
   close(): Promise<void>;
 }
 
-export async function startTestServer(options: BuildServerOptions = {}): Promise<TestHarness> {
-  const server = buildServer({ seedSource: () => 20251112, ...options });
+export async function startTestServer(
+  options: BuildServerOptions & { readonly time?: FakeTime } = {},
+): Promise<TestHarness> {
+  const { time = new FakeTime(), ...rest } = options;
+  const server = buildServer({ seedSource: () => 20251112, clock: time, scheduler: time, ...rest });
   await server.app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = server.app.server.address() as AddressInfo;
   const url = `http://127.0.0.1:${port}`;
@@ -117,6 +123,7 @@ export async function startTestServer(options: BuildServerOptions = {}): Promise
   return {
     server,
     url,
+    time,
     async connect() {
       const socket: Socket<ServerToClientEvents, ClientToServerEvents> = connectClient(url, {
         transports: ['websocket'],
@@ -132,8 +139,9 @@ export async function startTestServer(options: BuildServerOptions = {}): Promise
       return client;
     },
     async close() {
-      for (const c of clients) c.socket.disconnect();
+      // Server first: its shutdown flag keeps our own disconnects from starting graces.
       await server.app.close();
+      for (const c of clients) c.socket.disconnect();
     },
   };
 }

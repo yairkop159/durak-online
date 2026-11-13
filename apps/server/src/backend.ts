@@ -73,13 +73,23 @@ export async function createRedisBackend(url: string, prefix: string, log: Backe
         return { ok: false, repository: 'redis', redis: 'down' };
       }
     },
+    /** Resolves only once the connection has fully ended (quit() resolves on the OK reply, earlier). */
     async close() {
       if (redis.status === 'end') return;
+      const ended = new Promise<void>((resolve) => {
+        redis.once('end', () => resolve());
+        setTimeout(() => {
+          redis.disconnect();
+          resolve();
+        }, 2000).unref();
+      });
       try {
         await redis.quit();
       } catch {
         redis.disconnect();
       }
+      const status = (): string => redis.status; // re-read: quit() changes it asynchronously
+      if (status() !== 'end') await ended;
     },
   };
 }

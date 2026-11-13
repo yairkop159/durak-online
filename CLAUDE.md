@@ -32,6 +32,11 @@ This is the single source of truth for the server, bot and UI. Any change here m
 - **Draw order:** the main attacker first, then the other players clockwise, the defender last; each refills to 6 while the stock lasts.
 - **Finishing:** players only go out at the end of a bout. After drawing, if the stock is empty, every player with 0 cards goes out (recorded in seating order starting from the main attacker). When ≤1 player remains the game is over: `durak` = the remaining player, or `null` (a draw) if the last players went out together.
 - **Determinism:** a game is fully determined by the seed, player order, config and the sequence of moves.
+- **Timeouts & resignation** (`src/timeout.ts`, pure; the engine has no timers):
+  - `getTimeoutMoves(state)`: `awaitingAttack` → the attacker opens with the lowest non-trump (lowest rank, ties S, C, D, H), or the lowest trump if they hold only trumps. `bout` → the defender `take`s if a card is uncovered and they aren't already taking, then every non-defender who can still throw in and hasn't passed `pass`es, in seat order from the main attacker. `getAwaitedPlayers` = the players those moves belong to.
+  - `applyTimeout(state)` applies them in order, each through `applyMove`, skipping any that an earlier one made obsolete. Each call opens a bout or ends the current one (it is never a no-op).
+  - **Known limitation:** timeouts alone can cycle forever. Each take leaves the taker above 6 cards, so nobody draws (even with cards still in the stock), nothing is discarded, and one card circulates around the table. A regression test pins this down; the server's abandon guard handles it.
+  - `resign(state, playerId)` → finished, durak = that player. `abandon(state)` → finished, durak = `null`. Both append everyone still in to `finishOrder` and leave the cards untouched.
 
 ## Server Architecture (`apps/server`)
 Layers, one folder each; dependencies point downward only:
@@ -74,12 +79,20 @@ Layers, one folder each; dependencies point downward only:
 - **Phase 1: Foundation & Shared Contracts.** Initialize monorepo, `tsconfig.base.json`, `docker-compose.yml` (Redis + Postgres), and `packages/shared` types + Zod event schemas.
 - **Phase 2: Pure Durak Engine & Test Suite.** Build `packages/game-engine` (deck, attack/defense/throw-in validation, draw order, tie-breakers, state sanitizer). Write comprehensive Vitest unit tests covering all edge cases before writing any server code.
 - **Phase 3: Real-Time Server & Persistence.** Build `apps/server` with Fastify + Socket.io, Redis room repository, session reconnection logic, and PostgreSQL match persistence. Every `game:move` carries a required `expectedVersion`; reject moves against a stale version.
-  - **Turn timers & AFK:**
+  - **Turn timers & AFK** (implemented in 3c, `services/TurnTimerService.ts`):
     - Server owns turn timers. On timeout: defender -> take, non-defender who can throw in -> pass. Engine stays timer-free.
     - Opening attacker timeout: the server auto-plays the attacker's lowest non-trump card (lowest rank; ties broken by suit order S, C, D, H), or the lowest trump if they hold only trumps.
     - If every card is covered, the defender has no pending action (`take` is illegal), so no defender timer runs; the bout only waits on non-defenders.
     - After 2 consecutive timeouts the player is marked AFK and the bot plays on their behalf until they reconnect (until the Phase 4 bot exists, the timeout auto-moves above continue). If the reconnection grace window expires, the player forfeits.
     - Every auto-move (timeout or bot) goes through the same `validateMove` / `applyMove` path as a human move.
+    - **Settings (env):** `TURN_TIMEOUT_MS` (30000), `AFK_TIMEOUT_MS` (5000, used when *every* awaited player is AFK), `RECONNECT_GRACE_MS` (60000).
+    - **Data model:** `StoredGame.turnDeadline` (epoch ms or null), `timeoutStreak`, `endReason` (`'normal' | 'forfeit' | 'abandoned'`). `RoomMember.afk` (public, in `room:state`), plus server-only `consecutiveTimeouts` and `graceDeadline`. `game:state` carries `turnDeadline` and `serverTime`, so clients show a countdown free of clock skew; `game:over` carries `endReason`. Deadlines are persisted, so they survive restarts. The new codec fields have Zod defaults, so 3b records still decode.
+    - **Turn timer** (one per game): armed on start and after every successful change (human move, timeout, or a resume that extends the deadline). On expiry, inside the room lock: a version mismatch → no-op (stale); woken early → re-arm; otherwise apply the timeout step, `version + 1`, save room + game atomically, broadcast, arm the next deadline. Finished or forfeited → cleared.
+    - **AFK:** `consecutiveTimeouts` is incremented for each player whose timeout move was applied; at 2 → `afk = true`. A human move or `session:resume` resets both. A resume by an awaited player extends a short AFK deadline to a full turn.
+    - **Abandon guard:** `StoredGame.timeoutStreak` counts consecutive expiries with no human move in between (any human move resets it). When it reaches `3 × players still in` (`services/timeoutPolicy.ts`), the game is abandoned: `durak = null`, `endReason = 'abandoned'`. Abandoned games must be excluded from ELO (3d). A real draw is `durak = null` with `endReason = 'normal'`.
+    - **Reconnection grace:** a seated player who is still in, in a `playing` room, whose last socket disconnects gets `graceDeadline = now + RECONNECT_GRACE_MS`. Resume cancels it. On expiry (still offline, same deadline) → `resign` → `endReason = 'forfeit'`, durak = the leaver. No grace in the lobby, after the game, or for a player who is already out. Disconnects caused by server shutdown never start a grace.
+    - **Startup order:** ghost reset (everyone offline) → `buildServer` → `timers.rearmAll()` (re-arms every persisted deadline; past ones fire immediately; offline players without a grace get one) → `listen`.
+    - **Testing:** `Clock` and `Scheduler` are injected (`services/scheduling.ts`). Tests use `tests/helpers/fakeTime.ts` (`advanceBy` / `runDue`), never real sleeps.
 - **Phase 4: IS-MCTS AI Bot.** Implement determinized Monte Carlo Tree Search in `packages/game-engine/src/bot` with a configurable thinking time budget (e.g., 300ms per move) and benchmark win rates against a random baseline bot.
 - **Phase 5: Mobile-First Web Client.** Build `apps/web` with clean card animations, responsive table layout for 2-6 players, and room invite links.
 

@@ -8,6 +8,8 @@ import { GameService } from './services/GameService.js';
 import { KeyedMutex } from './services/KeyedMutex.js';
 import { cryptoSeedSource, type SeedSource } from './services/random.js';
 import { RoomService } from './services/RoomService.js';
+import { createSystemScheduler, systemClock, type Clock, type Scheduler } from './services/scheduling.js';
+import { DEFAULT_TIMER_SETTINGS, TurnTimerService, type TimerSettings } from './services/TurnTimerService.js';
 import { registerHandlers } from './transport/registerHandlers.js';
 import { SocketNotifier } from './transport/SocketNotifier.js';
 import type { IoServer } from './transport/socketTypes.js';
@@ -20,7 +22,11 @@ export interface BuildServerOptions {
   readonly seedSource?: SeedSource;
   readonly corsOrigins?: readonly string[];
   readonly logger?: boolean;
-  readonly now?: () => number;
+  /** Time source for deadlines and timestamps (tests inject a fake clock). */
+  readonly clock?: Clock;
+  /** Timer backend (tests inject a fake scheduler; default: setTimeout). */
+  readonly scheduler?: Scheduler;
+  readonly timerSettings?: Partial<TimerSettings>;
   /** Backend health probe for GET /health (defaults to in-memory: always ok). */
   readonly health?: () => Promise<HealthReport>;
   /** Called after sockets and HTTP are closed (e.g. to quit Redis). */
@@ -33,6 +39,7 @@ export interface DurakServer {
   readonly repos: Repositories;
   readonly rooms: RoomService;
   readonly games: GameService;
+  readonly timers: TurnTimerService;
 }
 
 export function buildServer(options: BuildServerOptions = {}): DurakServer {
@@ -44,13 +51,27 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
   });
 
+  const clock = options.clock ?? systemClock;
+  const scheduler =
+    options.scheduler ?? createSystemScheduler(clock, (error) => app.log.error({ err: error }, 'timer callback failed'));
   const mutex = new KeyedMutex();
-  const notifier = new SocketNotifier(io);
-  const now = options.now ?? Date.now;
-  const rooms = new RoomService({ repos, mutex, notifier, seedSource: options.seedSource ?? cryptoSeedSource, now });
-  const games = new GameService({ repos, mutex, notifier });
+  const notifier = new SocketNotifier(io, clock);
+  const timers = new TurnTimerService({
+    repos,
+    mutex,
+    notifier,
+    clock,
+    scheduler,
+    settings: { ...DEFAULT_TIMER_SETTINGS, ...options.timerSettings },
+    log: app.log,
+  });
+  const now = () => clock.now();
+  const seedSource = options.seedSource ?? cryptoSeedSource;
+  const rooms = new RoomService({ repos, mutex, notifier, seedSource, now, timers });
+  const games = new GameService({ repos, mutex, notifier, timers });
 
-  registerHandlers({ io, rooms, games, log: app.log });
+  let shuttingDown = false;
+  registerHandlers({ io, rooms, games, log: app.log, isShuttingDown: () => shuttingDown });
 
   const health = options.health ?? (async (): Promise<HealthReport> => ({ ok: true, repository: 'memory' }));
   app.get('/health', async (_request, reply) => {
@@ -58,13 +79,16 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     return reply.code(report.ok ? 200 : 503).send(report);
   });
 
-  // Drop socket connections first so the HTTP server can close promptly.
+  // Shutdown: stop all timers, then drop sockets. Disconnects caused by our own shutdown must not
+  // start reconnection graces (players are offline because the server is, not by choice).
   app.addHook('preClose', async () => {
+    shuttingDown = true;
+    timers.dispose();
     io.disconnectSockets(true);
     io.engine.close();
   });
   const onClose = options.onClose;
   if (onClose) app.addHook('onClose', async () => onClose());
 
-  return { app, io, repos, rooms, games };
+  return { app, io, repos, rooms, games, timers };
 }

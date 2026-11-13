@@ -1,4 +1,4 @@
-import { CardSchema, GameConfigInputSchema, GameConfigSchema } from '@durak/shared';
+import { CardSchema, GAME_END_REASONS, GameConfigInputSchema, GameConfigSchema } from '@durak/shared';
 import { z } from 'zod';
 
 /**
@@ -12,6 +12,10 @@ export const RoomMemberSchema = z
     nickname: z.string(),
     connected: z.boolean(),
     isBot: z.literal(false),
+    // Defaults let records written before Phase 3c decode without a format bump.
+    afk: z.boolean().default(false),
+    consecutiveTimeouts: z.number().int().min(0).default(0),
+    graceDeadline: z.number().nullable().default(null),
   })
   .strict();
 
@@ -72,6 +76,9 @@ export const StoredGameSchema = z
     version: z.number().int(),
     state: GameStateSchema,
     startedAt: z.number(),
+    turnDeadline: z.number().nullable().default(null),
+    timeoutStreak: z.number().int().min(0).default(0),
+    endReason: z.enum(GAME_END_REASONS).nullable().default(null),
   })
   .strict();
 

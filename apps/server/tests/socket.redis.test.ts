@@ -5,21 +5,24 @@ import { deleteAllWithPrefix, redisKeys } from '../src/repositories/redis/index.
 import { REDIS_URL, newRedisClient, redisAvailable, spyLogger, testPrefix } from './helpers/redis.js';
 import { setupRoom, startGame, startTestServer, type TestClient, type TestHarness } from './helpers/testServer.js';
 import { chooseMove } from './helpers/viewStrategy.js';
+import { FakeTime } from './helpers/fakeTime.js';
 
 const harnesses: TestHarness[] = [];
 afterEach(async () => {
   for (const h of harnesses.splice(0)) await h.close();
 });
 
-/** Starts a server on `backend` exactly as index.ts does: startup() first, then listen. */
-async function serverOn(backend: Backend, seed = 31): Promise<TestHarness> {
+/** Starts a server on `backend` exactly as index.ts does: ghost reset, build, re-arm timers, listen. */
+async function serverOn(backend: Backend, options: { seed?: number; time?: FakeTime } = {}): Promise<TestHarness> {
   await backend.startup();
   const harness = await startTestServer({
     repos: backend.repos,
-    seedSource: () => seed,
+    seedSource: () => options.seed ?? 31,
     health: () => backend.health(),
     onClose: () => backend.close(),
+    ...(options.time ? { time: options.time } : {}),
   });
+  await harness.server.timers.rearmAll();
   harnesses.push(harness);
   return harness;
 }
@@ -154,6 +157,69 @@ suite('redis backend', () => {
 
   it('an orphaned session is rejected with ROOM_NOT_FOUND and deleted', async () => {
     await orphanedSessionScenario(await serverOn(await createRedisBackend(REDIS_URL, freshPrefix(), spyLogger())));
+  });
+
+  /** Server A starts a 2-player game at T0 and is shut down; returns what server B needs. */
+  async function gameThenShutdown(prefix: string, t0: number) {
+    const serverA = await serverOn(await createRedisBackend(REDIS_URL, prefix, spyLogger()), { time: new FakeTime(t0) });
+    const host = await serverA.connect();
+    const guest = await serverA.connect();
+    const { roomId, sessions } = await setupRoom(host, [guest]);
+    await startGame(host, [host, guest], roomId);
+    expect((await serverA.server.repos.games.get(roomId))?.turnDeadline).toBe(t0 + 30_000);
+    await serverA.close();
+    harnesses.splice(harnesses.indexOf(serverA), 1);
+    return { roomId, sessions };
+  }
+
+  it('restart re-arms a pending turn deadline: it fires at its original time, not earlier', async () => {
+    const prefix = freshPrefix();
+    const t0 = 1_700_000_000_000;
+    const { roomId } = await gameThenShutdown(prefix, t0);
+
+    const time = new FakeTime(t0 + 10_000); // server B comes up 10 s later
+    const serverB = await serverOn(await createRedisBackend(REDIS_URL, prefix, spyLogger()), { time });
+    await time.advanceBy(19_999);
+    expect((await serverB.server.repos.games.get(roomId))?.version).toBe(0);
+    await time.advanceBy(1);
+    const game = await serverB.server.repos.games.get(roomId);
+    expect(game?.version).toBe(1);
+    expect(game?.state.table).toHaveLength(1);
+  });
+
+  it('restart fires an already-expired deadline immediately', async () => {
+    const prefix = freshPrefix();
+    const t0 = 1_700_000_000_000;
+    const { roomId } = await gameThenShutdown(prefix, t0);
+
+    const time = new FakeTime(t0 + 40_000); // down for longer than the turn
+    const serverB = await serverOn(await createRedisBackend(REDIS_URL, prefix, spyLogger()), { time });
+    await time.runDue();
+    expect((await serverB.server.repos.games.get(roomId))?.version).toBe(1);
+  });
+
+  it('after a restart, ghosts get a reconnection grace: one who returns is safe, one who does not forfeits', async () => {
+    const prefix = freshPrefix();
+    const t0 = 1_700_000_000_000;
+    const { roomId, sessions } = await gameThenShutdown(prefix, t0);
+
+    const time = new FakeTime(t0 + 1_000);
+    const serverB = await serverOn(await createRedisBackend(REDIS_URL, prefix, spyLogger()), { time });
+    const room = await serverB.server.repos.rooms.get(roomId);
+    expect(room?.members.map((m) => [m.connected, m.graceDeadline])).toEqual([
+      [false, t0 + 1_000 + 60_000],
+      [false, t0 + 1_000 + 60_000],
+    ]);
+
+    // The host comes back; the guest never does.
+    const host = await serverB.connect();
+    host.send('session:resume', { sessionToken: sessions[0]!.sessionToken });
+    await host.waitFor('game:state');
+    await time.advanceBy(60_000);
+
+    const over = await host.waitFor('game:over');
+    expect(over).toMatchObject({ durakId: sessions[1]!.playerId, endReason: 'forfeit' });
+    expect((await serverB.server.repos.games.get(roomId))?.endReason).toBe('forfeit');
   });
 
   it('GET /health pings Redis and returns 503 when it is down', async () => {

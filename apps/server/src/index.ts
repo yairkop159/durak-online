@@ -13,14 +13,23 @@ const bootLog = {
 const backend = await createBackend(config, bootLog);
 await backend.startup();
 
-const { app } = buildServer({
+const { app, timers } = buildServer({
   repos: backend.repos,
   corsOrigins: config.corsOrigins,
   logger: true,
+  timerSettings: {
+    turnTimeoutMs: config.turnTimeoutMs,
+    afkTimeoutMs: config.afkTimeoutMs,
+    reconnectGraceMs: config.reconnectGraceMs,
+  },
   health: () => backend.health(),
   onClose: () => backend.close(),
 });
 app.log.info({ repository: backend.kind }, 'storage backend ready');
+
+// After the ghost reset (backend.startup): re-arm persisted turn deadlines and start
+// reconnection graces for players who were online when the previous process died.
+app.log.info(await timers.rearmAll(), 're-armed timers');
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, 'shutting down');

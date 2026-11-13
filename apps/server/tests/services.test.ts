@@ -1,43 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Room, Session, StoredGame } from '../src/domain/types.js';
-import { createInMemoryRepositories } from '../src/repositories/inMemory/index.js';
-import { GameService } from '../src/services/GameService.js';
-import { KeyedMutex } from '../src/services/KeyedMutex.js';
-import type { RoomNotifier } from '../src/services/ports.js';
-import { RoomService } from '../src/services/RoomService.js';
-
-class RecordingNotifier implements RoomNotifier {
-  readonly events: { kind: string; version?: number; to?: string }[] = [];
-  roomState(): void {
-    this.events.push({ kind: 'room' });
-  }
-  gameState(_room: Room, game: StoredGame): void {
-    this.events.push({ kind: 'game', version: game.version });
-  }
-  gameOver(): void {
-    this.events.push({ kind: 'over' });
-  }
-  sendGameStateTo(_room: Room, game: StoredGame, viewer: Session): void {
-    this.events.push({ kind: 'gameTo', version: game.version, to: viewer.id });
-  }
-}
-
-function setup() {
-  const repos = createInMemoryRepositories();
-  const mutex = new KeyedMutex();
-  const notifier = new RecordingNotifier();
-  const rooms = new RoomService({ repos, mutex, notifier, seedSource: () => 42, now: () => 1000 });
-  const games = new GameService({ repos, mutex, notifier });
-  return { repos, rooms, games, notifier };
-}
-
-const noBind = () => undefined;
-
-async function unwrap<T>(p: Promise<{ ok: true; value: T } | { ok: false; error: { code: string } }>): Promise<T> {
-  const r = await p;
-  if (!r.ok) throw new Error(r.error.code);
-  return r.value;
-}
+import { noBind, setupServices as setup, unwrap } from './helpers/serviceHarness.js';
 
 describe('RoomService', () => {
   it('seats players until the room is full, then adds spectators', async () => {
@@ -70,7 +32,7 @@ describe('RoomService', () => {
     const seen: number[] = [];
     await rooms.createRoom({ nickname: 'h', maxPlayers: 2 }, () => seen.push(notifier.events.length));
     expect(seen).toEqual([0]);
-    expect(notifier.events).toEqual([{ kind: 'room' }]);
+    expect(notifier.events.map((e) => e.kind)).toEqual(['room']);
   });
 
   it('leaving the lobby transfers host; leaving during a game is refused', async () => {
@@ -107,7 +69,7 @@ describe('GameService', () => {
     const next = await unwrap(games.makeMove(attacker, attacker.roomId, { type: 'attack', card }, 0));
     expect(next.version).toBe(1);
     expect(next.state.table).toHaveLength(1);
-    expect(notifier.events.at(-1)).toEqual({ kind: 'game', version: 1 });
+    expect(notifier.events.at(-1)).toMatchObject({ kind: 'game', version: 1 });
   });
 
   it('rejects stale versions without touching the state', async () => {

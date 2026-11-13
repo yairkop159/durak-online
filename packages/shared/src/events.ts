@@ -88,6 +88,8 @@ export interface RoomMember {
   readonly nickname: string;
   readonly connected: boolean;
   readonly isBot: boolean;
+  /** Two consecutive turn timeouts; cleared by a human move or session:resume. */
+  readonly afk: boolean;
 }
 
 export interface RoomStatePayload {
@@ -103,12 +105,27 @@ export interface GameStatePayload {
   readonly roomId: string;
   readonly version: number;
   readonly view: PlayerView;
+  /** When the current turn times out (epoch ms), or null when no timer runs (game over). */
+  readonly turnDeadline: number | null;
+  /** Server clock when this payload was sent; remaining time = turnDeadline - serverTime. */
+  readonly serverTime: number;
 }
+
+/**
+ * How a game ended:
+ * - normal: played out (durak may be null for a simultaneous last-card draw);
+ * - forfeit: a player's reconnection grace expired (that player is the durak);
+ * - abandoned: everyone idle — stopped by the server's abandon guard, no durak.
+ *   Abandoned games are not rated.
+ */
+export const GAME_END_REASONS = ['normal', 'forfeit', 'abandoned'] as const;
+export type GameEndReason = (typeof GAME_END_REASONS)[number];
 
 export interface GameOverPayload {
   readonly roomId: string;
   readonly durakId: string | null;
   readonly finishOrder: readonly string[];
+  readonly endReason: GameEndReason;
 }
 
 export interface SessionIssuedPayload {

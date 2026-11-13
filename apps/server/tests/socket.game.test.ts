@@ -48,6 +48,30 @@ describe('full games over sockets', () => {
   });
 });
 
+describe('timer fields in payloads', () => {
+  it('game:state carries turnDeadline + serverTime; room:state exposes afk but no server-only member fields', async () => {
+    harness = await startTestServer();
+    const host = await harness.connect();
+    const guest = await harness.connect();
+    const { roomId } = await setupRoom(host, [guest]);
+    await startGame(host, [host, guest], roomId);
+
+    const state = host.last('game:state')!;
+    expect(state.serverTime).toBe(harness.time.now());
+    expect(state.turnDeadline).toBe(harness.time.now() + 30_000);
+
+    const room = host.last('room:state')!;
+    for (const m of room.members) {
+      expect(Object.keys(m).sort()).toEqual(['afk', 'connected', 'isBot', 'nickname', 'playerId']);
+    }
+
+    // A timeout is broadcast to both players with the next deadline.
+    await harness.time.advanceBy(30_000);
+    const next = await guest.waitFor('game:state', (s) => s.version === 1);
+    expect(next.turnDeadline).toBe(harness.time.now() + 30_000);
+  });
+});
+
 describe('spectators', () => {
   it('a client joining a running game becomes a spectator and receives the null view', async () => {
     harness = await startTestServer();

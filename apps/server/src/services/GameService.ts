@@ -1,15 +1,17 @@
 import { applyMove } from '@durak/game-engine';
 import type { ClientMove } from '@durak/shared';
 import { fail, ok, type Result } from '../domain/result.js';
-import type { Session, StoredGame } from '../domain/types.js';
+import type { Room, Session, StoredGame } from '../domain/types.js';
 import type { Repositories } from '../repositories/interfaces.js';
 import type { KeyedMutex } from './KeyedMutex.js';
 import type { RoomNotifier } from './ports.js';
+import type { TurnTimerService } from './TurnTimerService.js';
 
 export interface GameServiceDeps {
   readonly repos: Repositories;
   readonly mutex: KeyedMutex;
   readonly notifier: RoomNotifier;
+  readonly timers: TurnTimerService;
 }
 
 export class GameService {
@@ -18,6 +20,7 @@ export class GameService {
   /**
    * Applies a move for the session's player. The acting player id comes ONLY from the
    * server-side session; the payload cannot name a player.
+   * A human move clears the actor's AFK state, resets the abandon guard, and restarts the turn timer.
    */
   async makeMove(
     session: Session,
@@ -28,7 +31,7 @@ export class GameService {
     if (session.roomId !== roomId || session.role !== 'player') {
       return fail('NOT_IN_ROOM', 'You are not a player in this room');
     }
-    const { repos, mutex, notifier } = this.deps;
+    const { repos, mutex, notifier, timers } = this.deps;
     return mutex.runExclusive(roomId, async () => {
       const room = await repos.rooms.get(roomId);
       const game = await repos.games.get(roomId);
@@ -40,17 +43,38 @@ export class GameService {
       const result = applyMove(game.state, { ...move, playerId: session.id });
       if (!result.ok) return fail(result.error.code, result.error.message);
 
-      const next: StoredGame = { ...game, version: game.version + 1, state: result.value };
-      const finished = next.state.phase.kind === 'finished';
-      const updatedRoom = finished ? { ...room, status: 'finished' as const } : room;
-      if (finished) {
+      const actor = room.members.find((m) => m.playerId === session.id);
+      const actorReset = !!actor && (actor.afk || actor.consecutiveTimeouts > 0);
+      const finished = result.value.phase.kind === 'finished';
+      const updatedRoom: Room = {
+        ...room,
+        status: finished ? 'finished' : room.status,
+        members: actorReset
+          ? room.members.map((m) => (m.playerId === session.id ? { ...m, afk: false, consecutiveTimeouts: 0 } : m))
+          : room.members,
+      };
+      const next: StoredGame = {
+        ...game,
+        version: game.version + 1,
+        state: result.value,
+        timeoutStreak: 0,
+        endReason: finished ? 'normal' : null,
+        turnDeadline: timers.deadlineFor(updatedRoom, result.value),
+      };
+      if (finished || actorReset) {
         await repos.atomic.saveRoomAndGame(updatedRoom, next);
       } else {
         await repos.games.save(next);
       }
 
+      if (actorReset || finished) notifier.roomState(updatedRoom);
       notifier.gameState(updatedRoom, next);
-      if (finished) notifier.gameOver(updatedRoom, next);
+      if (finished) {
+        notifier.gameOver(updatedRoom, next);
+        timers.cancelRoom(roomId);
+      } else {
+        timers.armTurn(next);
+      }
       return ok(next);
     });
   }

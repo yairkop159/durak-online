@@ -10,6 +10,7 @@ import type {
 import { SESSION_TTL_SECONDS, gameTtlSeconds, roomTtlSeconds } from '../ttl.js';
 import { RoomSchema, SessionSchema, StoredGameSchema, decode, encode, type RepoLogger } from './codec.js';
 import type { RedisKeys } from './keys.js';
+import { scanKeys } from './maintenance.js';
 
 interface Ctx {
   readonly redis: Redis;
@@ -38,6 +39,13 @@ export class RedisRoomRepository implements RoomRepository {
 
   async delete(roomId: string): Promise<void> {
     await this.ctx.redis.del(this.ctx.keys.room(roomId));
+  }
+
+  async *scanIds(): AsyncIterable<string> {
+    const prefixLength = this.ctx.keys.room('').length;
+    for await (const batch of scanKeys(this.ctx.redis, this.ctx.keys.roomPattern)) {
+      for (const key of batch) yield key.slice(prefixLength);
+    }
   }
 }
 

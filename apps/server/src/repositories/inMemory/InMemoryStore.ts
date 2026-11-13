@@ -41,6 +41,11 @@ export class InMemoryStore<T> {
     this.data.delete(key);
   }
 
+  /** Keys of entries that have not expired. */
+  keys(): string[] {
+    return [...this.data.keys()].filter((key) => this.live(key) !== undefined);
+  }
+
   /** Remaining TTL in seconds, or null if the key does not exist (diagnostics/tests). */
   ttlSeconds(key: string): number | null {
     const entry = this.live(key);

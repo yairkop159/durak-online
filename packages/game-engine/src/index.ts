@@ -16,3 +16,12 @@ export {
   isFinished,
 } from './rules.js';
 export { sanitizeStateForPlayer } from './sanitize.js';
+export {
+  getTimeoutMoves,
+  getAwaitedPlayers,
+  applyTimeout,
+  resign,
+  abandon,
+  timeoutOpeningCard,
+  type TimeoutResult,
+} from './timeout.js';

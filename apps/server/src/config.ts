@@ -7,6 +7,17 @@ export interface ServerConfig {
   readonly repository: RepositoryKind;
   readonly redisUrl: string | null;
   readonly redisPrefix: string;
+  readonly turnTimeoutMs: number;
+  readonly afkTimeoutMs: number;
+  readonly reconnectGraceMs: number;
+}
+
+function positiveMs(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`Invalid ${name}: ${raw} (positive integer ms)`);
+  return value;
 }
 
 export const DEFAULT_CORS_ORIGINS = ['http://localhost:5173'] as const;
@@ -47,5 +58,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     repository,
     redisUrl,
     redisPrefix: env.REDIS_PREFIX?.trim() || DEFAULT_REDIS_PREFIX,
+    turnTimeoutMs: positiveMs(env, 'TURN_TIMEOUT_MS', 30_000),
+    afkTimeoutMs: positiveMs(env, 'AFK_TIMEOUT_MS', 5_000),
+    reconnectGraceMs: positiveMs(env, 'RECONNECT_GRACE_MS', 60_000),
   };
 }

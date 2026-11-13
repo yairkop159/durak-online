@@ -17,4 +17,8 @@ export class InMemoryRoomRepository implements RoomRepository {
   async delete(roomId: string): Promise<void> {
     this.store.delete(roomId);
   }
+
+  async *scanIds(): AsyncIterable<string> {
+    yield* this.store.keys();
+  }
 }

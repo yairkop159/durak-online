@@ -9,6 +9,8 @@ export interface RoomRepository {
   /** Upsert. */
   save(room: Room): Promise<void>;
   delete(roomId: string): Promise<void>;
+  /** Every stored room id (Redis: SCAN, never KEYS). Used at startup to re-arm timers. */
+  scanIds(): AsyncIterable<string>;
 }
 
 export interface GameRepository {

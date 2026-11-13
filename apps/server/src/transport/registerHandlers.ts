@@ -11,6 +11,8 @@ export interface HandlerDeps {
   readonly rooms: RoomService;
   readonly games: GameService;
   readonly log: { error: (obj: unknown, msg: string) => void };
+  /** During server shutdown, disconnects are ours and must not start reconnection graces. */
+  readonly isShuttingDown: () => boolean;
 }
 
 const KNOWN_EVENTS = new Set<string>(Object.values(ClientEvents));
@@ -138,7 +140,7 @@ function attach(socket: IoSocket, deps: HandlerDeps): void {
 
   socket.on('disconnect', () => {
     const session = socket.data.session;
-    if (!session || session.role !== 'player') return;
+    if (!session || session.role !== 'player' || deps.isShuttingDown()) return;
     const isStillOffline = async () => (await io.in(channels.player(session.id)).fetchSockets()).length === 0;
     rooms.markDisconnected(session, isStillOffline).catch((error: unknown) => {
       log.error({ err: error }, 'disconnect handling failed');
