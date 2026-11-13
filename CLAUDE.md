@@ -185,6 +185,20 @@ React 19 + Vite + Tailwind v4, Hebrew UI (`dir="rtl"`). `@durak/shared` and `@du
   - An AFK human's seat shows "הבוט משחק במקומך" / "בוט משחק".
   - Home's "play vs computer" is a `GameClient.playVsComputer` intent: `room:create` (2 seats) → `room:addBot` on our 1-member lobby → `game:start` once the bot is seated. Any error or leaving cancels it.
 - **Table interaction (`src/game/selection.ts`, pure):** legal moves come from `getLegalMovesForView`; legal hand cards are highlighted, others dimmed. Attack/throw-in = one click. Defend = hand card then attack card, or attack card then hand card. Transfer = hand card then the "transfer" slot. Selection is tied to the game version (any new state clears it). Take/Pass buttons appear only when legal; spectators get no hand and no buttons.
+- **Settings (Phase 7, `src/settings/`):**
+  - Per device in `localStorage['durak:settings']`: `{ v: 1, sfx: { enabled, volume }, music: { enabled, volume }, animationSpeed: 'normal'|'fast', showTips, tipsSeen }`.
+  - Defaults: sound on at 0.7, music off, normal speed, tips on.
+  - Parsed field by field: bad data falls back to the defaults, every storage access is in try/catch, and the store works in memory if storage is blocked.
+  - `App` wraps everything in `PrefsProvider` (`settings/react.tsx`: `useSettings`, `useSettingsStore`, `useAudio`); tests can inject `settings` / `audio`.
+  - The gear (`SettingsButton`) is on Home and in the table's top bar.
+  - `fast` scales every timeline duration by 0.6 (`scheduleEvents({ speed })`); reduced motion still wins.
+  - Tests get an in-memory `localStorage` from `tests/setup.ts` (Node's own global hides jsdom's), cleared after each test.
+- **Audio (Phase 7, `src/audio/`, Web Audio only, no files):**
+  - `AudioEngine` has sfx and music buses. Nothing exists before `unlock()`, called on the first `pointerdown`/`keydown` (autoplay policy). Without an `AudioContext` (jsdom) everything is a no-op.
+  - `sfx.ts` synthesizes `cardPlay`, `defend`, `take`, `sweep`, `draw`, `yourTurn`, `tick`, `win`, `durak`.
+  - `music.ts` is a quiet generative loop (pad + pentatonic plucks, lookahead scheduler), off by default.
+  - `soundPlan.ts` (pure) maps the `diffViews` events on the animation timeline to sounds, plus the turn chime, the last-5-seconds ticks of my own turn, and the win/durak stinger (none for spectators, `abandoned` or `restarted`).
+  - `useGameSounds` (TableScreen) plays them. No server messages are involved.
 - **Countdown:** `remainingMs = turnDeadline − serverTime − (now − receivedAt)` using the client's clock for both `receivedAt` and `now`, so clock skew between client and server doesn't matter.
 - **Strings:** every UI string and every error code's Hebrew message live in `src/i18n/he.ts` (typed `Strings`; `errors` must cover every `ServerErrorCode | GameErrorCode`). Cards are drawn with CSS (rank + suit symbol), no image assets.
 - **Env:** `VITE_SERVER_URL` (build time) overrides the server URL. Otherwise a production build connects to its own origin (the server hosts the client), and dev mode to `http://localhost:3000` (`serverUrl()` in `net/transport.ts`). Vite runs on 5173 (`strictPort`), matching the server's default `CORS_ORIGINS`.

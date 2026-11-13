@@ -24,11 +24,12 @@ export interface BoardAnimation {
 const IDLE: BoardAnimation = { version: -1, events: [], timeline: EMPTY_TIMELINE, reduced: false, reveal: new Map() };
 
 /** Consecutive versions of the same game are animated; anything else (first state, resync, reconnect) snaps. */
-export function animationFor(prev: ClientGame | null, next: ClientGame | null, reduced: boolean): BoardAnimation {
+export function animationFor(prev: ClientGame | null, next: ClientGame | null, reduced: boolean, speed = 1): BoardAnimation {
   if (!next) return IDLE;
-  const consecutive = prev !== null && prev.roomId === next.roomId && next.version === prev.version + 1;
+  const consecutive =
+    prev !== null && prev.roomId === next.roomId && prev.gameId === next.gameId && next.version === prev.version + 1;
   const events = consecutive ? diffViews(prev.view, next.view) : [];
-  const timeline = scheduleEvents(events, { reduced });
+  const timeline = scheduleEvents(events, { reduced, speed });
   return { version: next.version, events, timeline, reduced, reveal: revealPlan(timeline, reduced) };
 }
 
@@ -53,13 +54,13 @@ function revealPlan(timeline: Timeline, reduced: boolean): Map<string, { delayMs
 }
 
 /** React state pattern for "derive from the previous prop" (safe under StrictMode double render). */
-export function useBoardAnimation(game: ClientGame | null, reduced: boolean): BoardAnimation {
+export function useBoardAnimation(game: ClientGame | null, reduced: boolean, speed = 1): BoardAnimation {
   const [tracked, setTracked] = useState<{ game: ClientGame | null; anim: BoardAnimation }>(() => ({
     game,
-    anim: animationFor(null, game, reduced),
+    anim: animationFor(null, game, reduced, speed),
   }));
   if (tracked.game !== game) {
-    const anim = animationFor(tracked.game, game, reduced);
+    const anim = animationFor(tracked.game, game, reduced, speed);
     setTracked({ game, anim });
     return anim;
   }

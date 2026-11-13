@@ -44,14 +44,29 @@ export function cardStart(item: TimelineItem, k: number): number {
   return item.startMs + k * item.staggerMs;
 }
 
-export function scheduleEvents(events: readonly AnimationEvent[], options: { reduced: boolean }): Timeline {
+/**
+ * `speed` scales every duration (1 = normal, 0.6 = "fast" in the settings). Reduced motion ignores
+ * it: those quick fades are already as short as they should be.
+ */
+export function scheduleEvents(events: readonly AnimationEvent[], options: { reduced: boolean; speed?: number }): Timeline {
   if (events.length === 0) return EMPTY_TIMELINE;
+  const speed = options.speed ?? 1;
 
   if (options.reduced) {
     const items = events.map((event) => ({ event, startMs: 0, durationMs: M.reducedFadeMs, staggerMs: 0 }));
     return { items, totalMs: M.reducedFadeMs };
   }
 
+  const timeline = scheduleNormal(events);
+  if (speed === 1) return timeline;
+  const scale = (ms: number) => Math.round(ms * speed);
+  return {
+    items: timeline.items.map((i) => ({ ...i, startMs: scale(i.startMs), durationMs: scale(i.durationMs), staggerMs: scale(i.staggerMs) })),
+    totalMs: scale(timeline.totalMs),
+  };
+}
+
+function scheduleNormal(events: readonly AnimationEvent[]): Timeline {
   const items: TimelineItem[] = [];
   const played = events.filter((e) => e.type === 'played');
   const resolution = events.filter((e) => e.type === 'beaten' || e.type === 'taken');

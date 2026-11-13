@@ -28,6 +28,10 @@ import { MySeat, OpponentSeat, type TurnRing } from './Seat';
 import { statusLine } from './status';
 import { RestartButton, RestartVotePanel, canProposeRestart } from './RestartVote';
 import { TopBar } from './TopBar';
+import { useGameSounds } from '../../audio/useGameSounds';
+import { SettingsButton } from '../../components/SettingsDialog';
+import { useSettings } from '../../settings/react';
+import { ANIMATION_SPEED_FACTOR } from '../../settings/settings';
 import { DeckPile, DiscardPile, TableArea } from './TableSurface';
 
 const GAME_ERRORS: ReadonlySet<string> = new Set(GAME_ERROR_CODES);
@@ -66,7 +70,8 @@ export function TableScreen() {
   const [picked, setPicked] = useState<{ version: number; selection: Selection }>({ version: -1, selection: NO_SELECTION });
   const remaining = useCountdown(game, client.now);
   const reduced = useReducedMotion() ?? false;
-  const anim = useBoardAnimation(game, reduced);
+  const settings = useSettings();
+  const anim = useBoardAnimation(game, reduced, ANIMATION_SPEED_FACTOR[settings.animationSpeed]);
 
   const [registry] = useState(() => new AnchorRegistry());
   const [flights, setFlights] = useState<{ version: number; list: readonly Flight[] }>({ version: -1, list: [] });
@@ -100,6 +105,10 @@ export function TableScreen() {
   const fullMs = game && game.turnDeadline !== null ? Math.max(1, game.turnDeadline - game.serverTime) : null;
   const fraction = remaining !== null && fullMs !== null ? remaining / fullMs : null;
 
+  const viewerId = view?.viewerId ?? null;
+  const soundTurn = !!view && viewerId !== null && view.phase.kind !== 'finished' && !reconnecting && moves.length > 0;
+  useGameSounds({ anim, myTurn: soundTurn, remaining, gameOver, viewerId });
+
   if (!game || !view) return null;
 
   const selection = picked.version === game.version ? picked.selection : NO_SELECTION;
@@ -132,7 +141,12 @@ export function TableScreen() {
           <TopBar
             view={view}
             members={members}
-            extra={canProposeRestart(view, room) && <RestartButton disabled={!!room?.restartVote || reconnecting} />}
+            extra={
+              <>
+                {canProposeRestart(view, room) && <RestartButton disabled={!!room?.restartVote || reconnecting} />}
+                <SettingsButton />
+              </>
+            }
           />
           <RestartVotePanel viewerId={view.viewerId} />
           <ul className="flex flex-wrap justify-center gap-1.5 sm:gap-2.5" dir="ltr" aria-label="opponents">

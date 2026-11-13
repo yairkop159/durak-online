@@ -1,6 +1,7 @@
 import { GAME_MODES, MAX_PLAYERS, MIN_PLAYERS, type BotDifficulty, type GameMode } from '@durak/shared';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { DifficultyPicker } from '../components/DifficultyPicker';
+import { SettingsButton } from '../components/SettingsDialog';
 import { Button, Panel, inputClass } from '../components/ui';
 import { t } from '../i18n';
 import { useClient, useClientState } from '../net/react';
@@ -47,7 +48,10 @@ export function HomeScreen() {
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 p-4">
-      <header className="text-center">
+      <header className="relative text-center">
+        <div className="absolute top-0 left-0 flex gap-1.5">
+          <SettingsButton />
+        </div>
         <div aria-hidden="true" className="mb-3 text-3xl tracking-[0.3em] text-accent drop-shadow-[0_0_12px_rgb(45_212_191/0.5)]">♠︎♥︎♣︎♦︎</div>
         <h1 className="text-4xl font-black tracking-tight">{t.appTitle}</h1>
         <p className="mt-2 text-muted">{t.home.subtitle}</p>

@@ -1,3 +1,4 @@
+import type { AnimationSpeed } from '../settings/settings';
 import type { BotDifficulty, GameEndReason, GameErrorCode, GameMode, ServerErrorCode, Suit } from '@durak/shared';
 
 export type ErrorCode = ServerErrorCode | GameErrorCode;
@@ -134,6 +135,18 @@ export interface Strings {
     readonly expired: string;
     readonly cancelled: string;
   };
+  readonly settings: {
+    readonly title: string;
+    readonly sfx: string;
+    readonly sfxVolume: string;
+    readonly music: string;
+    readonly musicVolume: string;
+    readonly animationSpeed: string;
+    readonly speeds: Record<AnimationSpeed, string>;
+    readonly reducedMotionNote: string;
+    readonly showTips: string;
+    readonly resetTips: string;
+  };
   readonly suits: Record<Suit, string>;
   readonly errors: Record<ErrorCode, string>;
 }
@@ -265,6 +278,18 @@ export const he: Strings = {
     declined: (name) => `${name} סירב/ה למשחק חדש`,
     expired: 'פג הזמן להצבעה',
     cancelled: 'ההצבעה בוטלה',
+  },
+  settings: {
+    title: 'הגדרות',
+    sfx: 'צלילים',
+    sfxVolume: 'עוצמת צלילים',
+    music: 'מוזיקת רקע',
+    musicVolume: 'עוצמת מוזיקה',
+    animationSpeed: 'מהירות אנימציה',
+    speeds: { normal: 'רגילה', fast: 'מהירה' },
+    reducedMotionNote: 'אם במכשיר מוגדרת "הפחתת תנועה", האנימציות יוחלפו בהופעה מהירה בכל מקרה.',
+    showTips: 'הצגת טיפים',
+    resetTips: 'הצגת הטיפים מההתחלה',
   },
   suits: { S: 'עלה', C: 'תלתן', D: 'יהלום', H: 'לב' },
   errors: {

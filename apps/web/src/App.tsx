@@ -1,13 +1,25 @@
 import { MotionConfig } from 'motion/react';
 import { useEffect } from 'react';
+import type { AudioEngine } from './audio/engine';
 import { ConnectionBanner, ErrorToast, NoticeToast } from './components/ui';
+import { PrefsProvider } from './settings/react';
+import type { SettingsStore } from './settings/settings';
 import { useClient, useClientState } from './net/react';
 import { isReconnecting } from './net/store';
 import { useRoute } from './routing';
 import { HomeScreen } from './screens/HomeScreen';
 import { RoomRoute } from './screens/RoomRoute';
 
-export function App() {
+/** `settings` / `audio` are injectable for tests (default: localStorage + the browser's Web Audio). */
+export function App({ settings, audio }: { settings?: SettingsStore; audio?: AudioEngine } = {}) {
+  return (
+    <PrefsProvider {...(settings ? { settings } : {})} {...(audio ? { audio } : {})}>
+      <AppShell />
+    </PrefsProvider>
+  );
+}
+
+function AppShell() {
   const client = useClient();
   const route = useRoute();
   const roomId = route.name === 'room' ? route.roomId : null;
