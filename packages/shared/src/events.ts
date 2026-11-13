@@ -178,6 +178,14 @@ export const SERVER_ERROR_CODES = [
   'NOT_A_BOT',
   'NO_HUMANS',
   'INTERNAL',
+  /** Too many events from this connection; the event was dropped. */
+  'RATE_LIMITED',
+  /** This address created too many rooms recently (per hour). */
+  'TOO_MANY_ROOMS',
+  /** The server holds its maximum number of rooms. */
+  'SERVER_FULL',
+  /** Connection refused: too many open connections from this address (a connect_error message). */
+  'TOO_MANY_CONNECTIONS',
 ] as const;
 export type ServerErrorCode = (typeof SERVER_ERROR_CODES)[number];
 

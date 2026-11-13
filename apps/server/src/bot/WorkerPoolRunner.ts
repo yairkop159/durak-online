@@ -1,7 +1,7 @@
-import { availableParallelism } from 'node:os';
 import { Worker } from 'node:worker_threads';
 import { ClientMoveSchema, type ClientMove } from '@durak/shared';
 import type { Clock, Scheduler, TimerHandle } from '../services/scheduling.js';
+import { defaultBotWorkers } from './cpus.js';
 import { fallbackDecision } from './decide.js';
 import type { BotJob, BotJobResult, BotRunner } from './job.js';
 
@@ -17,7 +17,7 @@ export interface BotWorkerLike {
 export type BotWorkerFactory = () => BotWorkerLike;
 
 export interface WorkerPoolOptions {
-  /** Default: cores - 1, at least 1. */
+  /** Default: `defaultPoolSize()`. */
   readonly size?: number;
   /** Per job, from submission. On expiry the job falls back to GreedyBot. */
   readonly jobTimeoutMs: number;
@@ -27,8 +27,9 @@ export interface WorkerPoolOptions {
   readonly log: { error(obj: object, msg: string): void };
 }
 
+/** See `defaultBotWorkers`: usable CPUs (cgroup-aware) - 1, between 1 and 4. */
 export function defaultPoolSize(): number {
-  return Math.max(1, availableParallelism() - 1);
+  return defaultBotWorkers();
 }
 
 /** Spawns `botWorker` from source (.ts, under tsx / vitest) or from dist (.js). */

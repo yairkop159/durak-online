@@ -1,4 +1,5 @@
 import { buildServer } from './app.js';
+import { defaultPoolSize } from './bot/WorkerPoolRunner.js';
 import { createBackend } from './backend.js';
 import { loadConfig } from './config.js';
 import { resolveWebDistDir } from './http/webApp.js';
@@ -32,8 +33,20 @@ const { app, timers } = buildServer({
   health: () => backend.health(),
   onClose: () => backend.close(),
   webDistDir,
+  trustProxy: config.trustProxy,
+  limits: config.limits,
 });
 app.log.info({ repository: backend.kind }, 'storage backend ready');
+app.log.info(
+  {
+    production: config.production,
+    corsOrigins: config.corsOrigins,
+    trustProxy: config.trustProxy,
+    botWorkers: config.botWorkers ?? defaultPoolSize(),
+    limits: config.limits,
+  },
+  'settings',
+);
 app.log.info({ webDistDir }, webDistDir ? 'serving the web client' : 'web client not built: API and sockets only');
 
 // After the ghost reset (backend.startup): re-arm persisted turn deadlines, start
@@ -41,13 +54,30 @@ app.log.info({ webDistDir }, webDistDir ? 'serving the web client' : 'web client
 // plan for every running game.
 app.log.info(await timers.rearmAll(), 're-armed timers');
 
-const shutdown = async (signal: string) => {
+let stopping = false;
+const shutdown = async (signal: string, code = 0) => {
+  if (stopping) return;
+  stopping = true;
   app.log.info({ signal }, 'shutting down');
-  await app.close(); // closes sockets, HTTP, then the backend (Redis)
-  process.exit(0);
+  // Never hang on the way out (the platform would SIGKILL us anyway).
+  setTimeout(() => process.exit(code || 1), 10_000).unref();
+  try {
+    await app.close(); // closes sockets, HTTP, then the backend (Redis)
+  } catch (error) {
+    app.log.error({ err: error }, 'error during shutdown');
+  }
+  process.exit(code);
 };
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
+// Last-resort guards: log, never print a raw stack to clients. A stray rejection is logged and the
+// server keeps running; an uncaught exception leaves the process in an unknown state, so it shuts
+// down cleanly and the platform restarts it (state is in Redis; clients resume their sessions).
+process.on('unhandledRejection', (reason) => app.log.error({ err: reason }, 'unhandled promise rejection'));
+process.on('uncaughtException', (error) => {
+  app.log.fatal({ err: error }, 'uncaught exception');
+  void shutdown('uncaughtException', 1);
+});
 
 try {
   await app.listen({ port: config.port, host: config.host });

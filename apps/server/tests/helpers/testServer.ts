@@ -11,6 +11,7 @@ import type {
 import { io as connectClient, type Socket } from 'socket.io-client';
 import { buildServer, type BuildServerOptions, type DurakServer } from '../../src/app.js';
 import { InProcessRunner } from '../../src/bot/InProcessRunner.js';
+import { UNLIMITED } from '../../src/transport/rateLimit.js';
 import { FakeTime } from './fakeTime.js';
 import { TEST_BOT_POLICIES } from './serviceHarness.js';
 
@@ -108,7 +109,8 @@ export interface TestHarness {
   readonly url: string;
   /** Fake clock + scheduler driving every server timer: nothing fires until the test advances it. */
   readonly time: FakeTime;
-  connect(): Promise<TestClient>;
+  /** Rejects with the server's connect_error (e.g. TOO_MANY_CONNECTIONS). */
+  connect(extraHeaders?: Record<string, string>): Promise<TestClient>;
   close(): Promise<void>;
 }
 
@@ -123,6 +125,8 @@ export async function startTestServer(
     scheduler: time,
     // Deterministic bots: synchronous in-process decisions, small budgets, fixed pacing.
     botRunner: new InProcessRunner({ recordJobs: true }),
+    // Tests drive many events without advancing the fake clock; limit tests pass their own.
+    limits: UNLIMITED,
     ...rest,
     botSettings: {
       policies: TEST_BOT_POLICIES,
@@ -140,11 +144,12 @@ export async function startTestServer(
     server,
     url,
     time,
-    async connect() {
+    async connect(extraHeaders?: Record<string, string>) {
       const socket: Socket<ServerToClientEvents, ClientToServerEvents> = connectClient(url, {
         transports: ['websocket'],
         forceNew: true,
         reconnection: false,
+        ...(extraHeaders ? { extraHeaders } : {}),
       });
       await new Promise<void>((resolve, reject) => {
         socket.once('connect', () => resolve());

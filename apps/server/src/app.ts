@@ -15,6 +15,8 @@ import { cryptoSeedSource, type SeedSource } from './services/random.js';
 import { RoomService } from './services/RoomService.js';
 import { createSystemScheduler, systemClock, type Clock, type Scheduler } from './services/scheduling.js';
 import { DEFAULT_TIMER_SETTINGS, TurnTimerService, type TimerSettings } from './services/TurnTimerService.js';
+import { clientIp, isOriginAllowed, type TrustProxy } from './transport/clientAddress.js';
+import { DEFAULT_LIMITS, type LimitSettings } from './transport/rateLimit.js';
 import { registerHandlers } from './transport/registerHandlers.js';
 import { SocketNotifier } from './transport/SocketNotifier.js';
 import type { IoServer } from './transport/socketTypes.js';
@@ -23,7 +25,7 @@ import type { IoServer } from './transport/socketTypes.js';
 export const MAX_PAYLOAD_BYTES = 16 * 1024;
 
 export interface BotSettings {
-  /** Worker threads (default: cores - 1, at least 1). */
+  /** Worker threads (default: usable CPUs - 1, between 1 and 4; see bot/cpus.ts). */
   readonly workers?: number;
   /** Per-job timeout before the GreedyBot fallback (default 2000 ms). */
   readonly jobTimeoutMs?: number;
@@ -59,6 +61,10 @@ export interface BuildServerOptions {
   readonly onClose?: () => Promise<void>;
   /** Serve the built web client from this directory (with an SPA fallback). Default: not served. */
   readonly webDistDir?: string | null;
+  /** Abuse limits (default DEFAULT_LIMITS). */
+  readonly limits?: Partial<LimitSettings>;
+  /** Reverse-proxy trust for client IPs (default false). */
+  readonly trustProxy?: TrustProxy;
 }
 
 export interface DurakServer {
@@ -73,13 +79,40 @@ export interface DurakServer {
 }
 
 export function buildServer(options: BuildServerOptions = {}): DurakServer {
-  const app = Fastify({ logger: options.logger ?? false });
-  const repos = options.repos ?? createInMemoryRepositories();
-
-  const io: IoServer = new Server(app.server, {
-    cors: { origin: [...(options.corsOrigins ?? DEFAULT_CORS_ORIGINS)] },
-    maxHttpBufferSize: MAX_PAYLOAD_BYTES,
+  const trustProxy = options.trustProxy ?? false;
+  const app = Fastify({
+    logger: options.logger ?? false,
+    // A hop count becomes proxy-addr's own hop function (Fastify's types only take boolean/fn).
+    trustProxy: typeof trustProxy === 'number' ? (_address: string, hop: number) => hop < trustProxy : trustProxy,
   });
+  const repos = options.repos ?? createInMemoryRepositories();
+  const limits: LimitSettings = { ...DEFAULT_LIMITS, ...options.limits };
+
+  // Never leak internals over HTTP: 5xx bodies are generic, details only go to the log.
+  app.setErrorHandler((error: { statusCode?: number; message?: string }, request, reply) => {
+    const status = typeof error.statusCode === 'number' && error.statusCode >= 400 ? error.statusCode : 500;
+    if (status >= 500) {
+      request.log.error({ err: error }, 'request failed');
+      return reply.code(status).send({ error: 'Internal Server Error' });
+    }
+    return reply.code(status).send({ error: error.message ?? 'Bad Request' });
+  });
+
+  const corsOrigins = [...(options.corsOrigins ?? DEFAULT_CORS_ORIGINS)];
+  const io: IoServer = new Server(app.server, {
+    // CORS only matters for cross-origin long-polling; same-origin needs no headers at all.
+    ...(corsOrigins.length > 0 ? { cors: { origin: corsOrigins } } : {}),
+    maxHttpBufferSize: MAX_PAYLOAD_BYTES,
+    // WebSockets bypass CORS, so the handshake checks Origin itself.
+    allowRequest: (req, callback) => {
+      const forwardedHost = trustProxy !== false ? req.headers['x-forwarded-host'] : undefined;
+      const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) ?? req.headers.host;
+      const allowed = isOriginAllowed(req.headers.origin, host, corsOrigins);
+      callback(allowed ? null : 'Origin not allowed', allowed);
+    },
+  });
+  const ipOf = (socket: { handshake: { address: string; headers: Record<string, string | string[] | undefined> } }) =>
+    clientIp(socket.handshake.address, socket.handshake.headers['x-forwarded-for'], trustProxy);
 
   const clock = options.clock ?? systemClock;
   const scheduler =
@@ -104,7 +137,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
 
   const now = () => clock.now();
   const seedSource = options.seedSource ?? cryptoSeedSource;
-  const rooms = new RoomService({ repos, mutex, notifier, seedSource, now, timers, committer });
+  const rooms = new RoomService({ repos, mutex, notifier, seedSource, now, timers, committer, maxRooms: limits.maxRooms });
   const games = new GameService({ repos, mutex, notifier, committer });
 
   const botSettings = options.botSettings ?? {};
@@ -132,10 +165,11 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   bots = driver;
 
   let shuttingDown = false;
-  registerHandlers({ io, rooms, games, log: app.log, isShuttingDown: () => shuttingDown });
+  registerHandlers({ io, rooms, games, log: app.log, isShuttingDown: () => shuttingDown, limits, now, ipOf });
 
   const health = options.health ?? (async (): Promise<HealthReport> => ({ ok: true, repository: 'memory' }));
-  app.get('/health', async (_request, reply) => {
+  // Probed every few seconds by Docker and the hosting platform: keep it out of the info log.
+  app.get('/health', { logLevel: 'warn' }, async (_request, reply) => {
     const report = await health();
     return reply.code(report.ok ? 200 : 503).send(report);
   });

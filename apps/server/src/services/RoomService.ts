@@ -17,6 +17,8 @@ export interface RoomServiceDeps {
   readonly now: () => number;
   readonly timers: TurnTimerService;
   readonly committer: GameCommitter;
+  /** Rooms stored at once; room:create beyond it fails with SERVER_FULL (default: unlimited). */
+  readonly maxRooms?: number;
 }
 
 function newMember(playerId: string, nickname: string): RoomMember {
@@ -63,6 +65,15 @@ export interface CreateRoomInput {
 export class RoomService {
   constructor(private readonly deps: RoomServiceDeps) {}
 
+  /** Stored rooms, counting no further than `stopAt` (Redis: SCAN). */
+  async countRooms(stopAt = Number.POSITIVE_INFINITY): Promise<number> {
+    let count = 0;
+    for await (const _id of this.deps.repos.rooms.scanIds()) {
+      if (++count >= stopAt) break;
+    }
+    return count;
+  }
+
   async getRoom(roomId: string): Promise<Room | null> {
     return this.deps.repos.rooms.get(roomId);
   }
@@ -73,6 +84,11 @@ export class RoomService {
 
   async createRoom(input: CreateRoomInput, bind: SessionBinder): Promise<Result<Session>> {
     const { repos, mutex, notifier } = this.deps;
+    const maxRooms = this.deps.maxRooms ?? Number.POSITIVE_INFINITY;
+    // A soft cap: concurrent creates may overshoot it by a few, which is fine for abuse control.
+    if (Number.isFinite(maxRooms) && (await this.countRooms(maxRooms)) >= maxRooms) {
+      return fail('SERVER_FULL', 'The server is full, try again later');
+    }
     const roomId = await this.unusedRoomId();
     return mutex.runExclusive(roomId, async () => {
       const playerId = newPlayerId();
