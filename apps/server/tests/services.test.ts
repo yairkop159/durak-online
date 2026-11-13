@@ -1,3 +1,4 @@
+import { resign } from '@durak/game-engine';
 import { describe, expect, it } from 'vitest';
 import { noBind, setupServices as setup, unwrap } from './helpers/serviceHarness.js';
 
@@ -48,6 +49,56 @@ describe('RoomService', () => {
     await unwrap(other.rooms.joinRoom(h2.roomId, 'g', noBind));
     await unwrap(other.rooms.startGame(h2));
     expect(await other.rooms.leaveRoom(h2)).toMatchObject({ ok: false, error: { code: 'GAME_IN_PROGRESS' } });
+  });
+});
+
+describe('RoomService.rematch', () => {
+  async function finishedRoom() {
+    const ctx = setup();
+    const host = await unwrap(ctx.rooms.createRoom({ nickname: 'h', maxPlayers: 3 }, noBind));
+    const guest = await unwrap(ctx.rooms.joinRoom(host.roomId, 'g', noBind));
+    const game = await unwrap(ctx.rooms.startGame(host));
+    const room = (await ctx.repos.rooms.get(host.roomId))!;
+    const members = room.members.map((m) =>
+      m.playerId === guest.id ? { ...m, connected: false, afk: true, consecutiveTimeouts: 2 } : m,
+    );
+    const resigned = resign(game.state, guest.id);
+    if (!resigned.ok) throw new Error(resigned.error.code);
+    await ctx.repos.atomic.saveRoomAndGame(
+      { ...room, members, status: 'finished' },
+      { ...game, state: resigned.value, endReason: 'forfeit' },
+    );
+    return { ...ctx, host, guest };
+  }
+
+  it('puts a finished room back into the lobby, deletes the game, and allows a new start', async () => {
+    const { rooms, repos, host, guest, notifier } = await finishedRoom();
+    await unwrap(rooms.rematch(guest));
+    const room = await repos.rooms.get(host.roomId);
+    expect(room?.status).toBe('lobby');
+    expect(room?.members.map((m) => [m.playerId, m.afk, m.consecutiveTimeouts, m.connected])).toEqual([
+      [host.id, false, 0, true],
+      [guest.id, false, 0, false],
+    ]);
+    expect(await repos.games.get(host.roomId)).toBeNull();
+    expect(notifier.events.at(-1)).toMatchObject({ kind: 'room', room: { status: 'lobby' } });
+
+    // Idempotent: a second click only re-sends the lobby.
+    await unwrap(rooms.rematch(host));
+    expect((await repos.rooms.get(host.roomId))?.status).toBe('lobby');
+
+    const again = await unwrap(rooms.startGame(host));
+    expect(again.version).toBe(0);
+  });
+
+  it('is refused while playing and for spectators', async () => {
+    const { rooms } = setup();
+    const host = await unwrap(rooms.createRoom({ nickname: 'h', maxPlayers: 2 }, noBind));
+    await unwrap(rooms.joinRoom(host.roomId, 'g', noBind));
+    const watcher = await unwrap(rooms.joinRoom(host.roomId, 'w', noBind));
+    await unwrap(rooms.startGame(host));
+    expect(await rooms.rematch(host)).toMatchObject({ ok: false, error: { code: 'GAME_IN_PROGRESS' } });
+    expect(await rooms.rematch(watcher)).toMatchObject({ ok: false, error: { code: 'NOT_IN_ROOM' } });
   });
 });
 

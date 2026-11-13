@@ -32,6 +32,7 @@ This is the single source of truth for the server, bot and UI. Any change here m
 - **Draw order:** the main attacker first, then the other players clockwise, the defender last; each refills to 6 while the stock lasts.
 - **Finishing:** players only go out at the end of a bout. After drawing, if the stock is empty, every player with 0 cards goes out (recorded in seating order starting from the main attacker). When ≤1 player remains the game is over: `durak` = the remaining player, or `null` (a draw) if the last players went out together.
 - **Determinism:** a game is fully determined by the seed, player order, config and the sequence of moves.
+- **Legal moves from a view:** `getLegalMovesForView(view)` (`src/viewMoves.ts`) computes the viewer's legal moves from the sanitized `PlayerView` alone (used by the web client and test bots). It must equal `getLegalMoves(state, p)` without `playerId`, for every player and every reachable state; the fuzz harness (`tests/fuzz.test.ts`) checks this on every step. Any rule change must update both.
 - **Timeouts & resignation** (`src/timeout.ts`, pure; the engine has no timers):
   - `getTimeoutMoves(state)`: `awaitingAttack` → the attacker opens with the lowest non-trump (lowest rank, ties S, C, D, H), or the lowest trump if they hold only trumps. `bout` → the defender `take`s if a card is uncovered and they aren't already taking, then every non-defender who can still throw in and hasn't passed `pass`es, in seat order from the main attacker. `getAwaitedPlayers` = the players those moves belong to.
   - `applyTimeout(state)` applies them in order, each through `applyMove`, skipping any that an earlier one made obsolete. Each call opens a bout or ends the current one (it is never a no-op).
@@ -62,17 +63,30 @@ Layers, one folder each; dependencies point downward only:
 - TTL policy lives in `repositories/ttl.ts` and the in-memory store applies it too (entries expire there as well).
 - **Validation on read:** values are wrapped in a `{ v: 1, data }` envelope and validated with Zod (`repositories/redis/codec.ts`). Bad JSON, an unknown envelope version or a schema mismatch is logged and returned as `null`, never thrown. The callers already handle `null` (`GAME_NOT_STARTED`, `ROOM_NOT_FOUND`). Bump `ENVELOPE_VERSION` on incompatible format changes.
 - **Schema drift guard:** every persisted record has a Zod schema in `repositories/redis/codec.ts`, guarded by `AssertEqual` in `schemaGuards.ts`. When you change a domain type (`Room`, `Session`, `StoredGame`, `GameState`, …), update the schema too; `npm run typecheck` fails until they match exactly.
-- **Atomic room + game writes:** any operation that writes or deletes a room and its game together goes through `repos.atomic` (`RoomGameTransaction`: `saveRoomAndGame` / `deleteRoomAndGame`), which is a single `MULTI`/`EXEC` in Redis. Never call `rooms.save` and `games.save` back to back for one logical change.
+- **Atomic room + game writes:** any operation that writes or deletes a room and its game together goes through `repos.atomic` (`RoomGameTransaction`: `saveRoomAndGame` / `saveRoomDeleteGame` / `deleteRoomAndGame`), which is a single `MULTI`/`EXEC` in Redis. Never call `rooms.save` and `games.save` back to back for one logical change.
 - **Ghost-connection reset:** on startup (before `listen`) the Redis backend `SCAN`s `${prefix}room:*` (never `KEYS`) and marks every member `connected: false`, preserving TTLs with `KEEPTTL`. Sockets never survive a restart, and a dead process can't emit `disconnect`. Without the reset, rooms would claim players are online forever; the 3c grace timer relies on the flag being truthful.
 - **Orphaned sessions:** if `session:resume` finds a valid session whose room is gone, it deletes the session and returns `ROOM_NOT_FOUND`.
+- **Rematch (`room:rematch`):** any seated player of a `finished` room puts it back to `lobby` (same members, `afk`/`consecutiveTimeouts`/`graceDeadline` reset; offline members keep their seat and can resume) and the finished game is deleted, atomically via `repos.atomic.saveRoomDeleteGame`. In the lobby it is a no-op that re-sends `room:state` (idempotent: everyone may press "back to lobby"); while playing → `GAME_IN_PROGRESS`; spectators → `NOT_IN_ROOM`.
 
 > **Single instance only.** `KeyedMutex` is an in-process lock. Running more than one server instance against the same Redis is **NOT supported**: concurrent moves on the same room could interleave. Supporting it requires a distributed per-room lock (e.g. Redis `SET NX PX` with fencing tokens) or sticky routing of each room to one instance.
+
+## Web Client (`apps/web`)
+React 19 + Vite + Tailwind v4, Hebrew UI (`dir="rtl"`). `@durak/shared` and `@durak/game-engine` are aliased to their `src/` (no prebuild for dev, tests or `vite build`).
+- **Routes:** `/` (home: nickname, player count, mode → `room:create`) and `/room/:id` (join prompt / lobby / table / game-over overlay / room not found). Tiny router in `src/routing.ts` (History API).
+- **`src/net/`:** `Transport` (socket.io-client wrapper; tests use `FakeTransport`), `GameClient` (the single connection: feeds server events into the store, owns session tokens, exposes actions), `Store` + pure `reducer` read via `useSyncExternalStore`. Every `game:move` carries `expectedVersion` = the last received `game:state` version. `STALE_STATE` errors are swallowed (the server re-sends the state). A `game:state` older than the held version is ignored. `room:state` with status `lobby` clears the game (rematch).
+- **Sessions:** tokens are kept in **`sessionStorage`** (`durak:sessions` = `{ roomId: token }`), NOT `localStorage`, so every tab is its own seat (two windows of one browser = two players). A reload keeps the seat: on every (re)connect, the room in the URL is resumed with `session:resume`. **Trade-off:** closing the tab forgets the token, so that seat is forfeited once `RECONNECT_GRACE_MS` expires. A rejected token (`INVALID_SESSION` / `ROOM_NOT_FOUND`) is deleted and the join prompt (or "room not found") is shown. A connection holds one session, so switching rooms reconnects the socket first.
+- **Table interaction (`src/game/selection.ts`, pure):** legal moves come from `getLegalMovesForView`; legal hand cards are highlighted, others dimmed. Attack/throw-in = one click. Defend = hand card then attack card, or attack card then hand card. Transfer = hand card then the "transfer" slot. Selection is tied to the game version (any new state clears it). Take/Pass buttons appear only when legal; spectators get no hand and no buttons.
+- **Countdown:** `remainingMs = turnDeadline − serverTime − (now − receivedAt)` using the client's clock for both `receivedAt` and `now`, so clock skew between client and server doesn't matter.
+- **Strings:** every UI string and every error code's Hebrew message live in `src/i18n/he.ts` (typed `Strings`; `errors` must cover every `ServerErrorCode | GameErrorCode`). Cards are drawn with CSS (rank + suit symbol), no image assets.
+- **Env:** `VITE_SERVER_URL` (default `http://localhost:3000`). Vite runs on 5173 (`strictPort`), matching the server's default `CORS_ORIGINS`.
 
 ## Development Workflow & Commands
 - Build all workspaces: `npm run build --workspaces`
 - Run engine tests: `npm test --workspace=packages/game-engine`
 - Run server tests: `npm test --workspace=apps/server` (Redis tests need `docker-compose up -d` or any Redis at `REDIS_URL`; without one they are skipped with a warning)
+- Run server + web together: `npm run dev` (builds `shared` + `game-engine` for the server's `tsx`, then runs both with `concurrently`; open http://localhost:5173)
 - Run the server in dev mode: `npm run dev --workspace=apps/server` (env: `PORT`, `HOST`, `CORS_ORIGINS`)
+- Run the web client alone: `npm run dev --workspace=apps/web`; tests: `npm test --workspace=apps/web` (Vitest + jsdom + Testing Library; `tests/sessions.test.ts` starts a real in-process server)
 - Start local infrastructure: `docker-compose up -d`
 
 ## Implementation Roadmap (Execute Step-by-Step)
@@ -95,6 +109,8 @@ Layers, one folder each; dependencies point downward only:
     - **Testing:** `Clock` and `Scheduler` are injected (`services/scheduling.ts`). Tests use `tests/helpers/fakeTime.ts` (`advanceBy` / `runDue`), never real sleeps.
 - **Phase 4: IS-MCTS AI Bot.** Implement determinized Monte Carlo Tree Search in `packages/game-engine/src/bot` with a configurable thinking time budget (e.g., 300ms per move) and benchmark win rates against a random baseline bot.
 - **Phase 5: Mobile-First Web Client.** Build `apps/web` with clean card animations, responsive table layout for 2-6 players, and room invite links.
+  - **5a (done):** playable client: home, invite links, lobby, table with legal-move highlighting, countdown, game over + rematch, spectators. See "Web Client" above.
+  - **5b:** animations and visual polish.
 
 ## Coding Conventions
 - Prefer explicit union types and discriminated unions for game phases and move actions.

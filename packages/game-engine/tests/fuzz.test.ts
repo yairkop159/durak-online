@@ -1,4 +1,4 @@
-import type { GameMode } from '@durak/shared';
+import { cardId, type ClientMove, type GameMode, type Move } from '@durak/shared';
 import { describe, expect, it } from 'vitest';
 import {
   applyMove,
@@ -6,6 +6,7 @@ import {
   createGame,
   createRng,
   getLegalMoves,
+  getLegalMovesForView,
   getPlayersToAct,
   isFinished,
   sanitizeStateForPlayer,
@@ -39,6 +40,37 @@ function checkInvariants(state: GameState): void {
   expect(getPlayersToAct(state).length).toBeGreaterThan(0);
 }
 
+function moveKey(move: ClientMove): string {
+  switch (move.type) {
+    case 'attack':
+    case 'transfer':
+      return `${move.type}:${cardId(move.card)}`;
+    case 'defend':
+      return `defend:${move.attackIndex}:${cardId(move.card)}`;
+    case 'take':
+    case 'pass':
+      return move.type;
+  }
+}
+
+function toClientMove(move: Move): ClientMove {
+  const { playerId: _playerId, ...client } = move;
+  return client as ClientMove;
+}
+
+/** The view-only move generator must agree with the authoritative one for every seat. */
+function checkViewParity(state: GameState): void {
+  for (const player of state.players) {
+    const fromView = getLegalMovesForView(sanitizeStateForPlayer(state, player.id)).map(moveKey).sort();
+    const fromState = getLegalMoves(state, player.id).map(toClientMove).map(moveKey).sort();
+    // Plain comparison first: `expect` on every step of 400 games is needlessly slow.
+    if (fromView.join() !== fromState.join()) expect({ player: player.id, fromView }).toEqual({ player: player.id, fromState });
+  }
+  if (getLegalMovesForView(sanitizeStateForPlayer(state, null)).length !== 0) {
+    expect(getLegalMovesForView(sanitizeStateForPlayer(state, null))).toEqual([]);
+  }
+}
+
 function playRandomGame(players: number, mode: GameMode, seed: number): GameState {
   const ids = Array.from({ length: players }, (_, i) => `p${i}`);
   const created = createGame({ playerIds: ids, seed, config: { mode } });
@@ -48,6 +80,7 @@ function playRandomGame(players: number, mode: GameMode, seed: number): GameStat
 
   for (let step = 0; step < 5000; step++) {
     checkInvariants(state);
+    checkViewParity(state);
     if (state.phase.kind === 'finished') return state;
 
     const actors = getPlayersToAct(state);
@@ -89,7 +122,7 @@ describe('random self-play (property tests)', () => {
             expect(final.players.find((p) => p.id === id)!.hand).toEqual([]);
           }
         }
-      });
+      }, 60_000);
     }
   }
 

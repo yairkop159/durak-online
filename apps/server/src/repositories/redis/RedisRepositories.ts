@@ -106,6 +106,15 @@ export class RedisRoomGameTransaction implements RoomGameTransaction {
     );
   }
 
+  async saveRoomDeleteGame(room: Room): Promise<void> {
+    await execOrThrow(
+      this.ctx.redis
+        .multi()
+        .set(this.ctx.keys.room(room.id), encode(room), 'EX', roomTtlSeconds(room))
+        .del(this.ctx.keys.game(room.id)),
+    );
+  }
+
   async deleteRoomAndGame(roomId: string): Promise<void> {
     await execOrThrow(this.ctx.redis.multi().del(this.ctx.keys.room(roomId)).del(this.ctx.keys.game(roomId)));
   }

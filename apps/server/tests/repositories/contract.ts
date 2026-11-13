@@ -140,6 +140,16 @@ export function describeRepositoryContract(name: string, makeHarness: () => Prom
         expect(await h.repos.rooms.get(room.id)).toBeNull();
         expect(await h.repos.games.get(room.id)).toBeNull();
       });
+
+      it('saveRoomDeleteGame saves the room (with its TTL) and removes its game', async () => {
+        const finished = makeRoom(undefined, 'finished');
+        await h.repos.atomic.saveRoomAndGame(finished, makeGame(finished.id, true));
+        const lobby = { ...finished, status: 'lobby' as const };
+        await h.repos.atomic.saveRoomDeleteGame(lobby);
+        expect(await h.repos.rooms.get(lobby.id)).toEqual(lobby);
+        expect(await h.repos.games.get(lobby.id)).toBeNull();
+        expectTtl(await h.ttl('room', lobby.id), ACTIVE_TTL_SECONDS);
+      });
     });
   });
 }

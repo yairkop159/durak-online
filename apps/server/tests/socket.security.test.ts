@@ -135,6 +135,7 @@ function recordingRepositories(): { repos: Repositories; snapshots: Map<number, 
       },
       atomic: {
         deleteRoomAndGame: (roomId) => base.atomic.deleteRoomAndGame(roomId),
+        saveRoomDeleteGame: (room) => base.atomic.saveRoomDeleteGame(room),
         saveRoomAndGame: async (room, game) => {
           record(game);
           await base.atomic.saveRoomAndGame(room, game);

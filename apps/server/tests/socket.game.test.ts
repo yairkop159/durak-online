@@ -38,6 +38,26 @@ describe('full games over sockets', () => {
     }
   });
 
+  it('room:rematch after game over returns everyone to the lobby and a new game can start', async () => {
+    harness = await startTestServer({ seedSource: () => 5 });
+    const host = await harness.connect();
+    const guest = await harness.connect();
+    const { roomId } = await setupRoom(host, [guest]);
+    for (const c of [host, guest]) autoPlay(c, roomId);
+    host.send('game:start', { roomId });
+    await Promise.all([host, guest].map((c) => c.waitFor('game:over', () => true, 0, 15_000)));
+
+    const [hostMark, guestMark] = [host.mark(), guest.mark()];
+    guest.send('room:rematch', { roomId });
+    await host.waitFor('room:state', (r) => r.status === 'lobby', hostMark);
+    await guest.waitFor('room:state', (r) => r.status === 'lobby', guestMark);
+    expect(await harness.server.repos.games.get(roomId)).toBeNull();
+
+    const beforeStart = host.mark();
+    host.send('game:start', { roomId });
+    await host.waitFor('game:state', (s) => s.version === 0, beforeStart);
+  });
+
   it('3 players play to completion', async () => {
     harness = await startTestServer({ seedSource: () => 77 });
     const clients = [await harness.connect(), await harness.connect(), await harness.connect()];

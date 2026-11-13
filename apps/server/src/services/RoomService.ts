@@ -245,6 +245,36 @@ export class RoomService {
     });
   }
 
+  /**
+   * Back to the lobby after a finished game: same members (AFK/grace state reset, offline members
+   * keep their seat and can resume), the finished game is deleted. Idempotent: in the lobby it only
+   * re-sends `room:state`, since every player may press "back to lobby".
+   */
+  async rematch(session: Session): Promise<Result<void>> {
+    const { repos, mutex, notifier, timers } = this.deps;
+    return mutex.runExclusive(session.roomId, async () => {
+      const room = await repos.rooms.get(session.roomId);
+      if (!room) return fail('ROOM_NOT_FOUND', 'Room no longer exists');
+      if (session.role !== 'player' || !room.members.some((m) => m.playerId === session.id)) {
+        return fail('NOT_IN_ROOM', 'Only seated players can start a rematch');
+      }
+      if (room.status === 'playing') return fail('GAME_IN_PROGRESS', 'The game is still running');
+      if (room.status === 'lobby') {
+        notifier.roomState(room);
+        return ok(undefined);
+      }
+      const updated: Room = {
+        ...room,
+        status: 'lobby',
+        members: room.members.map((m) => ({ ...m, afk: false, consecutiveTimeouts: 0, graceDeadline: null })),
+      };
+      await repos.atomic.saveRoomDeleteGame(updated);
+      timers.cancelRoom(room.id);
+      notifier.roomState(updated);
+      return ok(undefined);
+    });
+  }
+
   private async unusedRoomId(): Promise<string> {
     for (;;) {
       const id = newRoomId();

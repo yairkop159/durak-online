@@ -25,6 +25,10 @@ export function createInMemoryRepositories(now: Clock = Date.now): InMemoryRepos
       roomStore.set(room.id, room, roomTtlSeconds(room));
       gameStore.set(game.roomId, game, gameTtlSeconds(game));
     },
+    async saveRoomDeleteGame(room) {
+      roomStore.set(room.id, room, roomTtlSeconds(room));
+      gameStore.delete(room.id);
+    },
     async deleteRoomAndGame(roomId) {
       roomStore.delete(roomId);
       gameStore.delete(roomId);

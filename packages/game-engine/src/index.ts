@@ -16,6 +16,7 @@ export {
   isFinished,
 } from './rules.js';
 export { sanitizeStateForPlayer } from './sanitize.js';
+export { getLegalMovesForView } from './viewMoves.js';
 export {
   getTimeoutMoves,
   getAwaitedPlayers,

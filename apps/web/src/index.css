@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+html,
+body {
+  background-color: #14532d;
+  font-family: system-ui, "Segoe UI", "Arial Hebrew", Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}

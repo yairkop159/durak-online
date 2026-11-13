@@ -120,6 +120,16 @@ function attach(socket: IoSocket, deps: HandlerDeps): void {
     if (!result.ok) sendError(result.error);
   });
 
+  on(ClientEvents.Rematch, async (payload) => {
+    const session = socket.data.session;
+    if (!session || session.roomId !== payload.roomId) {
+      sendError({ code: 'NOT_IN_ROOM', message: 'You are not in this room' });
+      return;
+    }
+    const result = await rooms.rematch(session);
+    if (!result.ok) sendError(result.error);
+  });
+
   on(ClientEvents.MakeMove, async (payload) => {
     const session = socket.data.session;
     if (!session) { sendError({ code: 'NOT_IN_ROOM', message: 'You are not in a room' }); return; }

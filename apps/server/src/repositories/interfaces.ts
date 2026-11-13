@@ -30,6 +30,8 @@ export interface SessionRepository {
 export interface RoomGameTransaction {
   /** Persists both records or neither. */
   saveRoomAndGame(room: Room, game: StoredGame): Promise<void>;
+  /** Saves the room and deletes its game, both or neither (rematch: back to the lobby). */
+  saveRoomDeleteGame(room: Room): Promise<void>;
   /** Deletes both records or neither. */
   deleteRoomAndGame(roomId: string): Promise<void>;
 }

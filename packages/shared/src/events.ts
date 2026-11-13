@@ -12,6 +12,7 @@ export const ClientEvents = {
   StartGame: 'game:start',
   MakeMove: 'game:move',
   ResumeSession: 'session:resume',
+  Rematch: 'room:rematch',
 } as const;
 export type ClientEventName = (typeof ClientEvents)[keyof typeof ClientEvents];
 
@@ -48,6 +49,9 @@ export const LeaveRoomPayloadSchema = z.object({ roomId: RoomIdSchema }).strict(
 
 export const StartGamePayloadSchema = z.object({ roomId: RoomIdSchema }).strict();
 
+/** After a finished game: put the room back into the lobby (same members) for another game. */
+export const RematchPayloadSchema = z.object({ roomId: RoomIdSchema }).strict();
+
 export const MakeMovePayloadSchema = z
   .object({
     roomId: RoomIdSchema,
@@ -74,6 +78,7 @@ export const ClientEventSchemas = {
   [ClientEvents.StartGame]: StartGamePayloadSchema,
   [ClientEvents.MakeMove]: MakeMovePayloadSchema,
   [ClientEvents.ResumeSession]: ResumeSessionPayloadSchema,
+  [ClientEvents.Rematch]: RematchPayloadSchema,
 } as const satisfies Record<ClientEventName, z.ZodTypeAny>;
 
 export type CreateRoomPayload = z.infer<typeof CreateRoomPayloadSchema>;
@@ -82,6 +87,7 @@ export type LeaveRoomPayload = z.infer<typeof LeaveRoomPayloadSchema>;
 export type StartGamePayload = z.infer<typeof StartGamePayloadSchema>;
 export type MakeMovePayload = z.infer<typeof MakeMovePayloadSchema>;
 export type ResumeSessionPayload = z.infer<typeof ResumeSessionPayloadSchema>;
+export type RematchPayload = z.infer<typeof RematchPayloadSchema>;
 
 export interface RoomMember {
   readonly playerId: string;
@@ -162,6 +168,7 @@ export interface ClientToServerEvents {
   'game:start': (payload: StartGamePayload) => void;
   'game:move': (payload: MakeMovePayload) => void;
   'session:resume': (payload: ResumeSessionPayload) => void;
+  'room:rematch': (payload: RematchPayload) => void;
 }
 
 export interface ServerToClientEvents {
