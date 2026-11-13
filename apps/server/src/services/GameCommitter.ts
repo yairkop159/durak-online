@@ -80,7 +80,9 @@ export class GameCommitter {
     }
 
     const finished = state.phase.kind === 'finished';
-    const room: Room = finished ? { ...input.room, status: 'finished' } : input.room;
+    // A game that ends on its own closes any open restart vote (nothing left to restart).
+    const room: Room = finished ? { ...input.room, status: 'finished', restartVote: null } : input.room;
+    const closedVote = finished ? input.room.restartVote : null;
     const roomChanged = input.roomChanged || room.status !== input.room.status || finished;
     const game: StoredGame = {
       ...prev,
@@ -101,6 +103,9 @@ export class GameCommitter {
     notifier.gameState(room, game);
     if (finished) {
       notifier.gameOver(room, game);
+      if (closedVote) {
+        notifier.restartVoteEnded(room, { voteId: closedVote.voteId, proposerId: closedVote.proposerId, outcome: 'cancelled', by: null });
+      }
       timers.cancelRoom(room.id);
     } else {
       timers.armTurn(game);

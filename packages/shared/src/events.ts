@@ -15,6 +15,8 @@ export const ClientEvents = {
   Rematch: 'room:rematch',
   AddBot: 'room:addBot',
   RemoveBot: 'room:removeBot',
+  RestartPropose: 'room:restartPropose',
+  RestartRespond: 'room:restartRespond',
 } as const;
 export type ClientEventName = (typeof ClientEvents)[keyof typeof ClientEvents];
 
@@ -24,6 +26,7 @@ export const ServerEvents = {
   GameState: 'game:state',
   GameOver: 'game:over',
   Session: 'session:issued',
+  RestartVoteEnded: 'room:restartVoteEnded',
   Error: 'error',
 } as const;
 export type ServerEventName = (typeof ServerEvents)[keyof typeof ServerEvents];
@@ -67,6 +70,16 @@ export const RemoveBotPayloadSchema = z
   .object({ roomId: RoomIdSchema, playerId: z.string().min(1).max(64) })
   .strict();
 
+/** A seated human proposes to end the running game and deal a new one (same seats and config). */
+export const RestartProposePayloadSchema = z.object({ roomId: RoomIdSchema }).strict();
+
+export const VoteIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,32}$/, 'Invalid vote id');
+
+/** An awaited voter answers the open restart vote. */
+export const RestartRespondPayloadSchema = z
+  .object({ roomId: RoomIdSchema, voteId: VoteIdSchema, accept: z.boolean() })
+  .strict();
+
 export const MakeMovePayloadSchema = z
   .object({
     roomId: RoomIdSchema,
@@ -96,6 +109,8 @@ export const ClientEventSchemas = {
   [ClientEvents.Rematch]: RematchPayloadSchema,
   [ClientEvents.AddBot]: AddBotPayloadSchema,
   [ClientEvents.RemoveBot]: RemoveBotPayloadSchema,
+  [ClientEvents.RestartPropose]: RestartProposePayloadSchema,
+  [ClientEvents.RestartRespond]: RestartRespondPayloadSchema,
 } as const satisfies Record<ClientEventName, z.ZodTypeAny>;
 
 export type CreateRoomPayload = z.infer<typeof CreateRoomPayloadSchema>;
@@ -107,6 +122,8 @@ export type ResumeSessionPayload = z.infer<typeof ResumeSessionPayloadSchema>;
 export type RematchPayload = z.infer<typeof RematchPayloadSchema>;
 export type AddBotPayload = z.infer<typeof AddBotPayloadSchema>;
 export type RemoveBotPayload = z.infer<typeof RemoveBotPayloadSchema>;
+export type RestartProposePayload = z.infer<typeof RestartProposePayloadSchema>;
+export type RestartRespondPayload = z.infer<typeof RestartRespondPayloadSchema>;
 
 export interface RoomMember {
   readonly playerId: string;
@@ -121,6 +138,18 @@ export interface RoomMember {
   readonly leftGame: boolean;
 }
 
+/** The open restart vote, as every room member sees it. */
+export interface RestartVoteState {
+  readonly voteId: string;
+  readonly proposerId: string;
+  /** Epoch ms when the vote expires; remaining = expiresAt - serverTime (clock-skew free). */
+  readonly expiresAt: number;
+  readonly serverTime: number;
+  readonly accepted: readonly string[];
+  /** Voters who have not answered yet (connected, non-AFK humans other than the proposer). */
+  readonly awaiting: readonly string[];
+}
+
 export interface RoomStatePayload {
   readonly roomId: string;
   readonly hostId: string;
@@ -128,10 +157,26 @@ export interface RoomStatePayload {
   readonly members: readonly RoomMember[];
   readonly spectatorCount: number;
   readonly status: 'lobby' | 'playing' | 'finished';
+  /** The open restart vote, or null. */
+  readonly restartVote: RestartVoteState | null;
+}
+
+export const RESTART_VOTE_OUTCOMES = ['passed', 'declined', 'expired', 'cancelled'] as const;
+export type RestartVoteOutcome = (typeof RESTART_VOTE_OUTCOMES)[number];
+
+export interface RestartVoteEndedPayload {
+  readonly roomId: string;
+  readonly voteId: string;
+  readonly proposerId: string;
+  readonly outcome: RestartVoteOutcome;
+  /** Who declined (outcome 'declined'), else null. */
+  readonly by: string | null;
 }
 
 export interface GameStatePayload {
   readonly roomId: string;
+  /** Changes with every new game in the room (a restart deals a new game at version 0). */
+  readonly gameId: string;
   readonly version: number;
   readonly view: PlayerView;
   /** When the current turn times out (epoch ms), or null when no timer runs (game over). */
@@ -147,8 +192,9 @@ export interface GameStatePayload {
  *   them (that player is the durak);
  * - abandoned: everyone idle — stopped by the server's abandon guard, no durak.
  *   Abandoned games are not rated.
+ * - restarted: the players voted for a new game; no durak, not rated.
  */
-export const GAME_END_REASONS = ['normal', 'forfeit', 'abandoned'] as const;
+export const GAME_END_REASONS = ['normal', 'forfeit', 'abandoned', 'restarted'] as const;
 export type GameEndReason = (typeof GAME_END_REASONS)[number];
 
 export interface GameOverPayload {
@@ -194,6 +240,12 @@ export const SERVER_ERROR_CODES = [
   'SERVER_FULL',
   /** Connection refused: too many open connections from this address (a connect_error message). */
   'TOO_MANY_CONNECTIONS',
+  /** A restart vote is already open in this room. */
+  'VOTE_IN_PROGRESS',
+  /** This player proposed a restart too recently. */
+  'VOTE_COOLDOWN',
+  /** No open restart vote that this player may answer (ended, or another vote id). */
+  'NO_ACTIVE_VOTE',
 ] as const;
 export type ServerErrorCode = (typeof SERVER_ERROR_CODES)[number];
 
@@ -213,6 +265,8 @@ export interface ClientToServerEvents {
   'room:rematch': (payload: RematchPayload) => void;
   'room:addBot': (payload: AddBotPayload) => void;
   'room:removeBot': (payload: RemoveBotPayload) => void;
+  'room:restartPropose': (payload: RestartProposePayload) => void;
+  'room:restartRespond': (payload: RestartRespondPayload) => void;
 }
 
 export interface ServerToClientEvents {
@@ -220,5 +274,6 @@ export interface ServerToClientEvents {
   'game:state': (payload: GameStatePayload) => void;
   'game:over': (payload: GameOverPayload) => void;
   'session:issued': (payload: SessionIssuedPayload) => void;
+  'room:restartVoteEnded': (payload: RestartVoteEndedPayload) => void;
   error: (payload: ErrorPayload) => void;
 }

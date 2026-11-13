@@ -23,6 +23,16 @@ export const RoomMemberSchema = z
 
 export const SpectatorSchema = z.object({ spectatorId: z.string(), nickname: z.string() }).strict();
 
+export const RestartVoteSchema = z
+  .object({
+    voteId: z.string(),
+    proposerId: z.string(),
+    expiresAt: z.number(),
+    voters: z.array(z.string()),
+    accepted: z.array(z.string()),
+  })
+  .strict();
+
 export const RoomSchema = z
   .object({
     id: z.string(),
@@ -33,6 +43,9 @@ export const RoomSchema = z
     spectators: z.array(SpectatorSchema),
     status: z.enum(['lobby', 'playing', 'finished']),
     createdAt: z.number(),
+    // Phase 7
+    restartVote: RestartVoteSchema.nullable().default(null),
+    restartCooldowns: z.record(z.string(), z.number()).default({}),
   })
   .strict();
 
@@ -92,6 +105,7 @@ export const PublicKnowledgeSchema = z
 export const StoredGameSchema = z
   .object({
     roomId: z.string(),
+    gameId: z.string().default(''), // Phase 7
     seed: z.number().int(),
     version: z.number().int(),
     state: GameStateSchema,

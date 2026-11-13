@@ -1,4 +1,4 @@
-import { createGame, getAwaitedPlayers } from '@durak/game-engine';
+import { getAwaitedPlayers } from '@durak/game-engine';
 import type { BotDifficulty, GameConfigInput } from '@durak/shared';
 import { fail, ok, type Result } from '../domain/result.js';
 import type { Room, RoomMember, Session, StoredGame } from '../domain/types.js';
@@ -6,7 +6,9 @@ import type { Repositories } from '../repositories/interfaces.js';
 import type { GameCommitter } from './GameCommitter.js';
 import type { KeyedMutex } from './KeyedMutex.js';
 import type { RoomNotifier, SessionBinder } from './ports.js';
+import type { RestartVoteService } from './RestartVoteService.js';
 import { newPlayerId, newRoomId, newSessionToken, newSpectatorId, type SeedSource } from './random.js';
+import { dealGame } from './dealing.js';
 import { departSeat, isActiveHuman, nextHost } from './departure.js';
 import { isOut, type TurnTimerService } from './TurnTimerService.js';
 
@@ -18,6 +20,8 @@ export interface RoomServiceDeps {
   readonly now: () => number;
   readonly timers: TurnTimerService;
   readonly committer: GameCommitter;
+  /** Settles an open restart vote after a voter leaves or disconnects (optional in tests). */
+  readonly votes?: RestartVoteService;
   /** Rooms stored at once; room:create beyond it fails with SERVER_FULL (default: unlimited). */
   readonly maxRooms?: number;
 }
@@ -104,6 +108,8 @@ export class RoomService {
         spectators: [],
         status: 'lobby',
         createdAt: this.deps.now(),
+        restartVote: null,
+        restartCooldowns: {},
       };
       const session: Session = { token: newSessionToken(), roomId, role: 'player', id: playerId };
       await repos.rooms.save(room);
@@ -187,10 +193,12 @@ export class RoomService {
       if (!hasHuman(updated.members)) {
         await repos.atomic.deleteRoomAndGame(room.id);
         this.deps.timers.cancelRoom(room.id);
+        this.deps.votes?.cancel(room.id);
       } else {
         await repos.rooms.save(updated);
       }
       notifier.roomState(updated);
+      if (hasHuman(updated.members)) await this.deps.votes?.reconcile(updated);
       return ok(undefined);
     });
   }
@@ -288,6 +296,7 @@ export class RoomService {
       await repos.rooms.save(updated);
       if (graceDeadline !== null) timers.armGrace(session.roomId, session.id, graceDeadline);
       notifier.roomState(updated);
+      await this.deps.votes?.reconcile(updated); // an offline voter no longer blocks the vote
     });
   }
 
@@ -303,25 +312,9 @@ export class RoomService {
       if (room.members.length < 2) return fail('NOT_ENOUGH_PLAYERS', 'At least 2 players are needed');
       if (!hasHuman(room.members)) return fail('NO_HUMANS', 'A game needs at least one human player');
 
-      const seed = this.deps.seedSource();
-      const created = createGame({ playerIds: room.members.map((m) => m.playerId), seed, config: room.config });
-      if (!created.ok) return fail(created.error.code, created.error.message);
-
-      const updated: Room = { ...room, status: 'playing' };
-      const game: StoredGame = {
-        roomId: room.id,
-        seed,
-        version: 0,
-        state: created.value,
-        startedAt: this.deps.now(),
-        turnDeadline: null, // set by the committer
-        timeoutStreak: 0,
-        endReason: null,
-        knowledge: {}, // set by the committer
-        botAssisted: [],
-        forfeits: [],
-      };
-      return ok(await this.deps.committer.start(updated, game));
+      const dealt = dealGame(room, this.deps.seedSource(), this.deps.now());
+      if (!dealt.ok) return dealt;
+      return ok(await this.deps.committer.start(dealt.value.room, dealt.value.game));
     });
   }
 

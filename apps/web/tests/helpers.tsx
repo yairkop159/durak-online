@@ -139,11 +139,12 @@ export function roomState(status: RoomStatePayload['status'], ids: string[] = ['
     })),
     spectatorCount: 0,
     status,
+    restartVote: null,
   };
 }
 
 export function gameState(view: PlayerView, version = 3, extra: Partial<GameStatePayload> = {}): GameStatePayload {
-  return { roomId: ROOM_ID, version, view, turnDeadline: null, serverTime: 1_000, ...extra };
+  return { roomId: ROOM_ID, gameId: 'g1', version, view, turnDeadline: null, serverTime: 1_000, ...extra };
 }
 
 /**

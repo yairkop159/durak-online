@@ -1,3 +1,4 @@
+import type { RestartVoteEndedPayload } from '@durak/shared';
 import { InProcessRunner } from '../../src/bot/InProcessRunner.js';
 import type { BotPolicies, BotRunner } from '../../src/bot/job.js';
 import type { Room, Session, StoredGame } from '../../src/domain/types.js';
@@ -8,12 +9,14 @@ import { createInMemoryRepositories } from '../../src/repositories/inMemory/inde
 import { GameService } from '../../src/services/GameService.js';
 import { KeyedMutex } from '../../src/services/KeyedMutex.js';
 import type { RoomNotifier } from '../../src/services/ports.js';
+import { DEFAULT_RESTART_VOTE_SETTINGS, RestartVoteService } from '../../src/services/RestartVoteService.js';
 import { RoomService } from '../../src/services/RoomService.js';
 import { DEFAULT_TIMER_SETTINGS, TurnTimerService, type TimerSettings } from '../../src/services/TurnTimerService.js';
 import { FakeTime } from './fakeTime.js';
 
 export interface NotifierEvent {
-  readonly kind: 'room' | 'game' | 'over' | 'gameTo';
+  readonly kind: 'room' | 'game' | 'over' | 'gameTo' | 'voteEnded';
+  readonly ended?: Omit<RestartVoteEndedPayload, 'roomId'>;
   readonly version?: number;
   readonly to?: string;
   readonly room: Room;
@@ -30,6 +33,9 @@ export class RecordingNotifier implements RoomNotifier {
   }
   gameOver(room: Room, game: StoredGame): void {
     this.events.push({ kind: 'over', room, game });
+  }
+  restartVoteEnded(room: Room, ended: Omit<RestartVoteEndedPayload, 'roomId'>): void {
+    this.events.push({ kind: 'voteEnded', room, ended });
   }
   sendGameStateTo(room: Room, game: StoredGame, viewer: Session): void {
     this.events.push({ kind: 'gameTo', version: game.version, to: viewer.id, room, game });
@@ -71,7 +77,18 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
   const committer = new GameCommitter({ repos, notifier, timers, listener: () => driver });
   timers.attachCommitter(committer);
   const seed = options.seed ?? 42;
-  const rooms = new RoomService({ repos, mutex, notifier, seedSource: () => seed, now: () => time.now(), timers, committer });
+  const votes = new RestartVoteService({
+    repos,
+    mutex,
+    notifier,
+    clock: time,
+    scheduler: time,
+    settings: DEFAULT_RESTART_VOTE_SETTINGS,
+    committer,
+    seedSource: () => seed,
+    log,
+  });
+  const rooms = new RoomService({ repos, mutex, notifier, seedSource: () => seed, now: () => time.now(), timers, committer, votes });
   const games = new GameService({ repos, mutex, notifier, committer });
   const runner = options.bots?.runner ?? new InProcessRunner({ recordJobs: true });
   let nextSeed = 1;
@@ -87,7 +104,7 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     log,
   });
   driver = bots;
-  return { repos, rooms, games, timers, notifier, time, settings, bots, runner, committer, mutex };
+  return { repos, rooms, games, timers, votes, notifier, time, settings, bots, runner, committer, mutex };
 }
 
 export const noBind = (): void => undefined;

@@ -44,13 +44,14 @@ export class GameClient {
       store.dispatch({ type: 'session:issued', payload });
     });
     transport.on('room:state', (payload) => {
-      store.dispatch({ type: 'room:state', payload });
+      store.dispatch({ type: 'room:state', payload, receivedAt: this.now() });
       this.advanceVsComputer(payload);
     });
     transport.on('game:state', (payload) =>
       store.dispatch({ type: 'game:state', payload, receivedAt: this.now() }),
     );
     transport.on('game:over', (payload) => store.dispatch({ type: 'game:over', payload }));
+    transport.on('room:restartVoteEnded', (payload) => store.dispatch({ type: 'restart:ended', payload }));
     transport.on('error', (payload) => {
       if (payload.code !== 'STALE_STATE') this.vsComputer = null;
       const pendingRoom = this.state.resumeStatus === 'pending' ? this.routeRoomId : null;
@@ -134,6 +135,21 @@ export class GameClient {
   startGame(): void {
     const session = this.boundSession();
     if (session) this.transport.emit('game:start', { roomId: session.roomId });
+  }
+
+  /** Proposes a new game (ends the running one if everyone agrees). */
+  proposeRestart(): void {
+    const session = this.boundSession();
+    if (session) this.transport.emit('room:restartPropose', { roomId: session.roomId });
+  }
+
+  respondRestart(voteId: string, accept: boolean): void {
+    const session = this.boundSession();
+    if (session) this.transport.emit('room:restartRespond', { roomId: session.roomId, voteId, accept });
+  }
+
+  dismissNotice(): void {
+    this.store.dispatch({ type: 'dismissNotice' });
   }
 
   rematch(): void {

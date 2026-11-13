@@ -461,6 +461,8 @@ function roomWith(ids: string[], botIds: string[]): Room {
     spectators: [],
     status: 'playing',
     createdAt: 0,
+    restartVote: null,
+    restartCooldowns: {},
   };
 }
 
@@ -480,6 +482,7 @@ function handcraftedBotTurn(): { room: Room; game: StoredGame } {
     if (state.players[canonicalActor(state)]?.id !== 'b' || getLegalMoves(state, 'b').length < 2) continue;
     const game: StoredGame = {
       roomId: 'room1',
+      gameId: 'g1',
       seed,
       version: 0,
       state,

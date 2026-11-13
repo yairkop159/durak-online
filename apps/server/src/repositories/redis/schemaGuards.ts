@@ -6,12 +6,13 @@
 import type { GameState, PlayerState, PublicKnowledge } from '@durak/game-engine';
 import type { BoutSummary, TablePair } from '@durak/shared';
 import type { z } from 'zod';
-import type { Room, RoomMember, Session, Spectator, StoredGame } from '../../domain/types.js';
+import type { RestartVote, Room, RoomMember, Session, Spectator, StoredGame } from '../../domain/types.js';
 import type {
   BoutSummarySchema,
   GameStateSchema,
   PlayerStateSchema,
   PublicKnowledgeSchema,
+  RestartVoteSchema,
   RoomMemberSchema,
   RoomSchema,
   SessionSchema,
@@ -35,6 +36,7 @@ type Same<S extends z.ZodTypeAny, T> = AssertEqual<DeepMutable<z.infer<S>>, Deep
 
 export const schemaGuards: {
   room: Same<typeof RoomSchema, Room>;
+  restartVote: Same<typeof RestartVoteSchema, RestartVote>;
   member: Same<typeof RoomMemberSchema, RoomMember>;
   spectator: Same<typeof SpectatorSchema, Spectator>;
   session: Same<typeof SessionSchema, Session>;
@@ -47,6 +49,7 @@ export const schemaGuards: {
 } = {
   knowledge: true,
   room: true,
+  restartVote: true,
   member: true,
   spectator: true,
   session: true,

@@ -35,6 +35,16 @@ export interface Spectator {
 
 export type RoomStatus = 'lobby' | 'playing' | 'finished';
 
+/** An open "new game" vote (Phase 7). Bots and offline/AFK humans are not voters. */
+export interface RestartVote {
+  readonly voteId: string;
+  readonly proposerId: PlayerId;
+  readonly expiresAt: number;
+  /** Who must accept (the other connected, non-AFK humans when it opened; drops shrink it). */
+  readonly voters: readonly PlayerId[];
+  readonly accepted: readonly PlayerId[];
+}
+
 export interface Room {
   readonly id: string;
   readonly hostId: string;
@@ -44,6 +54,10 @@ export interface Room {
   readonly spectators: readonly Spectator[];
   readonly status: RoomStatus;
   readonly createdAt: number;
+  /** The open restart vote, or null. */
+  readonly restartVote: RestartVote | null;
+  /** Proposer -> epoch ms until which they may not propose again. Expired entries are pruned. */
+  readonly restartCooldowns: Readonly<Record<PlayerId, number>>;
 }
 
 export type SessionRole = 'player' | 'spectator';
@@ -58,6 +72,8 @@ export interface Session {
 
 export interface StoredGame {
   readonly roomId: string;
+  /** A new id for every game dealt in the room (clients replace their game when it changes). */
+  readonly gameId: string;
   /** Shuffle seed, kept for replay and debugging. */
   readonly seed: number;
   /** Incremented on every successful move; clients echo it back as `expectedVersion`. */

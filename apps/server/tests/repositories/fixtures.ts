@@ -18,6 +18,8 @@ export function makeRoom(id = uid(), status: Room['status'] = 'lobby'): Room {
     spectators: [{ spectatorId: 's_1', nickname: 'Watcher' }],
     status,
     createdAt: 1_700_000_000_000,
+    restartVote: null,
+    restartCooldowns: {},
   };
 }
 
@@ -27,6 +29,7 @@ export function makeGame(roomId: string, finished = false): StoredGame {
   const state = finished ? { ...created.value, phase: { kind: 'finished' as const, durak: 'p_guest' } } : created.value;
   return {
     roomId,
+    gameId: 'g_fixture',
     seed: 99,
     version: 7,
     state,

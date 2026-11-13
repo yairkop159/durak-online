@@ -9,6 +9,7 @@ import { c, gameState, makeView, renderTable, ROOM_ID } from './helpers';
 
 const clientGame = (version: number, view = makeView()): ClientGame => ({
   roomId: ROOM_ID,
+  gameId: 'g1',
   version,
   view,
   turnDeadline: null,

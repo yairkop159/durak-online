@@ -17,7 +17,7 @@ await backend.startup();
 
 const webDistDir = resolveWebDistDir(config.webDistDir);
 
-const { app, timers } = buildServer({
+const { app, timers, votes } = buildServer({
   repos: backend.repos,
   corsOrigins: config.corsOrigins,
   logger: true,
@@ -26,6 +26,7 @@ const { app, timers } = buildServer({
     afkTimeoutMs: config.afkTimeoutMs,
     reconnectGraceMs: config.reconnectGraceMs,
   },
+  voteSettings: { restartVoteMs: config.restartVoteMs, restartCooldownMs: config.restartCooldownMs },
   botSettings: {
     ...(config.botWorkers !== null ? { workers: config.botWorkers } : {}),
     jobTimeoutMs: config.botJobTimeoutMs,
@@ -53,6 +54,7 @@ app.log.info({ webDistDir }, webDistDir ? 'serving the web client' : 'web client
 // reconnection graces for players who were online when the previous process died, and let bots
 // plan for every running game.
 app.log.info(await timers.rearmAll(), 're-armed timers');
+app.log.info({ votes: await votes.rearmAll() }, 're-armed restart votes');
 
 let stopping = false;
 const shutdown = async (signal: string, code = 0) => {

@@ -12,6 +12,7 @@ import { GameCommitter } from './services/GameCommitter.js';
 import { GameService } from './services/GameService.js';
 import { KeyedMutex } from './services/KeyedMutex.js';
 import { cryptoSeedSource, type SeedSource } from './services/random.js';
+import { DEFAULT_RESTART_VOTE_SETTINGS, RestartVoteService, type RestartVoteSettings } from './services/RestartVoteService.js';
 import { RoomService } from './services/RoomService.js';
 import { createSystemScheduler, systemClock, type Clock, type Scheduler } from './services/scheduling.js';
 import { DEFAULT_TIMER_SETTINGS, TurnTimerService, type TimerSettings } from './services/TurnTimerService.js';
@@ -53,6 +54,7 @@ export interface BuildServerOptions {
   /** Timer backend (tests inject a fake scheduler; default: setTimeout). */
   readonly scheduler?: Scheduler;
   readonly timerSettings?: Partial<TimerSettings>;
+  readonly voteSettings?: Partial<RestartVoteSettings>;
   /** Runs bot decisions (default: a worker_threads pool; tests inject an InProcessRunner). */
   readonly botRunner?: BotRunner;
   readonly botSettings?: BotSettings;
@@ -75,6 +77,7 @@ export interface DurakServer {
   readonly rooms: RoomService;
   readonly games: GameService;
   readonly timers: TurnTimerService;
+  readonly votes: RestartVoteService;
   readonly bots: BotDriver;
   readonly botRunner: BotRunner;
 }
@@ -139,7 +142,18 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
 
   const now = () => clock.now();
   const seedSource = options.seedSource ?? cryptoSeedSource;
-  const rooms = new RoomService({ repos, mutex, notifier, seedSource, now, timers, committer, maxRooms: limits.maxRooms });
+  const votes = new RestartVoteService({
+    repos,
+    mutex,
+    notifier,
+    clock,
+    scheduler,
+    settings: { ...DEFAULT_RESTART_VOTE_SETTINGS, ...options.voteSettings },
+    committer,
+    seedSource,
+    log: app.log,
+  });
+  const rooms = new RoomService({ repos, mutex, notifier, seedSource, now, timers, committer, votes, maxRooms: limits.maxRooms });
   const games = new GameService({ repos, mutex, notifier, committer });
 
   const botSettings = options.botSettings ?? {};
@@ -167,7 +181,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   bots = driver;
 
   let shuttingDown = false;
-  registerHandlers({ io, rooms, games, log: app.log, isShuttingDown: () => shuttingDown, limits, now, ipOf });
+  registerHandlers({ io, rooms, games, votes, log: app.log, isShuttingDown: () => shuttingDown, limits, now, ipOf });
 
   const health = options.health ?? (async (): Promise<HealthReport> => ({ ok: true, repository: 'memory' }));
   // Probed every few seconds by Docker and the hosting platform: keep it out of the info log.
@@ -182,6 +196,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   app.addHook('preClose', async () => {
     shuttingDown = true;
     timers.dispose();
+    votes.dispose();
     driver.dispose();
     await botRunner.dispose();
     io.disconnectSockets(true);
@@ -190,5 +205,5 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   const onClose = options.onClose;
   if (onClose) app.addHook('onClose', async () => onClose());
 
-  return { app, io, repos, rooms, games, timers, bots: driver, botRunner };
+  return { app, io, repos, rooms, games, timers, votes, bots: driver, botRunner };
 }

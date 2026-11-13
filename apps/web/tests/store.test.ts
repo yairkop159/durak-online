@@ -38,7 +38,7 @@ describe('store reducer', () => {
       payload: gameState(view, 7, { turnDeadline: 31_000, serverTime: 1_000 }),
       receivedAt: 555,
     });
-    expect(s.game).toEqual({ roomId: ROOM_ID, version: 7, view, turnDeadline: 31_000, serverTime: 1_000, receivedAt: 555 });
+    expect(s.game).toEqual({ roomId: ROOM_ID, gameId: 'g1', version: 7, view, turnDeadline: 31_000, serverTime: 1_000, receivedAt: 555 });
   });
 
   it('ignores an older game:state but accepts a re-sent current one', () => {

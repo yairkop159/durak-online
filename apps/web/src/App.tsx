@@ -1,6 +1,6 @@
 import { MotionConfig } from 'motion/react';
 import { useEffect } from 'react';
-import { ConnectionBanner, ErrorToast } from './components/ui';
+import { ConnectionBanner, ErrorToast, NoticeToast } from './components/ui';
 import { useClient, useClientState } from './net/react';
 import { isReconnecting } from './net/store';
 import { useRoute } from './routing';
@@ -25,6 +25,7 @@ export function App() {
         <ConnectionBanner />
         <main className="flex flex-1 flex-col" inert={reconnecting} aria-busy={reconnecting}>{roomId === null ? <HomeScreen /> : <RoomRoute roomId={roomId} />}</main>
         <ErrorToast />
+        <NoticeToast />
       </div>
     </MotionConfig>
   );

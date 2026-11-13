@@ -1,4 +1,5 @@
 import { useEffect, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { nicknameOf } from '../game/seats';
 import { t } from '../i18n';
 import { useClient, useClientState } from '../net/react';
 import { isReconnecting } from '../net/store';
@@ -156,6 +157,36 @@ export function ErrorToast() {
       className="fixed inset-x-4 bottom-24 z-50 mx-auto max-w-md rounded-btn bg-surface-2 px-4 py-3 text-center text-text shadow-panel ring-1 ring-danger/60"
     >
       {t.errors[lastError.code]}
+    </div>
+  );
+}
+
+/** A short, non-error message for everyone in the room (how a restart vote ended). */
+export function NoticeToast() {
+  const client = useClient();
+  const { notice, room } = useClientState();
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => client.dismissNotice(), 4000);
+    return () => clearTimeout(timer);
+  }, [client, notice]);
+  if (!notice) return null;
+  const { outcome, by } = notice.payload;
+  const text =
+    outcome === 'passed'
+      ? t.restart.passed
+      : outcome === 'declined'
+        ? t.restart.declined(nicknameOf(by ?? '', room?.members))
+        : outcome === 'expired'
+          ? t.restart.expired
+          : t.restart.cancelled;
+  return (
+    <div
+      role="status"
+      data-testid="notice"
+      className="fixed inset-x-4 top-14 z-50 mx-auto max-w-md rounded-btn bg-surface-2 px-4 py-3 text-center text-text shadow-panel ring-1 ring-accent/50"
+    >
+      {text}
     </div>
   );
 }

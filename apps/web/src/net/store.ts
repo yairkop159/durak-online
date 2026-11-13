@@ -3,6 +3,7 @@ import type {
   GameOverPayload,
   GameStatePayload,
   PlayerView,
+  RestartVoteEndedPayload,
   RoomStatePayload,
   SessionIssuedPayload,
 } from '@durak/shared';
@@ -11,6 +12,8 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 export interface ClientGame {
   readonly roomId: string;
+  /** A restart deals a new game (new id) at version 0. */
+  readonly gameId: string;
   readonly version: number;
   readonly view: PlayerView;
   readonly turnDeadline: number | null;
@@ -23,6 +26,13 @@ export interface ClientError {
   readonly code: ErrorPayload['code'];
   readonly message: string;
   /** Increments on every error so the UI can re-show an identical one. */
+  readonly id: number;
+}
+
+/** A non-error message for everyone in the room (e.g. how a restart vote ended). */
+export interface ClientNotice {
+  readonly kind: 'restartVoteEnded';
+  readonly payload: RestartVoteEndedPayload;
   readonly id: number;
 }
 
@@ -39,15 +49,20 @@ export interface ClientState {
   readonly resumeStatus: 'idle' | 'pending' | 'failed';
   readonly roomNotFound: boolean;
   readonly room: RoomStatePayload | null;
+  /** Local time the last room:state arrived (for the restart vote countdown, like ClientGame). */
+  readonly roomReceivedAt: number;
   readonly game: ClientGame | null;
   readonly gameOver: GameOverPayload | null;
   readonly lastError: ClientError | null;
+  readonly notice: ClientNotice | null;
 }
 
 export type ClientAction =
   | { readonly type: 'connection'; readonly status: ConnectionStatus }
   | { readonly type: 'session:issued'; readonly payload: SessionIssuedPayload }
-  | { readonly type: 'room:state'; readonly payload: RoomStatePayload }
+  | { readonly type: 'room:state'; readonly payload: RoomStatePayload; readonly receivedAt?: number }
+  | { readonly type: 'restart:ended'; readonly payload: RestartVoteEndedPayload }
+  | { readonly type: 'dismissNotice' }
   | { readonly type: 'game:state'; readonly payload: GameStatePayload; readonly receivedAt: number }
   | { readonly type: 'game:over'; readonly payload: GameOverPayload }
   | { readonly type: 'error'; readonly payload: ErrorPayload }
@@ -63,9 +78,11 @@ export const initialState: ClientState = {
   resumeStatus: 'idle',
   roomNotFound: false,
   room: null,
+  roomReceivedAt: 0,
   game: null,
   gameOver: null,
   lastError: null,
+  notice: null,
 };
 
 /** Errors that mean "your stored session is no good": drop it and ask for a nickname. */
@@ -102,6 +119,7 @@ export function reducer(state: ClientState, action: ClientAction): ClientState {
 
     case 'room:state': {
       const room = action.payload;
+      state = { ...state, roomReceivedAt: action.receivedAt ?? state.roomReceivedAt };
       // Back in the lobby (rematch): the old game and its result are gone.
       if (room.status === 'lobby') return { ...state, room, game: null, gameOver: null };
       // A new game started: drop the previous result.
@@ -112,11 +130,14 @@ export function reducer(state: ClientState, action: ClientAction): ClientState {
     case 'game:state': {
       const p = action.payload;
       // Out-of-order delivery guard: never go back to an older version of the same game.
-      if (state.game && state.game.roomId === p.roomId && p.version < state.game.version) return state;
+      // A different gameId is a new game (restart vote): it replaces ours from its version 0.
+      const sameGame = state.game && state.game.roomId === p.roomId && state.game.gameId === p.gameId;
+      if (sameGame && p.version < state.game!.version) return state;
       return {
         ...state,
         game: {
           roomId: p.roomId,
+          gameId: p.gameId,
           version: p.version,
           view: p.view,
           turnDeadline: p.turnDeadline,
@@ -128,6 +149,12 @@ export function reducer(state: ClientState, action: ClientAction): ClientState {
 
     case 'game:over':
       return { ...state, gameOver: action.payload };
+
+    case 'restart:ended':
+      return { ...state, notice: { kind: 'restartVoteEnded', payload: action.payload, id: (state.notice?.id ?? 0) + 1 } };
+
+    case 'dismissNotice':
+      return { ...state, notice: null };
 
     case 'error': {
       const { code, message } = action.payload;

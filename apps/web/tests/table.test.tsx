@@ -187,6 +187,7 @@ describe('countdown on the table', () => {
     // The fake client clock is fixed at 1000 (= receivedAt), so remaining = 25000 - 4000.
     transport.serverSends('game:state', {
       roomId: ROOM_ID,
+      gameId: 'g1',
       version: 4,
       view: makeView({ hand: '9C' }),
       turnDeadline: 25_000,

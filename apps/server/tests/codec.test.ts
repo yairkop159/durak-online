@@ -94,3 +94,23 @@ describe('codec: leaving games (Phase 7)', () => {
     expect(decode(StoredGameSchema, encode(game), 'k', log())).toEqual(game);
   });
 });
+
+describe('codec: restart votes (Phase 7)', () => {
+  it('rooms and games stored before Phase 7 decode with no vote, no cooldowns and an empty gameId', () => {
+    const { restartVote: _v, restartCooldowns: _c, ...oldRoom } = makeRoom('room1', 'playing');
+    const room = decode(RoomSchema, encode(oldRoom), 'k', log());
+    expect(room?.restartVote).toBeNull();
+    expect(room?.restartCooldowns).toEqual({});
+    const { gameId: _g, ...oldGame } = makeGame('room1');
+    expect(decode(StoredGameSchema, encode(oldGame), 'k', log())?.gameId).toBe('');
+  });
+
+  it('round-trips an open vote and cooldowns', () => {
+    const room = {
+      ...makeRoom('room1', 'playing'),
+      restartVote: { voteId: 'v1', proposerId: 'p_host', expiresAt: 5, voters: ['p_guest'], accepted: [] },
+      restartCooldowns: { p_guest: 99 },
+    };
+    expect(decode(RoomSchema, encode(room), 'k', log())).toEqual(room);
+  });
+});

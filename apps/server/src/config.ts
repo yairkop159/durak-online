@@ -14,6 +14,9 @@ export interface ServerConfig {
   readonly turnTimeoutMs: number;
   readonly afkTimeoutMs: number;
   readonly reconnectGraceMs: number;
+  /** Restart vote: time to answer, and the proposer's cooldown after a vote that did not pass. */
+  readonly restartVoteMs: number;
+  readonly restartCooldownMs: number;
   /** Bot worker threads; null = usable CPUs - 1, between 1 and 4 (cgroup-aware, bot/cpus.ts). */
   readonly botWorkers: number | null;
   readonly botJobTimeoutMs: number;
@@ -109,6 +112,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     turnTimeoutMs: positiveMs(env, 'TURN_TIMEOUT_MS', 30_000),
     afkTimeoutMs: positiveMs(env, 'AFK_TIMEOUT_MS', 5_000),
     reconnectGraceMs: positiveMs(env, 'RECONNECT_GRACE_MS', 60_000),
+    restartVoteMs: positiveMs(env, 'RESTART_VOTE_MS', 30_000),
+    restartCooldownMs: positiveMs(env, 'RESTART_COOLDOWN_MS', 60_000),
     botWorkers: env.BOT_WORKERS?.trim() ? positiveInt(env, 'BOT_WORKERS', 1) : null,
     botJobTimeoutMs: positiveMs(env, 'BOT_JOB_TIMEOUT_MS', 2_000),
     webDistDir: env.WEB_DIST_DIR?.trim() || null,

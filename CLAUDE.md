@@ -89,6 +89,32 @@ One rule decides what a departure does: `departureKind` in `packages/shared/src/
 - `session:resume` for a seat that is now `isBot`/`leftGame` deletes the session and returns `INVALID_SESSION`.
 - **Rating semantics (for 3d):** every id in `forfeits` is a loss, `durakId` is a loss, and `endReason` `abandoned`/`restarted` games are not rated.
 
+### Restart vote (Phase 7)
+`services/RestartVoteService.ts` runs the vote; the pure rules are in `services/restartVote.ts`. Every mutation happens inside the room lock, and the timer runs on the injected `Scheduler`.
+- **Events** (Zod, shared):
+  - `room:restartPropose { roomId }`
+  - `room:restartRespond { roomId, voteId, accept }`
+  - the server sends `room:restartVoteEnded { roomId, voteId, proposerId, outcome: passed|declined|expired|cancelled, by }`.
+  - The open vote is public in `room:state.restartVote { voteId, proposerId, expiresAt, serverTime, accepted, awaiting }`, so a resume hydrates it.
+  - Errors: `VOTE_IN_PROGRESS`, `VOTE_COOLDOWN`, `NO_ACTIVE_VOTE`.
+- **Persisted** (codec defaults `null` / `{}`):
+  - `Room.restartVote { voteId, proposerId, expiresAt, voters, accepted }`
+  - `Room.restartCooldowns` (proposer → until).
+- **Who:**
+  - Any seated human who hasn't left may propose, only while a game runs and no vote is open.
+  - Voters are the other members who are human, `connected`, not `afk` and not `leftGame`. Bots and absent humans don't block, so a vote with no voters passes at once.
+  - A voter who disconnects or leaves mid-vote is dropped (`RoomService` calls `votes.reconcile`).
+  - The proposer leaving cancels the vote, and a game that finishes on its own cancels it (`GameCommitter`).
+- **Ending:**
+  - A decline → `declined`.
+  - `RESTART_VOTE_MS` (30 s) → `expired`.
+  - Every non-passed outcome puts the proposer on a `RESTART_COOLDOWN_MS` (60 s) cooldown.
+  - Persisted votes are re-armed at startup (`votes.rearmAll()`).
+- **Passed:**
+  - The old game is reported with `game:over { endReason: 'restarted', durakId: null }` (not rated) but not stored.
+  - `dealGame` (`services/dealing.ts`, shared with `game:start`) deals a new game with the same seats and config and a fresh seed. `GameCommitter.start` saves it at version 0.
+  - `StoredGame.gameId` / `GameStatePayload.gameId` identify a game. The web reducer replaces its game when the id changes, and the BotDriver keys its plans by `(gameId, version)`.
+
 ### Bots in games (Phase 4b)
 **Seats.**
 - `RoomMember.isBot: boolean` and `botDifficulty: 'easy' | 'medium' | 'hard' | null`. Both are public in `room:state`.
@@ -151,7 +177,7 @@ One rule decides what a departure does: `departureKind` in `packages/shared/src/
 ## Web Client (`apps/web`)
 React 19 + Vite + Tailwind v4, Hebrew UI (`dir="rtl"`). `@durak/shared` and `@durak/game-engine` are aliased to their `src/` (no prebuild for dev, tests or `vite build`).
 - **Routes:** `/` (home: nickname, player count, mode → `room:create`) and `/room/:id` (join prompt / lobby / table / game-over overlay / room not found). Tiny router in `src/routing.ts` (History API).
-- **`src/net/`:** `Transport` (socket.io-client wrapper; tests use `FakeTransport`), `GameClient` (the single connection: feeds server events into the store, owns session tokens, exposes actions), `Store` + pure `reducer` read via `useSyncExternalStore`. Every `game:move` carries `expectedVersion` = the last received `game:state` version. `STALE_STATE` errors are swallowed (the server re-sends the state). A `game:state` older than the held version is ignored. `room:state` with status `lobby` clears the game (rematch).
+- **`src/net/`:** `Transport` (socket.io-client wrapper; tests use `FakeTransport`), `GameClient` (the single connection: feeds server events into the store, owns session tokens, exposes actions), `Store` + pure `reducer` read via `useSyncExternalStore`. Every `game:move` carries `expectedVersion` = the last received `game:state` version. `STALE_STATE` errors are swallowed (the server re-sends the state). A `game:state` older than the held version of the same game (`gameId`) is ignored; a new `gameId` (restart vote) replaces the game. `room:state` with status `lobby` clears the game (rematch).
 - **Sessions:** tokens are kept in **`sessionStorage`** (`durak:sessions` = `{ roomId: token }`), NOT `localStorage`, so every tab is its own seat (two windows of one browser = two players). A reload keeps the seat: on every (re)connect, the room in the URL is resumed with `session:resume`. **Every new socket must resume, socket.io's automatic reconnects included:** the server binds sessions per socket, so the store's `bound` flag is cleared on every disconnect and set by `session:issued`. `session:resume` is the first event on a new socket. Moves and other session actions are dropped while `!canAct(state)` (disconnected or resuming), never buffered: socket.io would flush them before the resume, and they would hit `NOT_IN_ROOM`. Regression tests: `tests/reconnect.test.tsx`, and a real-server TCP-relay cut in `tests/sessions.test.ts`. A `NOT_IN_ROOM` while holding a session means the server lost this socket's binding: the client marks itself unbound and resumes, which resends room + game state. No toast is shown, and only one resume runs at a time. While `isReconnecting(state)` (in a room and `!canAct`, or a resume pending), the `ConnectionBanner` shows "מתחבר מחדש...", `<main>` is `inert`, and the table offers no moves. **Trade-off:** closing the tab forgets the token, so that seat is forfeited once `RECONNECT_GRACE_MS` expires. A rejected token (`INVALID_SESSION` / `ROOM_NOT_FOUND`) is deleted and the join prompt (or "room not found") is shown. A connection holds one session, so switching rooms reconnects the socket first.
 - **Bots (4b):**
   - The host's lobby has a difficulty picker plus "add bot", and bot rows have a remove button.
@@ -293,8 +319,8 @@ How a run works:
     - If every card is covered, the defender has no pending action (`take` is illegal), so no defender timer runs; the bout only waits on non-defenders.
     - After 2 consecutive timeouts the player is marked AFK and the bot (medium) plays on their behalf until they move or resume (Phase 4b, see "Bots in games"). If the reconnection grace window expires, the player forfeits (see "Leaving a game": the game ends, or a bot takes the seat in 3+ player games).
     - Every auto-move (timeout or bot) goes through the same `validateMove` / `applyMove` path as a human move.
-    - **Settings (env):** `TURN_TIMEOUT_MS` (30000), `AFK_TIMEOUT_MS` (5000, used when *every* awaited player is AFK), `RECONNECT_GRACE_MS` (60000).
-    - **Data model:** `StoredGame.turnDeadline` (epoch ms or null), `timeoutStreak`, `endReason` (`'normal' | 'forfeit' | 'abandoned'`). `RoomMember.afk` (public, in `room:state`), plus server-only `consecutiveTimeouts` and `graceDeadline`. `game:state` carries `turnDeadline` and `serverTime`, so clients show a countdown free of clock skew; `game:over` carries `endReason`. Deadlines are persisted, so they survive restarts. The new codec fields have Zod defaults, so 3b records still decode.
+    - **Settings (env):** `TURN_TIMEOUT_MS` (30000), `AFK_TIMEOUT_MS` (5000, used when *every* awaited player is AFK), `RECONNECT_GRACE_MS` (60000), `RESTART_VOTE_MS` (30000), `RESTART_COOLDOWN_MS` (60000).
+    - **Data model:** `StoredGame.turnDeadline` (epoch ms or null), `timeoutStreak`, `endReason` (`'normal' | 'forfeit' | 'abandoned' | 'restarted'`). `RoomMember.afk` (public, in `room:state`), plus server-only `consecutiveTimeouts` and `graceDeadline`. `game:state` carries `turnDeadline` and `serverTime`, so clients show a countdown free of clock skew; `game:over` carries `endReason`. Deadlines are persisted, so they survive restarts. The new codec fields have Zod defaults, so 3b records still decode.
     - **Turn timer** (one per game): armed on start and after every successful change (human move, timeout, or a resume that extends the deadline). On expiry, inside the room lock: a version mismatch → no-op (stale); woken early → re-arm; otherwise apply the timeout step, `version + 1`, save room + game atomically, broadcast, arm the next deadline. Finished or forfeited → cleared.
     - **AFK:** `consecutiveTimeouts` is incremented for each player whose timeout move was applied; at 2 → `afk = true`. A human move or `session:resume` resets both. A resume by an awaited player extends a short AFK deadline to a full turn.
     - **Abandon guard:** `StoredGame.timeoutStreak` counts consecutive expiries with no human move in between (any human move resets it). When it reaches `3 × players still in` (`services/timeoutPolicy.ts`), the game is abandoned: `durak = null`, `endReason = 'abandoned'`. Abandoned games must be excluded from ELO (3d). A real draw is `durak = null` with `endReason = 'normal'`.

@@ -4,6 +4,7 @@ import type {
   ErrorPayload,
   GameOverPayload,
   GameStatePayload,
+  RestartVoteEndedPayload,
   RoomStatePayload,
   ServerToClientEvents,
   SessionIssuedPayload,
@@ -20,6 +21,7 @@ export interface ReceivedEvents {
   'game:state': GameStatePayload;
   'game:over': GameOverPayload;
   'session:issued': SessionIssuedPayload;
+  'room:restartVoteEnded': RestartVoteEndedPayload;
   error: ErrorPayload;
 }
 export type ReceivedName = keyof ReceivedEvents;

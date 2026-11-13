@@ -117,6 +117,23 @@ export interface Strings {
     readonly backToLobby: string;
     readonly reasons: Record<GameEndReason, string>;
   };
+  readonly restart: {
+    readonly button: string;
+    readonly title: string;
+    readonly confirmTitle: string;
+    readonly confirmBody: string;
+    readonly propose: string;
+    readonly proposed: (name: string) => string;
+    readonly youProposed: string;
+    readonly accept: string;
+    readonly decline: string;
+    readonly waiting: (accepted: number, total: number) => string;
+    /** Toasts when a vote ends. */
+    readonly passed: string;
+    readonly declined: (name: string) => string;
+    readonly expired: string;
+    readonly cancelled: string;
+  };
   readonly suits: Record<Suit, string>;
   readonly errors: Record<ErrorCode, string>;
 }
@@ -231,7 +248,23 @@ export const he: Strings = {
     finishOrder: 'סדר היציאה',
     forfeits: 'פרשו מהמשחק',
     backToLobby: 'חזרה לחדר ההמתנה',
-    reasons: { normal: 'סיום רגיל', forfeit: 'הפסד טכני', abandoned: 'משחק נטוש' },
+    reasons: { normal: 'סיום רגיל', forfeit: 'הפסד טכני', abandoned: 'משחק נטוש', restarted: 'הוחלף במשחק חדש' },
+  },
+  restart: {
+    button: 'משחק חדש',
+    title: 'הצבעה על משחק חדש',
+    confirmTitle: 'להציע משחק חדש?',
+    confirmBody: 'כל השחקנים צריכים להסכים. המשחק הנוכחי יבוטל בלי מפסיד, ויחולקו קלפים מחדש.',
+    propose: 'הצעה',
+    proposed: (name) => `${name} מציע/ה משחק חדש`,
+    youProposed: 'הצעת משחק חדש',
+    accept: 'מסכים/ה',
+    decline: 'לא',
+    waiting: (accepted, total) => `ממתין לתשובות (${accepted}/${total})`,
+    passed: 'המשחק התחיל מחדש',
+    declined: (name) => `${name} סירב/ה למשחק חדש`,
+    expired: 'פג הזמן להצבעה',
+    cancelled: 'ההצבעה בוטלה',
   },
   suits: { S: 'עלה', C: 'תלתן', D: 'יהלום', H: 'לב' },
   errors: {
@@ -252,6 +285,9 @@ export const he: Strings = {
     TOO_MANY_ROOMS: 'יצרת יותר מדי חדרים בשעה האחרונה. נסה שוב מאוחר יותר',
     SERVER_FULL: 'השרת מלא כרגע. נסה שוב בעוד כמה דקות',
     TOO_MANY_CONNECTIONS: 'יותר מדי חיבורים פתוחים מהרשת שלך. סגור לשוניות אחרות ונסה שוב',
+    VOTE_IN_PROGRESS: 'כבר יש הצבעה פתוחה',
+    VOTE_COOLDOWN: 'הצעת משחק חדש לפני רגע. אפשר להציע שוב בעוד דקה',
+    NO_ACTIVE_VOTE: 'ההצבעה כבר הסתיימה',
     INVALID_PLAYER_COUNT: 'מספר שחקנים לא תקין',
     DUPLICATE_PLAYER: 'שחקן כפול',
     INVALID_CONFIG: 'הגדרות משחק לא תקינות',

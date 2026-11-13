@@ -22,3 +22,8 @@ export type SeedSource = () => number;
 
 /** Uniform 32-bit seed for the engine's PRNG. */
 export const cryptoSeedSource: SeedSource = () => randomInt(0, 2 ** 32);
+
+/** Ids for games and restart votes (URL-safe, short). */
+export function newShortId(): string {
+  return randomBytes(6).toString('base64url');
+}

@@ -26,6 +26,7 @@ import { HandFan } from './HandFan';
 import { ActionBar, Countdown, StatusBanner } from './parts';
 import { MySeat, OpponentSeat, type TurnRing } from './Seat';
 import { statusLine } from './status';
+import { RestartButton, RestartVotePanel, canProposeRestart } from './RestartVote';
 import { TopBar } from './TopBar';
 import { DeckPile, DiscardPile, TableArea } from './TableSurface';
 
@@ -128,7 +129,12 @@ export function TableScreen() {
     <AnchorProvider registry={registry}>
       <LayoutGroup>
         <div className="relative mx-auto flex w-full max-w-3xl flex-1 flex-col gap-3 px-2 pt-2 sm:px-4 sm:pt-4">
-          <TopBar view={view} members={members} />
+          <TopBar
+            view={view}
+            members={members}
+            extra={canProposeRestart(view, room) && <RestartButton disabled={!!room?.restartVote || reconnecting} />}
+          />
+          <RestartVotePanel viewerId={view.viewerId} />
           <ul className="flex flex-wrap justify-center gap-1.5 sm:gap-2.5" dir="ltr" aria-label="opponents">
             {opponentsInOrder(view).map((p) => (
               <OpponentSeat
@@ -190,7 +196,7 @@ export function TableScreen() {
 
           <FlightLayer key={flights.version} flights={flights.list} />
 
-          {finished && overlayReady && (
+          {finished && overlayReady && gameOver?.endReason !== 'restarted' && (
             <GameOverOverlay view={view} gameOver={gameOver} nameOf={nameOf} canRematch={!spectator} reduced={reduced} />
           )}
         </div>

@@ -228,3 +228,38 @@ describe('leaving a running game over sockets', () => {
     expect(await guest.waitFor('error', () => true, guestMark)).toMatchObject({ code: 'NOT_IN_ROOM' });
   });
 });
+
+describe('restart vote over sockets', () => {
+  it('propose -> prompt in room:state -> accept -> game:over restarted, a new game at version 0 with a new gameId', async () => {
+    harness = await startTestServer();
+    const host = await harness.connect();
+    const guest = await harness.connect();
+    const { roomId, sessions } = await setupRoom(host, [guest]);
+    await startGame(host, [host, guest], roomId);
+    const oldGameId = guest.last('game:state')!.gameId;
+
+    const guestMark = guest.mark();
+    host.send('room:restartPropose', { roomId });
+    const prompt = await guest.waitFor('room:state', (r) => r.restartVote !== null, guestMark);
+    expect(prompt.restartVote).toMatchObject({ proposerId: sessions[0]!.playerId, awaiting: [sessions[1]!.playerId], accepted: [] });
+
+    const hostMark = host.mark();
+    guest.send('room:restartRespond', { roomId, voteId: prompt.restartVote!.voteId, accept: true });
+    expect(await host.waitFor('game:over', () => true, hostMark)).toMatchObject({ endReason: 'restarted', durakId: null });
+    const fresh = await host.waitFor('game:state', (s) => s.gameId !== oldGameId, hostMark);
+    expect(fresh.version).toBe(0);
+    expect(await host.waitFor('room:restartVoteEnded', () => true, hostMark)).toMatchObject({ outcome: 'passed', by: null });
+  });
+
+  it('rejects malformed vote payloads with INVALID_PAYLOAD', async () => {
+    harness = await startTestServer();
+    const host = await harness.connect();
+    const guest = await harness.connect();
+    const { roomId } = await setupRoom(host, [guest]);
+    for (const payload of [{ roomId, voteId: 'v', accept: 'yes' }, { roomId, voteId: '../x', accept: true }, { roomId, accept: true }]) {
+      const mark = host.mark();
+      host.send('room:restartRespond', payload);
+      expect(await host.waitFor('error', () => true, mark)).toMatchObject({ code: 'INVALID_PAYLOAD' });
+    }
+  });
+});

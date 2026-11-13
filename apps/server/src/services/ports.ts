@@ -1,3 +1,4 @@
+import type { RestartVoteEndedPayload } from '@durak/shared';
 import type { Room, Session, StoredGame } from '../domain/types.js';
 
 /**
@@ -10,6 +11,8 @@ export interface RoomNotifier {
   /** Send every seated player their own view, and spectators the public view. */
   gameState(room: Room, game: StoredGame): void;
   gameOver(room: Room, game: StoredGame): void;
+  /** A restart vote ended (passed, declined, expired or cancelled); sent to the whole room. */
+  restartVoteEnded(room: Room, ended: Omit<RestartVoteEndedPayload, 'roomId'>): void;
   /** Send the current view to a single participant only (resync / resume). */
   sendGameStateTo(room: Room, game: StoredGame, viewer: Session): void;
 }

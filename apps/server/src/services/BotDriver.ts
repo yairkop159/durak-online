@@ -48,6 +48,8 @@ export interface BotDriverDeps {
 interface Entry {
   readonly roomId: string;
   readonly playerId: string;
+  /** A restart deals a new game at version 0 again: an entry belongs to one game. */
+  readonly gameId: string;
   readonly version: number;
   readonly abort: AbortController;
   readonly applyAt: number;
@@ -99,7 +101,7 @@ export class BotDriver implements GameChangeListener {
     // Abort everything in this room except an entry already planned for exactly this seat + version.
     for (const [k, entry] of this.entries) {
       if (entry.roomId !== room.id) continue;
-      if (k === wanted && entry.version === game.version) continue;
+      if (k === wanted && entry.version === game.version && entry.gameId === game.gameId) continue;
       this.drop(k, entry, 'cancelled');
     }
     if (!wanted || !member || this.entries.has(wanted)) return;
@@ -145,6 +147,7 @@ export class BotDriver implements GameChangeListener {
     const entry: Entry = {
       roomId: room.id,
       playerId,
+      gameId: game.gameId,
       version: game.version,
       abort: new AbortController(),
       applyAt: clock.now() + this.delay(resolution),

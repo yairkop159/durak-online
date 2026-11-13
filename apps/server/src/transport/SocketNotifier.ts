@@ -1,12 +1,13 @@
 import { sanitizeStateForPlayer } from '@durak/game-engine';
-import type { GameStatePayload, RoomStatePayload } from '@durak/shared';
+import type { GameStatePayload, RestartVoteEndedPayload, RoomStatePayload } from '@durak/shared';
 import type { Room, Session, StoredGame } from '../domain/types.js';
 import type { RoomNotifier } from '../services/ports.js';
 import type { Clock } from '../services/scheduling.js';
 import { channels, type IoServer } from './socketTypes.js';
 
 /** Fields are mapped explicitly: server-only member state (timeout counters, grace) never leaves. */
-export function toRoomStatePayload(room: Room): RoomStatePayload {
+export function toRoomStatePayload(room: Room, now: number): RoomStatePayload {
+  const vote = room.restartVote;
   return {
     roomId: room.id,
     hostId: room.hostId,
@@ -22,6 +23,16 @@ export function toRoomStatePayload(room: Room): RoomStatePayload {
     })),
     spectatorCount: room.spectators.length,
     status: room.status,
+    restartVote: vote
+      ? {
+          voteId: vote.voteId,
+          proposerId: vote.proposerId,
+          expiresAt: vote.expiresAt,
+          serverTime: now,
+          accepted: [...vote.accepted],
+          awaiting: vote.voters.filter((id) => !vote.accepted.includes(id)),
+        }
+      : null,
   };
 }
 
@@ -36,7 +47,7 @@ export class SocketNotifier implements RoomNotifier {
   ) {}
 
   roomState(room: Room): void {
-    this.io.to(channels.room(room.id)).emit('room:state', toRoomStatePayload(room));
+    this.io.to(channels.room(room.id)).emit('room:state', toRoomStatePayload(room, this.clock.now()));
   }
 
   gameState(room: Room, game: StoredGame): void {
@@ -58,6 +69,10 @@ export class SocketNotifier implements RoomNotifier {
     });
   }
 
+  restartVoteEnded(room: Room, ended: Omit<RestartVoteEndedPayload, 'roomId'>): void {
+    this.io.to(channels.room(room.id)).emit('room:restartVoteEnded', { roomId: room.id, ...ended });
+  }
+
   sendGameStateTo(_room: Room, game: StoredGame, viewer: Session): void {
     if (viewer.role === 'player') {
       this.io.to(channels.player(viewer.id)).emit('game:state', this.viewFor(game, viewer.id));
@@ -69,6 +84,7 @@ export class SocketNotifier implements RoomNotifier {
   private viewFor(game: StoredGame, playerId: string | null): GameStatePayload {
     return {
       roomId: game.roomId,
+      gameId: game.gameId,
       version: game.version,
       view: sanitizeStateForPlayer(game.state, playerId),
       turnDeadline: game.turnDeadline,
