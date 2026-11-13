@@ -116,17 +116,17 @@ export function TableArea({
 }) {
   const registry = useAnchorRegistry();
   if (table.length === 0) {
-    return <div className="flex min-h-28 flex-1 items-center justify-center text-sm text-muted/70 sm:min-h-36">{t.table.emptyTable}</div>;
+    return <div className="flex min-h-28 flex-1 items-center justify-center self-stretch text-sm text-muted/70 sm:min-h-36">{t.table.emptyTable}</div>;
   }
   return (
-    <ul className="flex min-h-28 flex-1 flex-wrap content-center items-center justify-center gap-x-4 gap-y-6 py-2 sm:min-h-36" data-testid="table" dir="ltr">
+    <ul className="flex min-h-28 flex-1 flex-wrap content-center items-center justify-center gap-x-4 gap-y-6 self-stretch py-2 sm:min-h-36 sm:gap-x-[clamp(1.75rem,2.5vw,3rem)] sm:gap-y-10" data-testid="table" dir="ltr">
       {table.map((pair, index) => {
         const target = interactive && pair.defense === null && isAttackTarget(index, moves, selection);
         const selected = selection.kind === 'attack' && selection.index === index;
         const state: CardState = selected ? 'selected' : target ? 'target' : 'plain';
         const attackId = cardId(pair.attack);
         return (
-          <li key={attackId} className="relative h-[100px] w-[68px] sm:h-[118px] sm:w-[80px]" data-testid={`pair-${index}`}>
+          <li key={attackId} className="relative h-[100px] w-[68px] sm:h-[calc(var(--card-table-h-lg)+28px)] sm:w-[calc(var(--card-table-w-lg)+18px)]" data-testid={`pair-${index}`}>
             <PlayingCard
               card={pair.attack}
               layoutId={attackId}
@@ -136,7 +136,7 @@ export function TableArea({
               {...(target || selected ? { onClick: () => onAttackClick(index) } : {})}
             />
             {pair.defense && (
-              <div className="absolute top-5 left-3.5 sm:top-6 sm:left-4" style={{ rotate: `${M.defenseRotateDeg}deg` }}>
+              <div className="absolute top-5 left-3.5 sm:top-[calc(var(--card-table-h-lg)*0.22)] sm:left-[calc(var(--card-table-w-lg)*0.22)]" style={{ rotate: `${M.defenseRotateDeg}deg` }}>
                 <PlayingCard
                   card={pair.defense}
                   layoutId={cardId(pair.defense)}

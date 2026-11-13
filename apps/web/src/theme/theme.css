@@ -63,12 +63,13 @@
   /* card sizes (phone first; sm: breakpoint grows them) */
   --card-hand-w: 60px;
   --card-hand-h: 86px;
-  --card-hand-w-lg: 72px;
-  --card-hand-h-lg: 104px;
+  /* sm+ sizes scale with the viewport: phone-ish sizes at 640px, full size on a large desktop */
+  --card-hand-w-lg: clamp(72px, 1.9vw + 57px, 84px);
+  --card-hand-h-lg: clamp(104px, 2.7vw + 81px, 120px);
   --card-table-w: 54px;
   --card-table-h: 78px;
-  --card-table-w-lg: 64px;
-  --card-table-h-lg: 92px;
+  --card-table-w-lg: clamp(64px, 4.2vw + 30px, 90px);
+  --card-table-h-lg: clamp(92px, 6vw + 44px, 130px);
   --card-seat-w: 20px;
   --card-seat-h: 29px;
 

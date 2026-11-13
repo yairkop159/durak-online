@@ -137,7 +137,7 @@ export function TableScreen() {
           </ul>
 
           <section
-            className="mx-auto flex w-full items-center gap-2 rounded-table bg-gradient-to-b from-surface-2 to-surface p-3 shadow-table ring-1 ring-line sm:gap-4 sm:p-4"
+            className="mx-auto flex w-full items-center gap-2 rounded-table bg-gradient-to-b from-surface-2 to-surface p-3 shadow-table ring-1 ring-line sm:min-h-[clamp(14rem,38vh,30rem)] sm:flex-1 sm:gap-4 sm:p-6"
             dir="ltr"
           >
             <DeckPile view={view} />

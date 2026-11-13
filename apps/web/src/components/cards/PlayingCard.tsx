@@ -35,8 +35,8 @@ export type CardState = 'plain' | 'playable' | 'dimmed' | 'selected' | 'target';
 export const CARD_SIZE: Record<CardSize, string> = {
   xs: 'w-7 h-10 text-[9px] rounded-card-sm',
   sm: 'w-11 h-[62px] text-[11px] rounded-card-sm',
-  md: 'w-(--card-table-w) h-(--card-table-h) text-[13px] sm:w-(--card-table-w-lg) sm:h-(--card-table-h-lg) sm:text-[15px] rounded-card',
-  lg: 'w-(--card-hand-w) h-(--card-hand-h) text-[15px] sm:w-(--card-hand-w-lg) sm:h-(--card-hand-h-lg) sm:text-[17px] rounded-card',
+  md: 'w-(--card-table-w) h-(--card-table-h) text-[13px] sm:w-(--card-table-w-lg) sm:h-(--card-table-h-lg) sm:text-[clamp(15px,0.9vw+9px,21px)] rounded-card',
+  lg: 'w-(--card-hand-w) h-(--card-hand-h) text-[15px] sm:w-(--card-hand-w-lg) sm:h-(--card-hand-h-lg) sm:text-[clamp(17px,0.45vw+12px,19px)] rounded-card',
 };
 
 const STATE: Record<CardState, string> = {
