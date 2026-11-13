@@ -1,6 +1,6 @@
-import type { BotDifficulty, ClientMove, GameMode, RoomStatePayload } from '@durak/shared';
+import type { BotDifficulty, ClientMove, GameMode, RoomStatePayload, SessionIssuedPayload } from '@durak/shared';
 import { SessionTokens, type KeyValueStorage } from './sessionStore';
-import { Store, type ClientState } from './store';
+import { Store, canAct, type ClientState } from './store';
 import type { Transport } from './transport';
 
 export interface GameClientOptions {
@@ -33,6 +33,7 @@ export class GameClient {
     this.now = options.now ?? Date.now;
     const { transport, store } = this;
 
+    // Resume first: nothing else is emitted on a new socket before it is bound again.
     transport.onConnect(() => {
       store.dispatch({ type: 'connection', status: 'connected' });
       this.tryResume();
@@ -102,12 +103,12 @@ export class GameClient {
   }
 
   addBot(difficulty: BotDifficulty): void {
-    const session = this.state.session;
+    const session = this.boundSession();
     if (session) this.transport.emit('room:addBot', { roomId: session.roomId, difficulty });
   }
 
   removeBot(playerId: string): void {
-    const session = this.state.session;
+    const session = this.boundSession();
     if (session) this.transport.emit('room:removeBot', { roomId: session.roomId, playerId });
   }
 
@@ -120,25 +121,31 @@ export class GameClient {
     const session = this.state.session;
     if (!session) return;
     this.vsComputer = null;
-    this.transport.emit('room:leave', { roomId: session.roomId });
+    // From an unbound socket the server would only answer NOT_IN_ROOM; the seat then simply
+    // stays offline (and is released by the usual lobby/grace rules).
+    if (canAct(this.state)) this.transport.emit('room:leave', { roomId: session.roomId });
     this.tokens.remove(session.roomId);
     this.store.dispatch({ type: 'left' });
   }
 
   startGame(): void {
-    const session = this.state.session;
+    const session = this.boundSession();
     if (session) this.transport.emit('game:start', { roomId: session.roomId });
   }
 
   rematch(): void {
-    const session = this.state.session;
+    const session = this.boundSession();
     if (session) this.transport.emit('room:rematch', { roomId: session.roomId });
   }
 
-  /** Sends a move against the last game version we received. */
+  /**
+   * Sends a move against the last game version we received. Dropped while disconnected or
+   * resuming: the socket isn't bound to our seat yet (the server would answer NOT_IN_ROOM), and
+   * socket.io would otherwise buffer it and flush it BEFORE the resume on the next connect.
+   */
   sendMove(move: ClientMove): void {
     const game = this.state.game;
-    if (!game) return;
+    if (!game || !canAct(this.state)) return;
     this.transport.emit('game:move', { roomId: game.roomId, move, expectedVersion: game.version });
   }
 
@@ -167,10 +174,23 @@ export class GameClient {
     }
   }
 
+  /** The session, if this connection is bound to it and may act. */
+  private boundSession(): SessionIssuedPayload | null {
+    return canAct(this.state) ? this.state.session : null;
+  }
+
+  /**
+   * Binds this connection to the route's stored session. Runs on EVERY connect, socket.io's
+   * automatic reconnects included: the server binds sessions per socket, so a new socket must
+   * resume even though we still hold the session from the previous one.
+   */
   private tryResume(): void {
     const roomId = this.routeRoomId;
-    if (roomId === null || !this.transport.connected || this.state.session?.roomId === roomId) return;
-    const token = this.tokens.get(roomId);
+    if (roomId === null || !this.transport.connected) return;
+    const { session, bound, resumeStatus } = this.state;
+    if (resumeStatus === 'pending') return;
+    if (session?.roomId === roomId && bound) return;
+    const token = this.tokens.get(roomId) ?? (session?.roomId === roomId ? session.sessionToken : null);
     if (token === null) return;
     this.store.dispatch({ type: 'resume:start' });
     this.transport.emit('session:resume', { sessionToken: token });

@@ -29,6 +29,12 @@ export interface ClientError {
 export interface ClientState {
   readonly connection: ConnectionStatus;
   readonly session: SessionIssuedPayload | null;
+  /**
+   * Whether the CURRENT connection is bound to `session` on the server. Every new socket starts
+   * unbound (the server binds sessions per socket), even when we still hold the session from a
+   * previous connection; `session:issued` (create, join or resume) binds it.
+   */
+  readonly bound: boolean;
   /** `pending` while a `session:resume` is in flight; `failed` when the stored token was rejected. */
   readonly resumeStatus: 'idle' | 'pending' | 'failed';
   readonly roomNotFound: boolean;
@@ -53,6 +59,7 @@ export type ClientAction =
 export const initialState: ClientState = {
   connection: 'connecting',
   session: null,
+  bound: false,
   resumeStatus: 'idle',
   roomNotFound: false,
   room: null,
@@ -64,18 +71,26 @@ export const initialState: ClientState = {
 /** Errors that mean "your stored session is no good": drop it and ask for a nickname. */
 const RESUME_FAILURES: ReadonlySet<string> = new Set(['INVALID_SESSION', 'ROOM_NOT_FOUND']);
 
+/** Whether this connection may act for its session right now (connected, and bound on the server). */
+export function canAct(state: ClientState): boolean {
+  return state.connection === 'connected' && state.bound && state.session !== null;
+}
+
 export function reducer(state: ClientState, action: ClientAction): ClientState {
   switch (action.type) {
     case 'connection':
       return {
         ...state,
         connection: action.status,
+        // A new socket (after any disconnect, including socket.io's automatic reconnects) is not
+        // bound to our session until it resumes.
+        bound: action.status === 'connected' ? state.bound : false,
         // A resume in flight dies with the connection; the next connect starts a new one.
         resumeStatus: action.status === 'disconnected' && state.resumeStatus === 'pending' ? 'idle' : state.resumeStatus,
       };
 
     case 'session:issued':
-      return { ...state, session: action.payload, resumeStatus: 'idle', roomNotFound: false };
+      return { ...state, session: action.payload, bound: true, resumeStatus: 'idle', roomNotFound: false };
 
     case 'room:state': {
       const room = action.payload;
@@ -111,11 +126,16 @@ export function reducer(state: ClientState, action: ClientAction): ClientState {
       // The server re-sends the current game:state right after a STALE_STATE; nothing to show.
       if (code === 'STALE_STATE') return state;
       const resumeFailed = state.resumeStatus === 'pending' && RESUME_FAILURES.has(code);
+      const lastError = { code, message, id: (state.lastError?.id ?? 0) + 1 };
+      // Our seat is gone (expired session, deleted room): forget the room we were showing.
+      if (resumeFailed && state.session !== null) {
+        return { ...initialState, connection: state.connection, resumeStatus: 'failed', roomNotFound: code === 'ROOM_NOT_FOUND', lastError };
+      }
       return {
         ...state,
         resumeStatus: resumeFailed ? 'failed' : state.resumeStatus,
         roomNotFound: state.roomNotFound || code === 'ROOM_NOT_FOUND',
-        lastError: { code, message, id: (state.lastError?.id ?? 0) + 1 },
+        lastError,
       };
     }
 
