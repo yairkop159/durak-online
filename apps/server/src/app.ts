@@ -3,6 +3,7 @@ import { Server } from 'socket.io';
 import type { HealthReport } from './backend.js';
 import type { BotPolicies, BotRunner } from './bot/job.js';
 import { WorkerPoolRunner } from './bot/WorkerPoolRunner.js';
+import { registerWebApp } from './http/webApp.js';
 import { DEFAULT_CORS_ORIGINS } from './config.js';
 import type { Repositories } from './repositories/interfaces.js';
 import { createInMemoryRepositories } from './repositories/inMemory/index.js';
@@ -56,6 +57,8 @@ export interface BuildServerOptions {
   readonly health?: () => Promise<HealthReport>;
   /** Called after sockets and HTTP are closed (e.g. to quit Redis). */
   readonly onClose?: () => Promise<void>;
+  /** Serve the built web client from this directory (with an SPA fallback). Default: not served. */
+  readonly webDistDir?: string | null;
 }
 
 export interface DurakServer {
@@ -136,6 +139,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     const report = await health();
     return reply.code(report.ok ? 200 : 503).send(report);
   });
+  if (options.webDistDir) registerWebApp(app, options.webDistDir);
 
   // Shutdown: stop all timers and bots, then drop sockets. Disconnects caused by our own shutdown
   // must not start reconnection graces (players are offline because the server is, not by choice).

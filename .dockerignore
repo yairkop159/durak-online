@@ -1,0 +1,14 @@
+# Keep the build context small and never ship local artifacts or secrets.
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+packages/game-engine/bench/results
+.git
+.github
+.env
+.env.*
+!.env.example
+*.log
+Dockerfile
+docker-compose*.yml

@@ -19,11 +19,20 @@ export interface Transport {
   close(): void;
 }
 
-export const DEFAULT_SERVER_URL = 'http://localhost:3000';
+/** The dev server (`npm run dev`): Vite on 5173, the game server on 3000. */
+export const DEV_SERVER_URL = 'http://localhost:3000';
 
-export function serverUrl(): string {
-  const fromEnv: unknown = import.meta.env.VITE_SERVER_URL;
-  return typeof fromEnv === 'string' && fromEnv.length > 0 ? fromEnv : DEFAULT_SERVER_URL;
+/**
+ * `VITE_SERVER_URL` (build time) wins. Otherwise a production build talks to the origin that
+ * served it (the server hosts the client and Socket.io together), and dev mode to localhost:3000.
+ */
+export function serverUrl(
+  env: { readonly VITE_SERVER_URL?: unknown; readonly DEV?: boolean } = import.meta.env,
+  origin: string = globalThis.location?.origin ?? DEV_SERVER_URL,
+): string {
+  const fromEnv = env.VITE_SERVER_URL;
+  if (typeof fromEnv === 'string' && fromEnv.length > 0) return fromEnv;
+  return env.DEV ? DEV_SERVER_URL : origin;
 }
 
 export function socketTransport(url: string, options: { websocketOnly?: boolean } = {}): Transport {

@@ -1,6 +1,7 @@
 import { buildServer } from './app.js';
 import { createBackend } from './backend.js';
 import { loadConfig } from './config.js';
+import { resolveWebDistDir } from './http/webApp.js';
 
 const config = loadConfig();
 
@@ -12,6 +13,8 @@ const bootLog = {
 
 const backend = await createBackend(config, bootLog);
 await backend.startup();
+
+const webDistDir = resolveWebDistDir(config.webDistDir);
 
 const { app, timers } = buildServer({
   repos: backend.repos,
@@ -28,8 +31,10 @@ const { app, timers } = buildServer({
   },
   health: () => backend.health(),
   onClose: () => backend.close(),
+  webDistDir,
 });
 app.log.info({ repository: backend.kind }, 'storage backend ready');
+app.log.info({ webDistDir }, webDistDir ? 'serving the web client' : 'web client not built: API and sockets only');
 
 // After the ghost reset (backend.startup): re-arm persisted turn deadlines, start
 // reconnection graces for players who were online when the previous process died, and let bots

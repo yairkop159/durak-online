@@ -13,6 +13,8 @@ export interface ServerConfig {
   /** Bot worker threads; null = cores - 1 (min 1). */
   readonly botWorkers: number | null;
   readonly botJobTimeoutMs: number;
+  /** Built web client to serve; null = auto-detect apps/web/dist next to the server. */
+  readonly webDistDir: string | null;
 }
 
 function positiveMs(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -66,5 +68,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     reconnectGraceMs: positiveMs(env, 'RECONNECT_GRACE_MS', 60_000),
     botWorkers: env.BOT_WORKERS?.trim() ? positiveMs(env, 'BOT_WORKERS', 1) : null,
     botJobTimeoutMs: positiveMs(env, 'BOT_JOB_TIMEOUT_MS', 2_000),
+    webDistDir: env.WEB_DIST_DIR?.trim() || null,
   };
 }
