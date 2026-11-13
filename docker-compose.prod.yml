@@ -1,0 +1,43 @@
+# Production build, locally: the app image + Redis. One command:
+#   docker compose -f docker-compose.prod.yml up -d --build
+# then play at http://localhost:8080 (health: http://localhost:8080/health).
+# A separate project name keeps its containers and volume apart from the dev docker-compose.yml.
+name: durak-prod
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: durak-online:local
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      REDIS_URL: redis://redis:6379
+      # Same-origin by default; list extra browser origins (comma-separated) only if needed.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      # Number of reverse-proxy hops in front of the app (0 here: browsers connect directly).
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      BOT_WORKERS: ${BOT_WORKERS:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    stop_grace_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  redis-data:
