@@ -10,7 +10,7 @@ A real-time, server-authoritative multiplayer web implementation of the Russian 
 - **Databases:** Redis (active game state & session tokens with TTL), PostgreSQL + Prisma (completed match history & ELO ratings).
 - **Frontend:** React 19, Vite, Tailwind CSS, Framer Motion (mobile-first responsive UI).
 - **Testing:** Vitest (unit & state-machine edge-case testing).
-- **Infrastructure:** Docker Compose for local Redis and PostgreSQL.
+- **Infrastructure:** Docker Compose for local Redis and PostgreSQL (`docker-compose.yml`); one production image (`Dockerfile`) and `docker-compose.prod.yml` (app + Redis). See "Production" below.
 
 ## Core Architectural Invariants (NEVER VIOLATE)
 1. **Pure Game Engine (`packages/game-engine`):** Must have ZERO external I/O dependencies (no Socket.io, no Redis, no `Date.now()`, no `Math.random()` without an injectable PRNG seed). Every state transition must be a pure function: `applyMove(state, move) -> Result<GameState, GameError>`.
@@ -42,7 +42,7 @@ This is the single source of truth for the server, bot and UI. Any change here m
 
 ## Server Architecture (`apps/server`)
 Layers, one folder each; dependencies point downward only:
-- **`transport/`**: Socket.io handlers. Every incoming event is parsed with its schema from `ClientEventSchemas` before anything else; an invalid payload or unknown event gets an `error` event (`INVALID_PAYLOAD`) and never throws. Every handler is wrapped so an unexpected exception becomes `error {INTERNAL}`. `SocketNotifier` builds every `game:state` per recipient through `sanitizeStateForPlayer` (spectators get the `null` view); there is never one shared payload. Socket.io limits: `maxHttpBufferSize` 16 KB, CORS from `CORS_ORIGINS`.
+- **`transport/`**: Socket.io handlers. Every incoming event is parsed with its schema from `ClientEventSchemas` before anything else; an invalid payload or unknown event gets an `error` event (`INVALID_PAYLOAD`) and never throws. Every handler is wrapped so an unexpected exception becomes `error {INTERNAL}`. `SocketNotifier` builds every `game:state` per recipient through `sanitizeStateForPlayer` (spectators get the `null` view); there is never one shared payload. Socket.io limits: `maxHttpBufferSize` 16 KB, CORS from `CORS_ORIGINS`, an Origin check on the handshake, and the abuse limits in "Production" (rate limiting runs in `socket.use`, before validation).
 - **`services/`**:
   - `RoomService` (create/join/leave/resume/start/disconnect, add/remove bot) and `GameService` (moves, bot moves, resync).
   - `GameCommitter` is the single write path for new game versions (see "Bots in games").
@@ -127,7 +127,7 @@ Layers, one folder each; dependencies point downward only:
 - **Startup.** `rearmAll` calls `announce` for every running game, from the persisted knowledge.
 
 **Worker pool** (`bot/WorkerPoolRunner.ts`):
-- `worker_threads`, size `BOT_WORKERS` (default cores − 1, min 1), spawned lazily, FIFO queue.
+- `worker_threads`, size `BOT_WORKERS` (default `defaultBotWorkers()` in `bot/cpus.ts`: usable CPUs − 1, between 1 and 4, where usable CPUs honors the container's cgroup quota), spawned lazily, FIFO queue.
 - Jobs are plain `BotJob { jobId, view, knowledge, options: { seed, policy } }`. They never carry a `GameState`; a test asserts that no serialized job contains a hidden card.
 - Per-job timeout `BOT_JOB_TIMEOUT_MS` (2000), from submission, on the injected `Scheduler`. On a timeout, worker `error`/`exit`, or a result that fails `ClientMoveSchema`, the job resolves with GreedyBot on the main thread, and a stuck or dead worker is replaced.
 - The worker loads `botWorker.ts` under tsx (adding `--import tsx` if needed) or `botWorker.js` from dist. It imports `@durak/game-engine` through its package entry, so `npm run dev` (which builds the engine first) is required.
@@ -148,7 +148,8 @@ React 19 + Vite + Tailwind v4, Hebrew UI (`dir="rtl"`). `@durak/shared` and `@du
 - **Table interaction (`src/game/selection.ts`, pure):** legal moves come from `getLegalMovesForView`; legal hand cards are highlighted, others dimmed. Attack/throw-in = one click. Defend = hand card then attack card, or attack card then hand card. Transfer = hand card then the "transfer" slot. Selection is tied to the game version (any new state clears it). Take/Pass buttons appear only when legal; spectators get no hand and no buttons.
 - **Countdown:** `remainingMs = turnDeadline − serverTime − (now − receivedAt)` using the client's clock for both `receivedAt` and `now`, so clock skew between client and server doesn't matter.
 - **Strings:** every UI string and every error code's Hebrew message live in `src/i18n/he.ts` (typed `Strings`; `errors` must cover every `ServerErrorCode | GameErrorCode`). Cards are drawn with CSS (rank + suit symbol), no image assets.
-- **Env:** `VITE_SERVER_URL` (default `http://localhost:3000`). Vite runs on 5173 (`strictPort`), matching the server's default `CORS_ORIGINS`.
+- **Env:** `VITE_SERVER_URL` (build time) overrides the server URL. Otherwise a production build connects to its own origin (the server hosts the client), and dev mode to `http://localhost:3000` (`serverUrl()` in `net/transport.ts`). Vite runs on 5173 (`strictPort`), matching the server's default `CORS_ORIGINS`.
+- **Refused handshakes:** a server middleware refusal (`connect_error` with a code such as `TOO_MANY_CONNECTIONS`) is surfaced as an `error` event and retried after 15 s, because socket.io doesn't retry those itself.
 
 ## Bot (`packages/game-engine/src/bot`, Phase 4a)
 A pure library: no server or UI wiring (that is 4b). Exported from `@durak/game-engine`.
@@ -218,15 +219,55 @@ How a run works:
 - The harness (`bench/match.ts`, also used by the tests) gives each seat only its view and its own `PublicKnowledge`, and validates every move against the real state.
 - The report shows durak rates with Wilson 95% CIs, draws and abandoned games (capped at 3000 moves), iterations/s and ms per move, plus a PASS/FAIL line for the 2-player target: IS-MCTS's CI must lie entirely below Greedy's.
 
+## Production (Phase 6 prep)
+**Image** (`Dockerfile`, node:24-alpine, multi-stage):
+- The build stage builds shared → game-engine → server → web.
+- The runtime stage has only the server's production dependencies, with the workspace symlinks (`node_modules/@durak/*` → `packages/*`, so bot workers load `packages/game-engine/dist`), plus the four `dist` folders.
+- It runs as `node`, with `PORT=8080`, a `HEALTHCHECK` on `/health`, and `CMD node apps/server/dist/index.js`.
+
+**One process serves everything** on one origin: Socket.io, `/health` and the web client (`http/webApp.ts`, `@fastify/static`).
+- `WEB_DIST_DIR`, or auto-detected `apps/web/dist`. The client isn't served when it isn't built.
+- `/assets/*` are immutable-cached; `index.html` is `no-cache`.
+- Every other GET falls back to `index.html`, except `/health`, `/socket.io`, missing assets and non-GET requests (JSON 404).
+
+**Config** (`config.ts`; the effective values are logged at startup as `settings`):
+- `NODE_ENV=production` makes `CORS_ORIGINS` default to none (same-origin only). Otherwise it is `http://localhost:5173`. `*` is refused.
+- The handshake's `allowRequest` accepts: no Origin, the server's own host, or a listed origin.
+- `TRUST_PROXY`: `false` | `true` | a hop count (1 behind Fly/Render/Railway). It is used by Fastify and by `clientIp()` (`transport/clientAddress.ts`). X-Forwarded-For is ignored unless trusted.
+
+**Abuse limits** (`transport/rateLimit.ts`, in-process, `DEFAULT_LIMITS`, env in parentheses):
+- Per-socket token bucket on every incoming event: burst 20 (`RATE_LIMIT_BURST`), 10/s (`RATE_LIMIT_PER_SEC`). A dropped event never reaches a handler. The client gets at most one `RATE_LIMITED` per second. 100 drops within 10 s (`RATE_LIMIT_DISCONNECT_AFTER`) disconnects the socket.
+- Rooms per IP per rolling hour: 30 (`MAX_ROOMS_PER_IP_PER_HOUR`), charged only on success → `TOO_MANY_ROOMS`.
+- Stored rooms: 500 (`MAX_ROOMS`), checked in `RoomService.createRoom` by counting `scanIds()` → `SERVER_FULL`. It is a soft cap.
+- Sockets per IP: 20 (`MAX_SOCKETS_PER_IP`). The handshake is refused with `connect_error` `TOO_MANY_CONNECTIONS`.
+- `buildServer({ limits })`. The socket test harness passes `UNLIMITED`, because tests send many events without advancing the fake clock; limit tests pass their own values.
+
+**No internals to clients:**
+- HTTP 5xx bodies are `{"error":"Internal Server Error"}`.
+- Socket handler exceptions become `INTERNAL`.
+- `unhandledRejection` is logged. `uncaughtException` logs and shuts down (exit 1).
+- Shutdown is capped at 10 s.
+
+**Running and deploying:**
+- `npm run prod:up` / `prod:down` run `docker-compose.prod.yml` (project `durak-prod`, http://localhost:8080).
+- `npm run smoke -- <url>` (`scripts/smoke.mjs`, needs a built engine) checks `/health`, the SPA fallback and its assets, then plays a real game against a medium bot over a same-origin socket.
+- Deploy: `DEPLOY.md` (Hebrew) and `fly.toml`: one always-on machine, `fly deploy --ha=false`. **Single instance only** (see above).
+
+**CI** (`.github/workflows/ci.yml`):
+- A typecheck → build → `npm test` job, with a Redis service.
+- A docker job: builds the image, boots it with Redis and runs the smoke test.
+
 ## Development Workflow & Commands
 - Build all workspaces: `npm run build --workspaces`
+- Run every test: `npm test`. `scripts/run-tests.mjs` runs the workspaces in sequence with a hard per-workspace limit (`TEST_WORKSPACE_TIMEOUT_MS`, default 10 min): on expiry it kills the process tree and fails, naming the workspace. A test run must never hang. game-engine uses half the cores (`maxWorkers`) so its CPU-heavy tests can't starve Vitest's main process. Always wrap long verification commands in a timeout.
 - Run engine tests: `npm test --workspace=packages/game-engine` (includes the bot tests in `tests/bot/`)
 - Run the bot benchmark: `npm run bench --workspace=packages/game-engine` (`-- --full`, `-- --realtime`; see "Bot" above)
 - Run server tests: `npm test --workspace=apps/server` (Redis tests need `docker-compose up -d` or any Redis at `REDIS_URL`; without one they are skipped with a warning)
 - Run server + web together: `npm run dev` (builds `shared` + `game-engine` for the server's `tsx`, then runs both with `concurrently`; open http://localhost:5173)
-- Run the server in dev mode: `npm run dev --workspace=apps/server` (env: `PORT`, `HOST`, `CORS_ORIGINS`, `BOT_WORKERS`, `BOT_JOB_TIMEOUT_MS`; bot workers need a built `game-engine`)
+- Run the server in dev mode: `npm run dev --workspace=apps/server` (env: `PORT`, `HOST`, `CORS_ORIGINS`, `TRUST_PROXY`, `BOT_WORKERS`, `BOT_JOB_TIMEOUT_MS`, the limits above, `WEB_DIST_DIR`; see `.env.example`; bot workers need a built `game-engine`)
 - Run the web client alone: `npm run dev --workspace=apps/web`; tests: `npm test --workspace=apps/web` (Vitest + jsdom + Testing Library; `tests/sessions.test.ts` starts a real in-process server)
 - Start local infrastructure: `docker-compose up -d`
+- Production build locally: `npm run prod:up` → http://localhost:8080; end-to-end check: `npm run smoke -- http://localhost:8080`
 
 ## Implementation Roadmap (Execute Step-by-Step)
 - **Phase 1: Foundation & Shared Contracts.** Initialize monorepo, `tsconfig.base.json`, `docker-compose.yml` (Redis + Postgres), and `packages/shared` types + Zod event schemas.
@@ -252,6 +293,9 @@ How a run works:
 - **Phase 5: Mobile-First Web Client.** Build `apps/web` with clean card animations, responsive table layout for 2-6 players, and room invite links.
   - **5a (done):** playable client: home, invite links, lobby, table with legal-move highlighting, countdown, game over + rematch, spectators. See "Web Client" above.
   - **5b:** animations and visual polish.
+- **Phase 6: Deployment.**
+  - **Prep (done):** production image, same-origin serving, prod compose, hardening (rate/abuse limits, proxy trust, CORS), CI, `DEPLOY.md`. See "Production".
+  - **Next:** deploy to Fly.io (manual, see `DEPLOY.md`).
 
 ## Coding Conventions
 - Prefer explicit union types and discriminated unions for game phases and move actions.
