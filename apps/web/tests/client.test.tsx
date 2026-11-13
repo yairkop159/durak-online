@@ -107,7 +107,7 @@ describe('home and lobby', () => {
         'game:state',
         gameState(makeView({ phase: { kind: 'finished', durak: 'bob' }, finished: ['me'], counts: { me: 0, bob: 3 } })),
       );
-      transport.serverSends('game:over', { roomId: ROOM_ID, durakId: 'bob', finishOrder: ['me'], endReason: 'forfeit' });
+      transport.serverSends('game:over', { roomId: ROOM_ID, durakId: 'bob', finishOrder: ['me'], endReason: 'forfeit', botAssisted: [] });
     });
     expect(screen.getByTestId('game-over-headline')).toHaveTextContent(t.gameOver.forfeit('BOB'));
     await userEvent.click(screen.getByRole('button', { name: t.gameOver.backToLobby }));

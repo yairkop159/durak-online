@@ -1,4 +1,4 @@
-import type { ClientMove, GameMode } from '@durak/shared';
+import type { BotDifficulty, ClientMove, GameMode, RoomStatePayload } from '@durak/shared';
 import { SessionTokens, type KeyValueStorage } from './sessionStore';
 import { Store, type ClientState } from './store';
 import type { Transport } from './transport';
@@ -21,6 +21,11 @@ export class GameClient {
   readonly now: () => number;
   /** The room shown by the current route (`/room/:id`), or null on the home screen. */
   private routeRoomId: string | null = null;
+  /**
+   * "Play vs computer": create a 2-seat room, then add a bot once our lobby arrives, then start
+   * once the bot is seated. Driven by `room:state`; any error or leaving cancels it.
+   */
+  private vsComputer: { readonly difficulty: BotDifficulty; stage: 'create' | 'addBot' } | null = null;
 
   constructor(options: GameClientOptions) {
     this.transport = options.transport;
@@ -37,12 +42,16 @@ export class GameClient {
       this.tokens.set(payload.roomId, payload.sessionToken);
       store.dispatch({ type: 'session:issued', payload });
     });
-    transport.on('room:state', (payload) => store.dispatch({ type: 'room:state', payload }));
+    transport.on('room:state', (payload) => {
+      store.dispatch({ type: 'room:state', payload });
+      this.advanceVsComputer(payload);
+    });
     transport.on('game:state', (payload) =>
       store.dispatch({ type: 'game:state', payload, receivedAt: this.now() }),
     );
     transport.on('game:over', (payload) => store.dispatch({ type: 'game:over', payload }));
     transport.on('error', (payload) => {
+      if (payload.code !== 'STALE_STATE') this.vsComputer = null;
       const pendingRoom = this.state.resumeStatus === 'pending' ? this.routeRoomId : null;
       store.dispatch({ type: 'error', payload });
       if (pendingRoom !== null && this.state.resumeStatus === 'failed') this.tokens.remove(pendingRoom);
@@ -86,6 +95,22 @@ export class GameClient {
     });
   }
 
+  /** One click to a game against a bot: room:create -> room:addBot -> game:start. */
+  playVsComputer(input: { nickname: string; mode: GameMode; difficulty: BotDifficulty }): void {
+    this.createRoom({ nickname: input.nickname, maxPlayers: 2, mode: input.mode });
+    this.vsComputer = { difficulty: input.difficulty, stage: 'create' };
+  }
+
+  addBot(difficulty: BotDifficulty): void {
+    const session = this.state.session;
+    if (session) this.transport.emit('room:addBot', { roomId: session.roomId, difficulty });
+  }
+
+  removeBot(playerId: string): void {
+    const session = this.state.session;
+    if (session) this.transport.emit('room:removeBot', { roomId: session.roomId, playerId });
+  }
+
   joinRoom(roomId: string, nickname: string): void {
     this.leaveBindingIfAny(roomId);
     this.transport.emit('room:join', { roomId, nickname });
@@ -94,6 +119,7 @@ export class GameClient {
   leaveRoom(): void {
     const session = this.state.session;
     if (!session) return;
+    this.vsComputer = null;
     this.transport.emit('room:leave', { roomId: session.roomId });
     this.tokens.remove(session.roomId);
     this.store.dispatch({ type: 'left' });
@@ -122,6 +148,23 @@ export class GameClient {
 
   close(): void {
     this.transport.close();
+  }
+
+  private advanceVsComputer(room: RoomStatePayload): void {
+    const intent = this.vsComputer;
+    const session = this.state.session;
+    if (!intent || !session || room.roomId !== session.roomId || room.hostId !== session.playerId) return;
+    if (room.status !== 'lobby') {
+      this.vsComputer = null;
+      return;
+    }
+    if (intent.stage === 'create' && room.members.length === 1) {
+      intent.stage = 'addBot';
+      this.transport.emit('room:addBot', { roomId: room.roomId, difficulty: intent.difficulty });
+    } else if (intent.stage === 'addBot' && room.members.length >= 2) {
+      this.vsComputer = null;
+      this.transport.emit('game:start', { roomId: room.roomId });
+    }
   }
 
   private tryResume(): void {

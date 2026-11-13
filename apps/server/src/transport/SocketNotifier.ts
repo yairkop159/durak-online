@@ -16,6 +16,7 @@ export function toRoomStatePayload(room: Room): RoomStatePayload {
       nickname: m.nickname,
       connected: m.connected,
       isBot: m.isBot,
+      botDifficulty: m.botDifficulty,
       afk: m.afk,
     })),
     spectatorCount: room.spectators.length,
@@ -51,6 +52,7 @@ export class SocketNotifier implements RoomNotifier {
       durakId: phase.kind === 'finished' ? phase.durak : null,
       finishOrder: [...game.state.finishOrder],
       endReason: game.endReason ?? 'normal',
+      botAssisted: [...game.botAssisted],
     });
   }
 

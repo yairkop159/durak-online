@@ -10,7 +10,9 @@ import type {
 } from '@durak/shared';
 import { io as connectClient, type Socket } from 'socket.io-client';
 import { buildServer, type BuildServerOptions, type DurakServer } from '../../src/app.js';
+import { InProcessRunner } from '../../src/bot/InProcessRunner.js';
 import { FakeTime } from './fakeTime.js';
+import { TEST_BOT_POLICIES } from './serviceHarness.js';
 
 export interface ReceivedEvents {
   'room:state': RoomStatePayload;
@@ -114,7 +116,21 @@ export async function startTestServer(
   options: BuildServerOptions & { readonly time?: FakeTime } = {},
 ): Promise<TestHarness> {
   const { time = new FakeTime(), ...rest } = options;
-  const server = buildServer({ seedSource: () => 20251112, clock: time, scheduler: time, ...rest });
+  let botSeed = 1;
+  const server = buildServer({
+    seedSource: () => 20251112,
+    clock: time,
+    scheduler: time,
+    // Deterministic bots: synchronous in-process decisions, small budgets, fixed pacing.
+    botRunner: new InProcessRunner({ recordJobs: true }),
+    ...rest,
+    botSettings: {
+      policies: TEST_BOT_POLICIES,
+      random: () => 0.5,
+      seedSource: () => botSeed++,
+      ...rest.botSettings,
+    },
+  });
   await server.app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = server.app.server.address() as AddressInfo;
   const url = `http://127.0.0.1:${port}`;

@@ -1,6 +1,9 @@
-import type { RoomStatePayload, SessionIssuedPayload } from '@durak/shared';
+import type { BotDifficulty, RoomStatePayload, SessionIssuedPayload } from '@durak/shared';
 import { useState } from 'react';
+import { BotPill } from '../components/BotPill';
+import { DifficultyPicker } from '../components/DifficultyPicker';
 import { Avatar, Button, Panel, Pill } from '../components/ui';
+import { displayName } from '../game/seats';
 import { t } from '../i18n';
 import { useClient } from '../net/react';
 import { navigate, roomUrl } from '../routing';
@@ -9,6 +12,7 @@ export function LobbyScreen({ room, session }: { room: RoomStatePayload; session
   const client = useClient();
   const isHost = room.hostId === session.playerId;
   const canStart = room.members.length >= 2;
+  const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
 
   const leave = () => {
     client.leaveRoom();
@@ -22,26 +26,56 @@ export function LobbyScreen({ room, session }: { room: RoomStatePayload; session
       <Panel className="flex flex-col gap-3">
         <h2 className="font-bold">{t.lobby.players(room.members.length, room.maxPlayers)}</h2>
         <ul className="flex flex-col gap-2">
-          {room.members.map((m) => (
-            <li key={m.playerId} className="flex items-center gap-2 rounded-btn bg-surface-2/70 px-3 py-2 ring-1 ring-line">
-              <span className="relative">
-                <Avatar id={m.playerId} name={m.nickname} size={30} dim={!m.connected} />
-                <span
-                  aria-hidden="true"
-                  className={`absolute right-0.5 bottom-0.5 size-2.5 rounded-full ring-2 ring-surface-2 ${m.connected ? 'bg-accent' : 'bg-muted'}`}
-                />
-              </span>
-              <span className="flex-1 font-medium">
-                {m.nickname}
-                {m.playerId === session.playerId && <span className="text-muted"> ({t.common.you})</span>}
-              </span>
-              {m.playerId === room.hostId && <Pill tone="accent">{t.lobby.host}</Pill>}
-              {!m.connected && <Pill tone="muted">{t.lobby.offline}</Pill>}
-              {m.afk && <Pill tone="warn">{t.lobby.afk}</Pill>}
-            </li>
-          ))}
+          {room.members.map((m) => {
+            const name = displayName(m);
+            return (
+              <li
+                key={m.playerId}
+                data-testid={`member-${m.playerId}`}
+                className="flex items-center gap-2 rounded-btn bg-surface-2/70 px-3 py-2 ring-1 ring-line"
+              >
+                <span className="relative">
+                  <Avatar id={m.playerId} name={m.isBot ? '🤖' : name} size={30} dim={!m.connected} />
+                  {!m.isBot && (
+                    <span
+                      aria-hidden="true"
+                      className={`absolute right-0.5 bottom-0.5 size-2.5 rounded-full ring-2 ring-surface-2 ${m.connected ? 'bg-accent' : 'bg-muted'}`}
+                    />
+                  )}
+                </span>
+                <span className="flex-1 font-medium">
+                  {name}
+                  {m.playerId === session.playerId && <span className="text-muted"> ({t.common.you})</span>}
+                </span>
+                {m.isBot && <BotPill member={m} />}
+                {m.playerId === room.hostId && <Pill tone="accent">{t.lobby.host}</Pill>}
+                {!m.isBot && !m.connected && <Pill tone="muted">{t.lobby.offline}</Pill>}
+                {!m.isBot && m.afk && <Pill tone="warn">{t.lobby.afk}</Pill>}
+                {isHost && m.isBot && (
+                  <button
+                    type="button"
+                    onClick={() => client.removeBot(m.playerId)}
+                    aria-label={t.bots.remove(name)}
+                    title={t.bots.remove(name)}
+                    className="grid size-7 place-items-center rounded-full text-muted ring-1 ring-line transition-colors hover:bg-danger/15 hover:text-danger"
+                  >
+                    ✕
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
         {room.spectatorCount > 0 && <p className="text-sm text-muted">{t.lobby.spectators(room.spectatorCount)}</p>}
+        {isHost && room.members.length < room.maxPlayers && (
+          <div className="flex flex-col gap-2 border-t border-line pt-3">
+            <span className="text-sm font-medium">{t.bots.difficulty}</span>
+            <DifficultyPicker value={difficulty} onChange={setDifficulty} />
+            <Button variant="secondary" onClick={() => client.addBot(difficulty)}>
+              🤖 {t.bots.add}
+            </Button>
+          </div>
+        )}
       </Panel>
 
       {isHost ? (

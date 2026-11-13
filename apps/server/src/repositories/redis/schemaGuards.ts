@@ -3,7 +3,7 @@
  * If a domain type and its Zod schema in codec.ts stop matching exactly — a field added,
  * removed, renamed or retyped on one side only — `npm run typecheck` fails here.
  */
-import type { GameState, PlayerState } from '@durak/game-engine';
+import type { GameState, PlayerState, PublicKnowledge } from '@durak/game-engine';
 import type { BoutSummary, TablePair } from '@durak/shared';
 import type { z } from 'zod';
 import type { Room, RoomMember, Session, Spectator, StoredGame } from '../../domain/types.js';
@@ -11,6 +11,7 @@ import type {
   BoutSummarySchema,
   GameStateSchema,
   PlayerStateSchema,
+  PublicKnowledgeSchema,
   RoomMemberSchema,
   RoomSchema,
   SessionSchema,
@@ -42,7 +43,9 @@ export const schemaGuards: {
   playerState: Same<typeof PlayerStateSchema, PlayerState>;
   tablePair: Same<typeof TablePairSchema, TablePair>;
   boutSummary: Same<typeof BoutSummarySchema, BoutSummary>;
+  knowledge: Same<typeof PublicKnowledgeSchema, PublicKnowledge>;
 } = {
+  knowledge: true,
   room: true,
   member: true,
   spectator: true,

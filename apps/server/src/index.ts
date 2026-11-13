@@ -22,13 +22,18 @@ const { app, timers } = buildServer({
     afkTimeoutMs: config.afkTimeoutMs,
     reconnectGraceMs: config.reconnectGraceMs,
   },
+  botSettings: {
+    ...(config.botWorkers !== null ? { workers: config.botWorkers } : {}),
+    jobTimeoutMs: config.botJobTimeoutMs,
+  },
   health: () => backend.health(),
   onClose: () => backend.close(),
 });
 app.log.info({ repository: backend.kind }, 'storage backend ready');
 
-// After the ghost reset (backend.startup): re-arm persisted turn deadlines and start
-// reconnection graces for players who were online when the previous process died.
+// After the ghost reset (backend.startup): re-arm persisted turn deadlines, start
+// reconnection graces for players who were online when the previous process died, and let bots
+// plan for every running game.
 app.log.info(await timers.rearmAll(), 're-armed timers');
 
 const shutdown = async (signal: string) => {

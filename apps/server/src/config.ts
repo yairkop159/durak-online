@@ -10,6 +10,9 @@ export interface ServerConfig {
   readonly turnTimeoutMs: number;
   readonly afkTimeoutMs: number;
   readonly reconnectGraceMs: number;
+  /** Bot worker threads; null = cores - 1 (min 1). */
+  readonly botWorkers: number | null;
+  readonly botJobTimeoutMs: number;
 }
 
 function positiveMs(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -61,5 +64,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     turnTimeoutMs: positiveMs(env, 'TURN_TIMEOUT_MS', 30_000),
     afkTimeoutMs: positiveMs(env, 'AFK_TIMEOUT_MS', 5_000),
     reconnectGraceMs: positiveMs(env, 'RECONNECT_GRACE_MS', 60_000),
+    botWorkers: env.BOT_WORKERS?.trim() ? positiveMs(env, 'BOT_WORKERS', 1) : null,
+    botJobTimeoutMs: positiveMs(env, 'BOT_JOB_TIMEOUT_MS', 2_000),
   };
 }

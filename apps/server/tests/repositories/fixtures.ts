@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { createGame } from '@durak/game-engine';
+import { createGame, initKnowledge, sanitizeStateForPlayer } from '@durak/game-engine';
 import type { Room, Session, StoredGame } from '../../src/domain/types.js';
 
 export const uid = () => randomBytes(5).toString('hex');
@@ -11,8 +11,9 @@ export function makeRoom(id = uid(), status: Room['status'] = 'lobby'): Room {
     maxPlayers: 4,
     config: { mode: 'perevodnoy' },
     members: [
-      { playerId: 'p_host', nickname: 'Host', connected: true, isBot: false, afk: false, consecutiveTimeouts: 0, graceDeadline: null },
-      { playerId: 'p_guest', nickname: 'Guest', connected: true, isBot: false, afk: false, consecutiveTimeouts: 0, graceDeadline: null },
+      { playerId: 'p_host', nickname: 'Host', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null },
+      { playerId: 'p_guest', nickname: 'Guest', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null },
+      { playerId: 'p_bot', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false, consecutiveTimeouts: 0, graceDeadline: null },
     ],
     spectators: [{ spectatorId: 's_1', nickname: 'Watcher' }],
     status,
@@ -33,6 +34,11 @@ export function makeGame(roomId: string, finished = false): StoredGame {
     turnDeadline: finished ? null : 1_700_000_030_500,
     timeoutStreak: 1,
     endReason: finished ? 'normal' : null,
+    knowledge: {
+      p_host: { viewerId: 'p_host', discard: ['6S'], knownHands: { p_guest: ['AH'] } },
+      p_guest: initKnowledge(sanitizeStateForPlayer(state, 'p_guest')),
+    },
+    botAssisted: ['p_guest'],
   };
 }
 

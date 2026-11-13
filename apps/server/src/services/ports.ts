@@ -15,6 +15,15 @@ export interface RoomNotifier {
 }
 
 /**
+ * Told about every committed game change (and about re-arms: startup, resume), inside the room lock,
+ * after the broadcast. `prev` is the state before the change, or null when there was no move
+ * (start, resume, startup). The BotDriver implements this.
+ */
+export interface GameChangeListener {
+  onGameChanged(room: Room, game: StoredGame, prev: StoredGame['state'] | null): void;
+}
+
+/**
  * Called by a service, inside the room lock, as soon as a session is established for the
  * calling connection — before any broadcast, so the caller never misses its own update.
  */

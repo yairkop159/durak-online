@@ -1,4 +1,4 @@
-import { CardSchema, GAME_END_REASONS, GameConfigInputSchema, GameConfigSchema } from '@durak/shared';
+import { BotDifficultySchema, CardSchema, GAME_END_REASONS, GameConfigInputSchema, GameConfigSchema } from '@durak/shared';
 import { z } from 'zod';
 
 /**
@@ -11,8 +11,9 @@ export const RoomMemberSchema = z
     playerId: z.string(),
     nickname: z.string(),
     connected: z.boolean(),
-    isBot: z.literal(false),
-    // Defaults let records written before Phase 3c decode without a format bump.
+    isBot: z.boolean(),
+    // Defaults let records written before Phase 3c / 4b decode without a format bump.
+    botDifficulty: BotDifficultySchema.nullable().default(null),
     afk: z.boolean().default(false),
     consecutiveTimeouts: z.number().int().min(0).default(0),
     graceDeadline: z.number().nullable().default(null),
@@ -79,6 +80,14 @@ export const GameStateSchema = z
   })
   .strict();
 
+export const PublicKnowledgeSchema = z
+  .object({
+    viewerId: z.string().nullable(),
+    discard: z.array(z.string()),
+    knownHands: z.record(z.string(), z.array(z.string())),
+  })
+  .strict();
+
 export const StoredGameSchema = z
   .object({
     roomId: z.string(),
@@ -89,6 +98,9 @@ export const StoredGameSchema = z
     turnDeadline: z.number().nullable().default(null),
     timeoutStreak: z.number().int().min(0).default(0),
     endReason: z.enum(GAME_END_REASONS).nullable().default(null),
+    // Phase 4b. Missing knowledge is rebuilt with initKnowledge (sound: it only forgets history).
+    knowledge: z.record(z.string(), PublicKnowledgeSchema).default({}),
+    botAssisted: z.array(z.string()).default([]),
   })
   .strict();
 

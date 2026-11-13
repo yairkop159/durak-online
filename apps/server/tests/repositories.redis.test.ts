@@ -63,7 +63,7 @@ suite('Redis', () => {
       expect(log.error.mock.calls[0]![1]).toBe('corrupted redis value');
     });
 
-    it('marks every member of every room offline across many SCAN pages, keeping TTLs', async () => {
+    it('marks every human member of every room offline across many SCAN pages, keeping TTLs (bots stay connected)', async () => {
       const log = spyLogger();
       const scoped = redisKeys(testPrefix());
       const repos = createRedisRepositories(redis, scoped, log);
@@ -81,7 +81,8 @@ suite('Redis', () => {
       expect(result).toEqual({ scanned: 251, updated: 250 });
       for (const id of ids) {
         const room = await repos.rooms.get(id);
-        expect(room?.members.every((m) => !m.connected)).toBe(true);
+        expect(room?.members.every((m) => (m.isBot ? m.connected : !m.connected))).toBe(true);
+        expect(room?.members.some((m) => m.isBot)).toBe(true);
       }
       expect((await otherRepos.rooms.get('outside'))?.members.every((m) => m.connected)).toBe(true);
       await deleteAllWithPrefix(redis, otherKeys);

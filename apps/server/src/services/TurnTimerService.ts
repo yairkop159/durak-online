@@ -1,6 +1,7 @@
 import { getAwaitedPlayers, resign, type GameState } from '@durak/game-engine';
 import type { Room, RoomMember, StoredGame } from '../domain/types.js';
 import type { Repositories } from '../repositories/interfaces.js';
+import type { GameCommitter } from './GameCommitter.js';
 import type { KeyedMutex } from './KeyedMutex.js';
 import type { RoomNotifier } from './ports.js';
 import type { Clock, Scheduler, TimerHandle } from './scheduling.js';
@@ -48,11 +49,31 @@ export class TurnTimerService {
 
   constructor(private readonly deps: TurnTimerDeps) {}
 
-  /** Deadline for the current turn, or null when the game is over. */
+  /** The single commit path; attached right after construction (they depend on each other). */
+  private committer: GameCommitter | null = null;
+
+  attachCommitter(committer: GameCommitter): void {
+    this.committer = committer;
+  }
+
+  private get commit(): GameCommitter {
+    if (!this.committer) throw new Error('TurnTimerService: no GameCommitter attached');
+    return this.committer;
+  }
+
+  /**
+   * Deadline for the current turn, or null when the game is over. When every awaited player is a
+   * bot or AFK the short deadline applies; it is only a fallback behind the BotDriver.
+   */
   deadlineFor(room: Room, state: GameState): number | null {
     if (state.phase.kind === 'finished') return null;
     const awaited = getAwaitedPlayers(state);
-    const allAfk = awaited.length > 0 && awaited.every((id) => room.members.find((m) => m.playerId === id)?.afk);
+    const allAfk =
+      awaited.length > 0 &&
+      awaited.every((id) => {
+        const m = room.members.find((member) => member.playerId === id);
+        return !!m && (m.afk || m.isBot);
+      });
     const { afkTimeoutMs, turnTimeoutMs } = this.deps.settings;
     return this.deps.clock.now() + (allAfk ? afkTimeoutMs : turnTimeoutMs);
   }
@@ -123,7 +144,7 @@ export class TurnTimerService {
   // ---------------------------------------------------------------- expiry handlers (take the lock)
 
   async handleTurnExpiry(roomId: string, version: number): Promise<void> {
-    const { repos, mutex, notifier, clock, log } = this.deps;
+    const { repos, mutex, clock, log } = this.deps;
     await mutex.runExclusive(roomId, async () => {
       const room = await repos.rooms.get(roomId);
       const game = await repos.games.get(roomId);
@@ -140,39 +161,28 @@ export class TurnTimerService {
         return;
       }
       const { state, timedOut, streak, endReason } = step.value;
-      const finished = state.phase.kind === 'finished';
 
+      // Bots are never flagged AFK (their timeouts only happen if the BotDriver failed).
       let membersChanged = false;
       const members = room.members.map((m): RoomMember => {
-        if (!timedOut.includes(m.playerId)) return m;
+        if (m.isBot || !timedOut.includes(m.playerId)) return m;
         membersChanged = true;
         const consecutiveTimeouts = m.consecutiveTimeouts + 1;
         return { ...m, consecutiveTimeouts, afk: m.afk || consecutiveTimeouts >= AFK_AFTER_TIMEOUTS };
       });
-      const updatedRoom: Room = { ...room, members, status: finished ? 'finished' : room.status };
-      const next: StoredGame = {
-        ...game,
-        version: game.version + 1,
+      await this.commit.commit({
+        room: { ...room, members },
+        roomChanged: membersChanged,
+        prev: game,
         state,
         timeoutStreak: streak,
         endReason,
-        turnDeadline: this.deadlineFor(updatedRoom, state),
-      };
-      await repos.atomic.saveRoomAndGame(updatedRoom, next);
-
-      if (membersChanged || finished) notifier.roomState(updatedRoom);
-      notifier.gameState(updatedRoom, next);
-      if (finished) {
-        notifier.gameOver(updatedRoom, next);
-        this.cancelRoom(roomId);
-      } else {
-        this.armTurn(next);
-      }
+      });
     });
   }
 
   async handleGraceExpiry(roomId: string, playerId: string, deadline: number): Promise<void> {
-    const { repos, mutex, notifier } = this.deps;
+    const { repos, mutex } = this.deps;
     await mutex.runExclusive(roomId, async () => {
       this.graceTimers.delete(graceKey(roomId, playerId));
       const room = await repos.rooms.get(roomId);
@@ -191,19 +201,13 @@ export class TurnTimerService {
 
       const resigned = resign(game.state, playerId);
       if (!resigned.ok) return;
-      const updatedRoom: Room = { ...clearGrace(room), status: 'finished' };
-      const next: StoredGame = {
-        ...game,
-        version: game.version + 1,
+      await this.commit.commit({
+        room: clearGrace(room),
+        roomChanged: true,
+        prev: game,
         state: resigned.value,
-        turnDeadline: null,
         endReason: 'forfeit',
-      };
-      await repos.atomic.saveRoomAndGame(updatedRoom, next);
-      notifier.roomState(updatedRoom);
-      notifier.gameState(updatedRoom, next);
-      notifier.gameOver(updatedRoom, next);
-      this.cancelRoom(roomId);
+      });
     });
   }
 
@@ -226,7 +230,7 @@ export class TurnTimerService {
 
         let roomChanged = false;
         const members = room.members.map((m): RoomMember => {
-          if (m.connected || m.graceDeadline !== null || isOut(game.state, m.playerId)) return m;
+          if (m.isBot || m.connected || m.graceDeadline !== null || isOut(game.state, m.playerId)) return m;
           roomChanged = true;
           return { ...m, graceDeadline: clock.now() + settings.reconnectGraceMs };
         });
@@ -238,6 +242,7 @@ export class TurnTimerService {
         if (roomChanged || updatedGame !== game) await repos.atomic.saveRoomAndGame(updatedRoom, updatedGame);
 
         this.armTurn(updatedGame);
+        this.commit.announce(updatedRoom, updatedGame, null); // bots resume planning
         games++;
         for (const m of members) {
           if (m.graceDeadline !== null) {

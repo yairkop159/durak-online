@@ -128,7 +128,14 @@ export function roomState(status: RoomStatePayload['status'], ids: string[] = ['
     roomId: ROOM_ID,
     hostId: ids[0]!,
     maxPlayers: ids.length,
-    members: ids.map((id) => ({ playerId: id, nickname: id.toUpperCase(), connected: true, isBot: false, afk: false })),
+    members: ids.map((id) => ({
+      playerId: id,
+      nickname: id.toUpperCase(),
+      connected: true,
+      isBot: false,
+      botDifficulty: null,
+      afk: false,
+    })),
     spectatorCount: 0,
     status,
   };

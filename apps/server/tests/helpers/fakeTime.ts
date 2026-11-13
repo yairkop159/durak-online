@@ -1,5 +1,10 @@
 import type { Clock, Scheduler, TimerHandle } from '../../src/services/scheduling.js';
 
+/** Runs every queued promise callback (setImmediate fires after the microtask queue drains). */
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 interface Task {
   readonly id: number;
   readonly seq: number;
@@ -37,12 +42,15 @@ export class FakeTime implements Clock, Scheduler {
   /** Moves time forward, running every due task in deadline order (including ones scheduled meanwhile). */
   async advanceBy(ms: number): Promise<void> {
     const target = this.current + ms;
+    // Let pending promise callbacks schedule their timers first (as real time would).
+    await flushMicrotasks();
     for (;;) {
       const due = this.tasks.filter((t) => t.at <= target).sort((a, b) => a.at - b.at || a.seq - b.seq)[0];
       if (!due) break;
       this.tasks = this.tasks.filter((t) => t !== due);
       this.current = Math.max(this.current, due.at);
       await due.fn();
+      await flushMicrotasks();
     }
     this.current = target;
   }

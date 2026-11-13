@@ -30,8 +30,12 @@ export async function markAllMembersDisconnected(
     for (const key of batch) {
       scanned++;
       const room = decode(RoomSchema, await redis.get(key), key, log);
-      if (!room || room.members.every((m) => !m.connected)) continue;
-      const offline: Room = { ...room, members: room.members.map((m) => ({ ...m, connected: false })) };
+      // Bots have no socket and are always connected.
+      if (!room || room.members.every((m) => m.isBot || !m.connected)) continue;
+      const offline: Room = {
+        ...room,
+        members: room.members.map((m) => (m.isBot ? m : { ...m, connected: false })),
+      };
       await redis.set(key, encode(offline), 'KEEPTTL');
       updated++;
     }

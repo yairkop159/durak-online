@@ -43,7 +43,14 @@ This is the single source of truth for the server, bot and UI. Any change here m
 ## Server Architecture (`apps/server`)
 Layers, one folder each; dependencies point downward only:
 - **`transport/`**: Socket.io handlers. Every incoming event is parsed with its schema from `ClientEventSchemas` before anything else; an invalid payload or unknown event gets an `error` event (`INVALID_PAYLOAD`) and never throws. Every handler is wrapped so an unexpected exception becomes `error {INTERNAL}`. `SocketNotifier` builds every `game:state` per recipient through `sanitizeStateForPlayer` (spectators get the `null` view); there is never one shared payload. Socket.io limits: `maxHttpBufferSize` 16 KB, CORS from `CORS_ORIGINS`.
-- **`services/`**: `RoomService` (create/join/leave/resume/start/disconnect) and `GameService` (moves, resync). They use the engine only through `createGame` / `applyMove`; sanitizing happens in transport. The acting `playerId` comes only from the server-side `Session`, never from a payload. Services talk outward through the `RoomNotifier` port (`services/ports.ts`).
+- **`services/`**:
+  - `RoomService` (create/join/leave/resume/start/disconnect, add/remove bot) and `GameService` (moves, bot moves, resync).
+  - `GameCommitter` is the single write path for new game versions (see "Bots in games").
+  - `BotDriver` plays bot seats and AFK humans.
+  - The acting `playerId` comes only from the server-side `Session`, never from a payload. For bot moves it comes from the BotDriver's own plan.
+  - Services talk outward through the `RoomNotifier` and `GameChangeListener` ports (`services/ports.ts`).
+  - Views sent to clients are sanitized only in transport. `GameCommitter` and `BotDriver` also call `sanitizeStateForPlayer`, but only to build bot knowledge and bot jobs. Those views never leave the process.
+- **`bot/`**: bot decisions: the `BotJob` type, `decide`, the worker pool and the in-process runner. No game state, no repositories.
 - **`repositories/`**: `RoomRepository`, `GameRepository`, `SessionRepository` interfaces (all async), plus in-memory implementations that deep-copy on read and write, as Redis will. Redis (3b) must be a drop-in replacement.
 
 **Per-room serial queue:** every mutation for a room runs inside `KeyedMutex.runExclusive(roomId, …)`: load → validate → apply → save → notify. Broadcasts are sent **inside** the lock, so clients receive versions in order. The mutex is process-local; running more than one server instance requires a distributed lock or sticky room routing (3b).
@@ -69,6 +76,63 @@ Layers, one folder each; dependencies point downward only:
 - **Orphaned sessions:** if `session:resume` finds a valid session whose room is gone, it deletes the session and returns `ROOM_NOT_FOUND`.
 - **Rematch (`room:rematch`):** any seated player of a `finished` room puts it back to `lobby` (same members, `afk`/`consecutiveTimeouts`/`graceDeadline` reset; offline members keep their seat and can resume) and the finished game is deleted, atomically via `repos.atomic.saveRoomDeleteGame`. In the lobby it is a no-op that re-sends `room:state` (idempotent: everyone may press "back to lobby"); while playing → `GAME_IN_PROGRESS`; spectators → `NOT_IN_ROOM`.
 
+### Bots in games (Phase 4b)
+**Seats.**
+- `RoomMember.isBot: boolean` and `botDifficulty: 'easy' | 'medium' | 'hard' | null`. Both are public in `room:state`.
+- Bot seats are built only by `newBotMember`. They are always `connected`, never AFK, never get a grace period, and have no session or socket. The ghost reset, `rearmAll` graces and `markDisconnected` all skip them.
+- `room:addBot { roomId, difficulty }` and `room:removeBot { roomId, playerId }` are host only and lobby only. They can fail with `NOT_HOST`, `GAME_IN_PROGRESS`, `ROOM_FULL` or `NOT_A_BOT`. Server nicknames are `Bot N`; the web shows "מחשב N".
+- A room always has a human:
+  - The host is human, and host transfer skips bots.
+  - A lobby whose last human leaves is deleted.
+  - `game:start` with no human gives `NO_HUMANS`.
+
+**Difficulties** (`bot/job.ts`, `DEFAULT_BOT_POLICIES`):
+- easy = GreedyBot, with a uniformly random legal move 15% of the time.
+- medium = IS-MCTS, 200 iterations.
+- hard = IS-MCTS, 300 ms (`thinkMs`; the worker's clock).
+- The AFK takeover plays at medium.
+
+**`GameCommitter` (single write path).** Every new version goes through `commit(...)` inside the room lock: human moves, bot moves, timeouts and forfeits (`start(...)` covers version 0). It does, in order:
+1. `version + 1`.
+2. Update every seat's knowledge: `updateKnowledge(k ?? initKnowledge(prevView), prevView, nextView)`, using the views that player receives.
+3. The bots-only fast-forward.
+4. The deadline.
+5. Save (atomic if the room changed).
+6. Broadcast.
+7. Arm or cancel the timer.
+8. `GameChangeListener.onGameChanged(room, game, prevState)`.
+
+`announce(...)` notifies the listener without a new version (resume, startup). Never write a game version anywhere else.
+
+**Data:**
+- `StoredGame.knowledge: Record<PlayerId, PublicKnowledge>` covers every seat, humans included, because of the AFK takeover. A missing entry is rebuilt with `initKnowledge`, which is sound.
+- `StoredGame.botAssisted: PlayerId[]` lists the humans a bot ever moved for. It is sent in `game:over`, for Phase 3d ratings.
+- The codec defaults (`{}`, `[]`, `botDifficulty: null`) let older records decode.
+
+**BotDriver** (`services/BotDriver.ts`). There is one entry per `(room, seat)`: `thinking` → `ready` → `applying`, or dropped.
+- **When it plans.** On every `onGameChanged` it plans only for `canonicalActor(state)` (the engine's turn order, the same one IS-MCTS assumes), and only if that seat is controlled and has a legal move. Controlled means a bot seat, or a human with `afk` while `afkTakeover` is on (default).
+- **The job.** It is built inside the lock from that exact version: `sanitizeStateForPlayer(state, seat)` plus `game.knowledge[seat]`. A newer change aborts every older entry in the room. Queued jobs are dropped and running results are ignored. A duplicate notification for the same seat and version is a no-op.
+- **Pacing.**
+  - The move is applied at `max(change time + delay, job done)`.
+  - delay = `800 + r·700` ms after an ordinary move.
+  - delay = `1300 + r·500` ms after a bout resolution (`boutNumber` changed or the table was cleared), so the client's ≤1.2 s resolution animation finishes first.
+  - `r` comes from server-side randomness (injectable). The engine stays pure.
+- **Applying.** `GameService.applyAutomatedMove(roomId, playerId, move, expectedVersion = planned version)` uses the same lock, version check and `applyMove` as a human move.
+  - It requires the seat to still be bot-controlled.
+  - It does NOT reset `timeoutStreak`, `afk` or `consecutiveTimeouts`.
+  - `STALE_STATE` is dropped silently: the newer version already planned for itself, so the version rises exactly once per move.
+- **AFK hand-back.** A human `game:move` or `session:resume` clears `afk`. The resulting `onGameChanged`/`announce` aborts that seat's entry.
+- **Timers.** The turn timer stays as the last resort. `deadlineFor` treats bot seats like AFK seats (5 s if every awaited player is a bot or AFK), and expiries never mark bots AFK.
+- **Bots-only fast-forward.** When every player still in is a bot (all humans went out), `commit` plays the rest at once inside the lock. Each seat uses GreedyBot on its own view. There is one version bump, and `endReason` is `'normal'`, or `'abandoned'` after 3000 moves.
+- **Startup.** `rearmAll` calls `announce` for every running game, from the persisted knowledge.
+
+**Worker pool** (`bot/WorkerPoolRunner.ts`):
+- `worker_threads`, size `BOT_WORKERS` (default cores − 1, min 1), spawned lazily, FIFO queue.
+- Jobs are plain `BotJob { jobId, view, knowledge, options: { seed, policy } }`. They never carry a `GameState`; a test asserts that no serialized job contains a hidden card.
+- Per-job timeout `BOT_JOB_TIMEOUT_MS` (2000), from submission, on the injected `Scheduler`. On a timeout, worker `error`/`exit`, or a result that fails `ClientMoveSchema`, the job resolves with GreedyBot on the main thread, and a stuck or dead worker is replaced.
+- The worker loads `botWorker.ts` under tsx (adding `--import tsx` if needed) or `botWorker.js` from dist. It imports `@durak/game-engine` through its package entry, so `npm run dev` (which builds the engine first) is required.
+- `buildServer({ botRunner, botSettings })` injects the runner and the settings. Tests use `InProcessRunner` (synchronous, records serialized jobs), small iteration budgets and a fixed pacing `random`. The service harness defaults `afkTakeover: false` so the 3c timer tests keep observing raw timeouts.
+
 > **Single instance only.** `KeyedMutex` is an in-process lock. Running more than one server instance against the same Redis is **NOT supported**: concurrent moves on the same room could interleave. Supporting it requires a distributed per-room lock (e.g. Redis `SET NX PX` with fencing tokens) or sticky routing of each room to one instance.
 
 ## Web Client (`apps/web`)
@@ -76,6 +140,11 @@ React 19 + Vite + Tailwind v4, Hebrew UI (`dir="rtl"`). `@durak/shared` and `@du
 - **Routes:** `/` (home: nickname, player count, mode → `room:create`) and `/room/:id` (join prompt / lobby / table / game-over overlay / room not found). Tiny router in `src/routing.ts` (History API).
 - **`src/net/`:** `Transport` (socket.io-client wrapper; tests use `FakeTransport`), `GameClient` (the single connection: feeds server events into the store, owns session tokens, exposes actions), `Store` + pure `reducer` read via `useSyncExternalStore`. Every `game:move` carries `expectedVersion` = the last received `game:state` version. `STALE_STATE` errors are swallowed (the server re-sends the state). A `game:state` older than the held version is ignored. `room:state` with status `lobby` clears the game (rematch).
 - **Sessions:** tokens are kept in **`sessionStorage`** (`durak:sessions` = `{ roomId: token }`), NOT `localStorage`, so every tab is its own seat (two windows of one browser = two players). A reload keeps the seat: on every (re)connect, the room in the URL is resumed with `session:resume`. **Trade-off:** closing the tab forgets the token, so that seat is forfeited once `RECONNECT_GRACE_MS` expires. A rejected token (`INVALID_SESSION` / `ROOM_NOT_FOUND`) is deleted and the join prompt (or "room not found") is shown. A connection holds one session, so switching rooms reconnects the socket first.
+- **Bots (4b):**
+  - The host's lobby has a difficulty picker plus "add bot", and bot rows have a remove button.
+  - Bot seats show `BotPill` (🤖 + difficulty) and a localized name (`displayName`).
+  - An AFK human's seat shows "הבוט משחק במקומך" / "בוט משחק".
+  - Home's "play vs computer" is a `GameClient.playVsComputer` intent: `room:create` (2 seats) → `room:addBot` on our 1-member lobby → `game:start` once the bot is seated. Any error or leaving cancels it.
 - **Table interaction (`src/game/selection.ts`, pure):** legal moves come from `getLegalMovesForView`; legal hand cards are highlighted, others dimmed. Attack/throw-in = one click. Defend = hand card then attack card, or attack card then hand card. Transfer = hand card then the "transfer" slot. Selection is tied to the game version (any new state clears it). Take/Pass buttons appear only when legal; spectators get no hand and no buttons.
 - **Countdown:** `remainingMs = turnDeadline − serverTime − (now − receivedAt)` using the client's clock for both `receivedAt` and `now`, so clock skew between client and server doesn't matter.
 - **Strings:** every UI string and every error code's Hebrew message live in `src/i18n/he.ts` (typed `Strings`; `errors` must cover every `ServerErrorCode | GameErrorCode`). Cards are drawn with CSS (rank + suit symbol), no image assets.
@@ -155,7 +224,7 @@ How a run works:
 - Run the bot benchmark: `npm run bench --workspace=packages/game-engine` (`-- --full`, `-- --realtime`; see "Bot" above)
 - Run server tests: `npm test --workspace=apps/server` (Redis tests need `docker-compose up -d` or any Redis at `REDIS_URL`; without one they are skipped with a warning)
 - Run server + web together: `npm run dev` (builds `shared` + `game-engine` for the server's `tsx`, then runs both with `concurrently`; open http://localhost:5173)
-- Run the server in dev mode: `npm run dev --workspace=apps/server` (env: `PORT`, `HOST`, `CORS_ORIGINS`)
+- Run the server in dev mode: `npm run dev --workspace=apps/server` (env: `PORT`, `HOST`, `CORS_ORIGINS`, `BOT_WORKERS`, `BOT_JOB_TIMEOUT_MS`; bot workers need a built `game-engine`)
 - Run the web client alone: `npm run dev --workspace=apps/web`; tests: `npm test --workspace=apps/web` (Vitest + jsdom + Testing Library; `tests/sessions.test.ts` starts a real in-process server)
 - Start local infrastructure: `docker-compose up -d`
 
@@ -167,7 +236,7 @@ How a run works:
     - Server owns turn timers. On timeout: defender -> take, non-defender who can throw in -> pass. Engine stays timer-free.
     - Opening attacker timeout: the server auto-plays the attacker's lowest non-trump card (lowest rank; ties broken by suit order S, C, D, H), or the lowest trump if they hold only trumps.
     - If every card is covered, the defender has no pending action (`take` is illegal), so no defender timer runs; the bout only waits on non-defenders.
-    - After 2 consecutive timeouts the player is marked AFK and the bot plays on their behalf until they reconnect (until the Phase 4 bot exists, the timeout auto-moves above continue). If the reconnection grace window expires, the player forfeits.
+    - After 2 consecutive timeouts the player is marked AFK and the bot (medium) plays on their behalf until they move or resume (Phase 4b, see "Bots in games"). If the reconnection grace window expires, the player forfeits.
     - Every auto-move (timeout or bot) goes through the same `validateMove` / `applyMove` path as a human move.
     - **Settings (env):** `TURN_TIMEOUT_MS` (30000), `AFK_TIMEOUT_MS` (5000, used when *every* awaited player is AFK), `RECONNECT_GRACE_MS` (60000).
     - **Data model:** `StoredGame.turnDeadline` (epoch ms or null), `timeoutStreak`, `endReason` (`'normal' | 'forfeit' | 'abandoned'`). `RoomMember.afk` (public, in `room:state`), plus server-only `consecutiveTimeouts` and `graceDeadline`. `game:state` carries `turnDeadline` and `serverTime`, so clients show a countdown free of clock skew; `game:over` carries `endReason`. Deadlines are persisted, so they survive restarts. The new codec fields have Zod defaults, so 3b records still decode.
@@ -179,7 +248,7 @@ How a run works:
     - **Testing:** `Clock` and `Scheduler` are injected (`services/scheduling.ts`). Tests use `tests/helpers/fakeTime.ts` (`advanceBy` / `runDue`), never real sleeps.
 - **Phase 4: IS-MCTS AI Bot.** Implement determinized Monte Carlo Tree Search in `packages/game-engine/src/bot` with a configurable thinking time budget (e.g., 300ms per move) and benchmark win rates against a random baseline bot.
   - **4a (done):** the pure bot library: `PublicKnowledge`, determinization, SO-ISMCTS, Random/Greedy baselines, benchmark. See "Bot" above.
-  - **4b:** server integration. The bot plays for AFK players and bot seats. The server keeps one `PublicKnowledge` per bot seat, updated from every `game:state` view, and decides when to invoke the bot (e.g. when it is the `canonicalActor`).
+  - **4b (done):** server and web integration: bot seats, the worker pool, BotDriver, persisted knowledge, AFK takeover, and "play vs computer". See "Bots in games".
 - **Phase 5: Mobile-First Web Client.** Build `apps/web` with clean card animations, responsive table layout for 2-6 players, and room invite links.
   - **5a (done):** playable client: home, invite links, lobby, table with legal-move highlighting, countdown, game over + rematch, spectators. See "Web Client" above.
   - **5b:** animations and visual polish.

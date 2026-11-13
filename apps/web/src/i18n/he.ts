@@ -1,4 +1,4 @@
-import type { GameEndReason, GameErrorCode, GameMode, ServerErrorCode, Suit } from '@durak/shared';
+import type { BotDifficulty, GameEndReason, GameErrorCode, GameMode, ServerErrorCode, Suit } from '@durak/shared';
 
 export type ErrorCode = ServerErrorCode | GameErrorCode;
 
@@ -23,6 +23,21 @@ export interface Strings {
     readonly modes: Record<GameMode, string>;
     readonly modeHints: Record<GameMode, string>;
     readonly create: string;
+    readonly or: string;
+    readonly vsComputer: string;
+    readonly vsComputerHint: string;
+  };
+  readonly bots: {
+    readonly badge: string;
+    /** Display name of a bot seat ("Bot N" on the server). */
+    readonly name: (n: string) => string;
+    readonly difficulty: string;
+    readonly difficulties: Record<BotDifficulty, string>;
+    readonly add: string;
+    readonly remove: (name: string) => string;
+    /** On an AFK human's seat while the bot plays for them. */
+    readonly playingForYou: string;
+    readonly playingForThem: string;
   };
   readonly join: { readonly title: string; readonly submit: string };
   readonly notFound: { readonly title: string; readonly body: string };
@@ -112,6 +127,19 @@ export const he: Strings = {
       perevodnoy: 'אפשר גם להעביר את ההתקפה לשחקן הבא',
     },
     create: 'יצירת חדר',
+    or: 'או',
+    vsComputer: 'משחק נגד המחשב',
+    vsComputerHint: 'משחק מיידי אחד על אחד מול בוט',
+  },
+  bots: {
+    badge: 'בוט',
+    name: (n) => `מחשב ${n}`,
+    difficulty: 'רמת קושי',
+    difficulties: { easy: 'קל', medium: 'בינוני', hard: 'קשה' },
+    add: 'הוספת בוט',
+    remove: (name) => `הסרת ${name}`,
+    playingForYou: 'הבוט משחק במקומך',
+    playingForThem: 'בוט משחק',
   },
   join: { title: 'הצטרפות לחדר', submit: 'הצטרפות' },
   notFound: { title: 'החדר לא נמצא', body: 'ייתכן שהקישור שגוי או שהחדר כבר נסגר.' },
@@ -179,12 +207,15 @@ export const he: Strings = {
     INVALID_PAYLOAD: 'בקשה לא תקינה',
     NOT_IN_ROOM: 'אינך בחדר הזה',
     ROOM_NOT_FOUND: 'החדר לא נמצא',
-    NOT_HOST: 'רק המארח יכול להתחיל את המשחק',
+    NOT_HOST: 'רק המארח יכול לעשות את זה',
     NOT_ENOUGH_PLAYERS: 'צריך לפחות שני שחקנים',
     GAME_NOT_STARTED: 'המשחק עוד לא התחיל',
     GAME_IN_PROGRESS: 'המשחק כבר רץ',
     STALE_STATE: 'המצב התעדכן, נסה שוב',
     INVALID_SESSION: 'החיבור לחדר פג. הצטרף מחדש',
+    ROOM_FULL: 'החדר מלא',
+    NOT_A_BOT: 'אפשר להסיר רק בוטים',
+    NO_HUMANS: 'צריך לפחות שחקן אנושי אחד',
     INTERNAL: 'שגיאת שרת. נסה שוב',
     INVALID_PLAYER_COUNT: 'מספר שחקנים לא תקין',
     DUPLICATE_PLAYER: 'שחקן כפול',

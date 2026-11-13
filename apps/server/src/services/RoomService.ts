@@ -1,8 +1,9 @@
 import { createGame, getAwaitedPlayers } from '@durak/game-engine';
-import type { GameConfigInput } from '@durak/shared';
+import type { BotDifficulty, GameConfigInput } from '@durak/shared';
 import { fail, ok, type Result } from '../domain/result.js';
 import type { Room, RoomMember, Session, StoredGame } from '../domain/types.js';
 import type { Repositories } from '../repositories/interfaces.js';
+import type { GameCommitter } from './GameCommitter.js';
 import type { KeyedMutex } from './KeyedMutex.js';
 import type { RoomNotifier, SessionBinder } from './ports.js';
 import { newPlayerId, newRoomId, newSessionToken, newSpectatorId, type SeedSource } from './random.js';
@@ -15,11 +16,43 @@ export interface RoomServiceDeps {
   readonly seedSource: SeedSource;
   readonly now: () => number;
   readonly timers: TurnTimerService;
+  readonly committer: GameCommitter;
 }
 
 function newMember(playerId: string, nickname: string): RoomMember {
-  return { playerId, nickname, connected: true, isBot: false, afk: false, consecutiveTimeouts: 0, graceDeadline: null };
+  return {
+    playerId,
+    nickname,
+    connected: true,
+    isBot: false,
+    botDifficulty: null,
+    afk: false,
+    consecutiveTimeouts: 0,
+    graceDeadline: null,
+  };
 }
+
+/** The only way to build a bot seat: always connected, never AFK, no grace, no session. */
+export function newBotMember(playerId: string, nickname: string, difficulty: BotDifficulty): RoomMember {
+  return {
+    playerId,
+    nickname,
+    connected: true,
+    isBot: true,
+    botDifficulty: difficulty,
+    afk: false,
+    consecutiveTimeouts: 0,
+    graceDeadline: null,
+  };
+}
+
+/** "Bot N" with the smallest N not used by another bot seat. */
+function nextBotNickname(members: readonly RoomMember[]): string {
+  const used = new Set(members.filter((m) => m.isBot).map((m) => m.nickname));
+  for (let n = 1; ; n++) if (!used.has(`Bot ${n}`)) return `Bot ${n}`;
+}
+
+const hasHuman = (members: readonly RoomMember[]): boolean => members.some((m) => !m.isBot);
 
 export interface CreateRoomInput {
   readonly nickname: string;
@@ -110,12 +143,15 @@ export class RoomService {
           return fail('GAME_IN_PROGRESS', 'You cannot leave while the game is running');
         }
         const members = room.members.filter((m) => m.playerId !== session.id);
-        const hostId = room.hostId === session.id ? (members[0]?.playerId ?? room.hostId) : room.hostId;
+        // The host is always a human; bots never inherit it.
+        const hostId =
+          room.hostId === session.id ? (members.find((m) => !m.isBot)?.playerId ?? room.hostId) : room.hostId;
         updated = { ...room, members, hostId };
       }
       await repos.sessions.delete(session.token);
 
-      if (updated.members.length === 0) {
+      // A room always contains at least one human: with only bots left it is deleted.
+      if (!hasHuman(updated.members)) {
         await repos.atomic.deleteRoomAndGame(room.id);
         this.deps.timers.cancelRoom(room.id);
       } else {
@@ -180,6 +216,11 @@ export class RoomService {
       } else if (game) {
         notifier.sendGameStateTo(updated, game, session);
       }
+      // AFK was cleared: the bot stops playing for this player.
+      const current = extendedGame ?? game;
+      if (session.role === 'player' && current && room.status === 'playing') {
+        this.deps.committer.announce(updated, current, null);
+      }
       return ok(session);
     });
   }
@@ -197,7 +238,7 @@ export class RoomService {
       const room = await repos.rooms.get(session.roomId);
       if (!room) return;
       const member = room.members.find((m) => m.playerId === session.id);
-      if (!member || !member.connected) return;
+      if (!member || member.isBot || !member.connected) return;
       const game = room.status === 'playing' ? await repos.games.get(session.roomId) : null;
       const needsGrace = !!game && game.state.phase.kind !== 'finished' && !isOut(game.state, session.id);
       const graceDeadline = needsGrace ? timers.newGraceDeadline() : null;
@@ -212,7 +253,7 @@ export class RoomService {
   }
 
   async startGame(session: Session): Promise<Result<StoredGame>> {
-    const { repos, mutex, notifier } = this.deps;
+    const { repos, mutex } = this.deps;
     return mutex.runExclusive(session.roomId, async () => {
       const room = await repos.rooms.get(session.roomId);
       if (!room) return fail('ROOM_NOT_FOUND', 'Room no longer exists');
@@ -221,6 +262,7 @@ export class RoomService {
       }
       if (room.status !== 'lobby') return fail('GAME_IN_PROGRESS', 'The game has already started');
       if (room.members.length < 2) return fail('NOT_ENOUGH_PLAYERS', 'At least 2 players are needed');
+      if (!hasHuman(room.members)) return fail('NO_HUMANS', 'A game needs at least one human player');
 
       const seed = this.deps.seedSource();
       const created = createGame({ playerIds: room.members.map((m) => m.playerId), seed, config: room.config });
@@ -233,15 +275,48 @@ export class RoomService {
         version: 0,
         state: created.value,
         startedAt: this.deps.now(),
-        turnDeadline: this.deps.timers.deadlineFor(updated, created.value),
+        turnDeadline: null, // set by the committer
         timeoutStreak: 0,
         endReason: null,
+        knowledge: {}, // set by the committer
+        botAssisted: [],
       };
-      await repos.atomic.saveRoomAndGame(updated, game);
-      this.deps.timers.armTurn(game);
+      return ok(await this.deps.committer.start(updated, game));
+    });
+  }
+
+  /** Host only, lobby only: seats a bot with a server-generated id. */
+  async addBot(session: Session, difficulty: BotDifficulty): Promise<Result<RoomMember>> {
+    const { repos, mutex, notifier } = this.deps;
+    return mutex.runExclusive(session.roomId, async () => {
+      const room = await repos.rooms.get(session.roomId);
+      if (!room) return fail('ROOM_NOT_FOUND', 'Room no longer exists');
+      if (session.role !== 'player' || room.hostId !== session.id) return fail('NOT_HOST', 'Only the host can add bots');
+      if (room.status !== 'lobby') return fail('GAME_IN_PROGRESS', 'Bots can only be added in the lobby');
+      if (room.members.length >= room.maxPlayers) return fail('ROOM_FULL', 'The room is full');
+
+      const bot = newBotMember(newPlayerId(), nextBotNickname(room.members), difficulty);
+      const updated: Room = { ...room, members: [...room.members, bot] };
+      await repos.rooms.save(updated);
       notifier.roomState(updated);
-      notifier.gameState(updated, game);
-      return ok(game);
+      return ok(bot);
+    });
+  }
+
+  /** Host only, lobby only: removes a bot seat (never a human). */
+  async removeBot(session: Session, playerId: string): Promise<Result<void>> {
+    const { repos, mutex, notifier } = this.deps;
+    return mutex.runExclusive(session.roomId, async () => {
+      const room = await repos.rooms.get(session.roomId);
+      if (!room) return fail('ROOM_NOT_FOUND', 'Room no longer exists');
+      if (session.role !== 'player' || room.hostId !== session.id) return fail('NOT_HOST', 'Only the host can remove bots');
+      if (room.status !== 'lobby') return fail('GAME_IN_PROGRESS', 'Bots can only be removed in the lobby');
+      if (!room.members.some((m) => m.playerId === playerId && m.isBot)) return fail('NOT_A_BOT', 'That seat is not a bot');
+
+      const updated: Room = { ...room, members: room.members.filter((m) => m.playerId !== playerId) };
+      await repos.rooms.save(updated);
+      notifier.roomState(updated);
+      return ok(undefined);
     });
   }
 

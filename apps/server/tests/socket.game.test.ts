@@ -82,7 +82,7 @@ describe('timer fields in payloads', () => {
 
     const room = host.last('room:state')!;
     for (const m of room.members) {
-      expect(Object.keys(m).sort()).toEqual(['afk', 'connected', 'isBot', 'nickname', 'playerId']);
+      expect(Object.keys(m).sort()).toEqual(['afk', 'botDifficulty', 'connected', 'isBot', 'nickname', 'playerId']);
     }
 
     // A timeout is broadcast to both players with the next deadline.

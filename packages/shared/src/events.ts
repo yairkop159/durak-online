@@ -13,6 +13,8 @@ export const ClientEvents = {
   MakeMove: 'game:move',
   ResumeSession: 'session:resume',
   Rematch: 'room:rematch',
+  AddBot: 'room:addBot',
+  RemoveBot: 'room:removeBot',
 } as const;
 export type ClientEventName = (typeof ClientEvents)[keyof typeof ClientEvents];
 
@@ -52,6 +54,19 @@ export const StartGamePayloadSchema = z.object({ roomId: RoomIdSchema }).strict(
 /** After a finished game: put the room back into the lobby (same members) for another game. */
 export const RematchPayloadSchema = z.object({ roomId: RoomIdSchema }).strict();
 
+/** Bot strength: easy = greedy with random slips, medium = IS-MCTS 200 iterations, hard = IS-MCTS 300 ms. */
+export const BOT_DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
+export type BotDifficulty = (typeof BOT_DIFFICULTIES)[number];
+export const BotDifficultySchema = z.enum(BOT_DIFFICULTIES);
+
+/** Host only, lobby only: seat a bot. */
+export const AddBotPayloadSchema = z.object({ roomId: RoomIdSchema, difficulty: BotDifficultySchema }).strict();
+
+/** Host only, lobby only: remove a bot seat. */
+export const RemoveBotPayloadSchema = z
+  .object({ roomId: RoomIdSchema, playerId: z.string().min(1).max(64) })
+  .strict();
+
 export const MakeMovePayloadSchema = z
   .object({
     roomId: RoomIdSchema,
@@ -79,6 +94,8 @@ export const ClientEventSchemas = {
   [ClientEvents.MakeMove]: MakeMovePayloadSchema,
   [ClientEvents.ResumeSession]: ResumeSessionPayloadSchema,
   [ClientEvents.Rematch]: RematchPayloadSchema,
+  [ClientEvents.AddBot]: AddBotPayloadSchema,
+  [ClientEvents.RemoveBot]: RemoveBotPayloadSchema,
 } as const satisfies Record<ClientEventName, z.ZodTypeAny>;
 
 export type CreateRoomPayload = z.infer<typeof CreateRoomPayloadSchema>;
@@ -88,12 +105,16 @@ export type StartGamePayload = z.infer<typeof StartGamePayloadSchema>;
 export type MakeMovePayload = z.infer<typeof MakeMovePayloadSchema>;
 export type ResumeSessionPayload = z.infer<typeof ResumeSessionPayloadSchema>;
 export type RematchPayload = z.infer<typeof RematchPayloadSchema>;
+export type AddBotPayload = z.infer<typeof AddBotPayloadSchema>;
+export type RemoveBotPayload = z.infer<typeof RemoveBotPayloadSchema>;
 
 export interface RoomMember {
   readonly playerId: string;
   readonly nickname: string;
   readonly connected: boolean;
   readonly isBot: boolean;
+  /** Set for bot seats only. */
+  readonly botDifficulty: BotDifficulty | null;
   /** Two consecutive turn timeouts; cleared by a human move or session:resume. */
   readonly afk: boolean;
 }
@@ -132,6 +153,8 @@ export interface GameOverPayload {
   readonly durakId: string | null;
   readonly finishOrder: readonly string[];
   readonly endReason: GameEndReason;
+  /** Human seats a bot ever played for (AFK takeover). For ratings (Phase 3d). */
+  readonly botAssisted: readonly string[];
 }
 
 export interface SessionIssuedPayload {
@@ -151,6 +174,9 @@ export const SERVER_ERROR_CODES = [
   'GAME_IN_PROGRESS',
   'STALE_STATE',
   'INVALID_SESSION',
+  'ROOM_FULL',
+  'NOT_A_BOT',
+  'NO_HUMANS',
   'INTERNAL',
 ] as const;
 export type ServerErrorCode = (typeof SERVER_ERROR_CODES)[number];
@@ -169,6 +195,8 @@ export interface ClientToServerEvents {
   'game:move': (payload: MakeMovePayload) => void;
   'session:resume': (payload: ResumeSessionPayload) => void;
   'room:rematch': (payload: RematchPayload) => void;
+  'room:addBot': (payload: AddBotPayload) => void;
+  'room:removeBot': (payload: RemoveBotPayload) => void;
 }
 
 export interface ServerToClientEvents {

@@ -36,7 +36,14 @@ export function OpponentSeat({
       } ${player.finished ? 'opacity-55' : ''}`}
     >
       <div ref={anchor} className="relative">
-        <Avatar id={player.id} name={name} size={36} progress={ring.progress} urgent={ring.urgent} dim={member ? !member.connected : false} />
+        <Avatar
+          id={player.id}
+          name={member?.isBot ? '🤖' : name}
+          size={36}
+          progress={ring.progress}
+          urgent={ring.urgent}
+          dim={member ? !member.connected : false}
+        />
       </div>
       <span className="max-w-full truncate text-xs font-semibold sm:text-sm">{name}</span>
       <div className="flex items-center gap-1">

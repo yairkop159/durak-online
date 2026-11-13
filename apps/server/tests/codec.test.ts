@@ -1,9 +1,40 @@
 import { applyMove } from '@durak/game-engine';
 import { describe, expect, it, vi } from 'vitest';
-import { StoredGameSchema, decode, encode } from '../src/repositories/redis/codec.js';
-import { makeGame } from './repositories/fixtures.js';
+import { RoomSchema, StoredGameSchema, decode, encode } from '../src/repositories/redis/codec.js';
+import { makeGame, makeRoom } from './repositories/fixtures.js';
 
 const log = () => ({ error: vi.fn() });
+
+describe('codec: bots (Phase 4b)', () => {
+  it('a game stored before 4b (no knowledge, no botAssisted) decodes with {} and []', () => {
+    const { knowledge: _k, botAssisted: _b, ...old } = makeGame('room1');
+    const logger = log();
+    const decoded = decode(StoredGameSchema, encode(old), 'k', logger);
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(decoded?.knowledge).toEqual({});
+    expect(decoded?.botAssisted).toEqual([]);
+  });
+
+  it('round-trips knowledge and botAssisted', () => {
+    const game = makeGame('room1');
+    expect(decode(StoredGameSchema, encode(game), 'k', log())).toEqual(game);
+  });
+
+  it('a member stored before 4b (isBot false, no botDifficulty) decodes as a human', () => {
+    const room = makeRoom('room1');
+    const old = { ...room, members: room.members.filter((m) => !m.isBot).map(({ botDifficulty: _d, ...m }) => m) };
+    const decoded = decode(RoomSchema, encode(old), 'k', log());
+    expect(decoded?.members.every((m) => m.isBot === false && m.botDifficulty === null)).toBe(true);
+  });
+
+  it('rejects malformed knowledge as a corrupted value', () => {
+    const game = makeGame('room1');
+    const logger = log();
+    const bad = { ...game, knowledge: { p_host: { viewerId: 'p_host', discard: [6], knownHands: {} } } };
+    expect(decode(StoredGameSchema, encode(bad), 'k', logger)).toBeNull();
+    expect(logger.error).toHaveBeenCalledOnce();
+  });
+});
 
 describe('codec: GameState.lastBout (Phase 5b)', () => {
   it('a game stored before 5b (no lastBout field) still decodes, with lastBout = null', () => {

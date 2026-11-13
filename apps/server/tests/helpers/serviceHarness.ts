@@ -1,4 +1,8 @@
+import { InProcessRunner } from '../../src/bot/InProcessRunner.js';
+import type { BotPolicies, BotRunner } from '../../src/bot/job.js';
 import type { Room, Session, StoredGame } from '../../src/domain/types.js';
+import { BotDriver } from '../../src/services/BotDriver.js';
+import { GameCommitter } from '../../src/services/GameCommitter.js';
 import type { Repositories } from '../../src/repositories/interfaces.js';
 import { createInMemoryRepositories } from '../../src/repositories/inMemory/index.js';
 import { GameService } from '../../src/services/GameService.js';
@@ -35,28 +39,55 @@ export class RecordingNotifier implements RoomNotifier {
   }
 }
 
+/** Small, deterministic bot budgets for tests (the in-process runner runs them synchronously). */
+export const TEST_BOT_POLICIES: BotPolicies = {
+  easy: { kind: 'greedy', randomRate: 0.15 },
+  medium: { kind: 'ismcts', budget: { iterations: 12 } },
+  hard: { kind: 'ismcts', budget: { iterations: 20 } },
+};
+
+export interface ServiceHarnessOptions {
+  repos?: Repositories;
+  time?: FakeTime;
+  settings?: Partial<TimerSettings>;
+  seed?: number;
+  /**
+   * Bot driver options. `afkTakeover` defaults to FALSE here so the Phase 3c timer tests keep
+   * observing raw timeout behaviour; bot tests turn it on.
+   */
+  bots?: { afkTakeover?: boolean; runner?: BotRunner; random?: () => number; policies?: BotPolicies };
+}
+
 /** Services wired exactly like buildServer, on in-memory repos and fake time, without sockets. */
-export function setupServices(
-  options: { repos?: Repositories; time?: FakeTime; settings?: Partial<TimerSettings>; seed?: number } = {},
-) {
+export function setupServices(options: ServiceHarnessOptions = {}) {
   const time = options.time ?? new FakeTime();
   const repos = options.repos ?? createInMemoryRepositories(() => time.now());
   const mutex = new KeyedMutex();
   const notifier = new RecordingNotifier();
   const settings: TimerSettings = { ...DEFAULT_TIMER_SETTINGS, ...options.settings };
-  const timers = new TurnTimerService({
-    repos,
-    mutex,
-    notifier,
+  const log = { error: () => undefined };
+  const timers = new TurnTimerService({ repos, mutex, notifier, clock: time, scheduler: time, settings, log });
+  let driver: BotDriver | null = null;
+  const committer = new GameCommitter({ repos, notifier, timers, listener: () => driver });
+  timers.attachCommitter(committer);
+  const seed = options.seed ?? 42;
+  const rooms = new RoomService({ repos, mutex, notifier, seedSource: () => seed, now: () => time.now(), timers, committer });
+  const games = new GameService({ repos, mutex, notifier, committer });
+  const runner = options.bots?.runner ?? new InProcessRunner({ recordJobs: true });
+  let nextSeed = 1;
+  const bots = new BotDriver({
+    runner,
+    moves: games,
     clock: time,
     scheduler: time,
-    settings,
-    log: { error: () => undefined },
+    seedSource: () => nextSeed++,
+    policies: options.bots?.policies ?? TEST_BOT_POLICIES,
+    random: options.bots?.random ?? (() => 0.5),
+    afkTakeover: options.bots?.afkTakeover ?? false,
+    log,
   });
-  const seed = options.seed ?? 42;
-  const rooms = new RoomService({ repos, mutex, notifier, seedSource: () => seed, now: () => time.now(), timers });
-  const games = new GameService({ repos, mutex, notifier, timers });
-  return { repos, rooms, games, timers, notifier, time, settings };
+  driver = bots;
+  return { repos, rooms, games, timers, notifier, time, settings, bots, runner, committer, mutex };
 }
 
 export const noBind = (): void => undefined;

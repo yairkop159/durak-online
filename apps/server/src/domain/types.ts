@@ -1,13 +1,19 @@
-import type { GameConfigInput, GameEndReason } from '@durak/shared';
-import type { GameState } from '@durak/game-engine';
+import type { BotDifficulty, GameConfigInput, GameEndReason, PlayerId } from '@durak/shared';
+import type { GameState, PublicKnowledge } from '@durak/game-engine';
 
 // All domain records are plain JSON so any repository (in-memory, Redis) can store them unchanged.
 
+/**
+ * A seat. Bot seats (`isBot: true`, `botDifficulty` set) are always connected, never AFK, never get a
+ * grace period and have no session. Build them only with `newBotMember` (RoomService).
+ */
 export interface RoomMember {
   readonly playerId: string;
   readonly nickname: string;
   readonly connected: boolean;
-  readonly isBot: false;
+  readonly isBot: boolean;
+  /** Set for bot seats, null for humans. */
+  readonly botDifficulty: BotDifficulty | null;
   /** Set after 2 consecutive turn timeouts; cleared by a human move or session:resume. */
   readonly afk: boolean;
   /** Turn timeouts in a row that applied a move for this player. Server-only. */
@@ -58,4 +64,12 @@ export interface StoredGame {
   readonly timeoutStreak: number;
   /** Set when the game ends. */
   readonly endReason: GameEndReason | null;
+  /**
+   * What each seated player can prove about hidden cards, built only from their own views and
+   * advanced on every version (GameCommitter). Bots (and the AFK takeover) decide from it.
+   * A missing entry is rebuilt with `initKnowledge`, which is always sound.
+   */
+  readonly knowledge: Readonly<Record<PlayerId, PublicKnowledge>>;
+  /** Human seats a bot ever played for (AFK takeover); for ratings (Phase 3d). */
+  readonly botAssisted: readonly PlayerId[];
 }

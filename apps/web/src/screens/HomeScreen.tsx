@@ -1,5 +1,6 @@
-import { GAME_MODES, MAX_PLAYERS, MIN_PLAYERS, type GameMode } from '@durak/shared';
+import { GAME_MODES, MAX_PLAYERS, MIN_PLAYERS, type BotDifficulty, type GameMode } from '@durak/shared';
 import { useEffect, useState, type FormEvent } from 'react';
+import { DifficultyPicker } from '../components/DifficultyPicker';
 import { Button, Panel, inputClass } from '../components/ui';
 import { t } from '../i18n';
 import { useClient, useClientState } from '../net/react';
@@ -13,6 +14,7 @@ export function HomeScreen() {
   const [nickname, setNickname] = useState('');
   const [players, setPlayers] = useState(2);
   const [mode, setMode] = useState<GameMode>('podkidnoy');
+  const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
   const [submitted, setSubmitted] = useState(false);
 
   // The room we just created: go there once the session arrives.
@@ -26,6 +28,13 @@ export function HomeScreen() {
     if (!name) return;
     setSubmitted(true);
     client.createRoom({ nickname: name, maxPlayers: players, mode });
+  };
+
+  const vsComputer = () => {
+    const name = nickname.trim();
+    if (!name) return;
+    setSubmitted(true);
+    client.playVsComputer({ nickname: name, mode, difficulty });
   };
 
   return (
@@ -85,6 +94,21 @@ export function HomeScreen() {
 
           <Button type="submit" disabled={!nickname.trim()}>
             {t.home.create}
+          </Button>
+
+          <div className="flex items-center gap-3 text-xs text-muted" aria-hidden="true">
+            <span className="h-px flex-1 bg-line" />
+            {t.home.or}
+            <span className="h-px flex-1 bg-line" />
+          </div>
+
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1.5 text-sm font-medium">{t.bots.difficulty}</legend>
+            <DifficultyPicker value={difficulty} onChange={setDifficulty} />
+            <span className="text-xs text-muted">{t.home.vsComputerHint}</span>
+          </fieldset>
+          <Button type="button" variant="secondary" disabled={!nickname.trim()} onClick={vsComputer}>
+            🤖 {t.home.vsComputer}
           </Button>
         </form>
       </Panel>

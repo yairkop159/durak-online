@@ -3,6 +3,7 @@ import { Button, Pill } from '../../components/ui';
 import { t } from '../../i18n';
 import type { ReactNode } from 'react';
 import { secondsLeft } from '../../net/clock';
+import { BotPill } from '../../components/BotPill';
 
 /** Role/status pills shared by opponents and the viewer's own strip (labels, not buttons). */
 export function PlayerBadges({ player, view, member }: { player: PublicPlayer; view: PlayerView; member?: RoomMember | undefined }) {
@@ -14,8 +15,12 @@ export function PlayerBadges({ player, view, member }: { player: PublicPlayer; v
       {playing && !player.finished && view.defenderId === player.id && <Pill tone="defend">{t.table.defender}</Pill>}
       {phase.kind === 'bout' && phase.passed.includes(player.id) && <Pill tone="muted">{t.table.passed}</Pill>}
       {player.finished && <Pill tone="accent">{t.table.out}</Pill>}
-      {member && !member.connected && <Pill tone="muted">{t.table.offline}</Pill>}
-      {member?.afk && <Pill tone="warn">{t.table.afk}</Pill>}
+      {member?.isBot && <BotPill member={member} />}
+      {member && !member.isBot && !member.connected && <Pill tone="muted">{t.table.offline}</Pill>}
+      {/* An AFK human is played by the bot until they act again. */}
+      {member && !member.isBot && member.afk && playing && !player.finished && (
+        <Pill tone="warn">{view.viewerId === player.id ? t.bots.playingForYou : t.bots.playingForThem}</Pill>
+      )}
     </span>
   );
 }

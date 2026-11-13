@@ -5,6 +5,7 @@ import { deleteAllWithPrefix, redisKeys } from '../src/repositories/redis/index.
 import { REDIS_URL, newRedisClient, redisAvailable, spyLogger, testPrefix } from './helpers/redis.js';
 import { setupRoom, startGame, startTestServer, type TestClient, type TestHarness } from './helpers/testServer.js';
 import { chooseMove } from './helpers/viewStrategy.js';
+import { autoPlay } from './helpers/autoPlay.js';
 import { FakeTime } from './helpers/fakeTime.js';
 
 const harnesses: TestHarness[] = [];
@@ -132,6 +133,56 @@ suite('redis backend', () => {
 
     expect(await playOneMove([host2, guest2], roomId)).toBe(before.version + 1);
     expect((await serverB.server.repos.games.get(roomId))?.version).toBe(before.version + 1);
+  });
+
+  it('bot knowledge survives a restart, and rearmAll lets the bot carry on', async () => {
+    const prefix = freshPrefix();
+    const t0 = 1_700_000_000_000;
+    const serverA = await serverOn(await createRedisBackend(REDIS_URL, prefix, spyLogger()), { time: new FakeTime(t0) });
+    const host = await serverA.connect();
+    host.send('room:create', { nickname: 'human', maxPlayers: 2 });
+    const { roomId, sessionToken } = await host.waitFor('session:issued');
+    host.send('room:addBot', { roomId, difficulty: 'medium' });
+    await host.waitFor('room:state', (r) => r.members.length === 2);
+    host.send('game:start', { roomId });
+    await host.waitFor('game:state', (s) => s.version === 0);
+    autoPlay(host, roomId);
+
+    // Play into bout 2+ and stop at a moment when the bot is the one to act.
+    const time = serverA.time;
+    for (let i = 0; i < 3000; i++) {
+      const game = await serverA.server.repos.games.get(roomId);
+      if (game!.state.phase.kind === 'finished') throw new Error('game ended too early for this test');
+      if (game!.state.boutNumber >= 2 && serverA.server.bots.inFlight.length > 0) break;
+      await time.advanceBy(100);
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const before = (await serverA.server.repos.games.get(roomId))!;
+    expect(before.state.boutNumber).toBeGreaterThanOrEqual(2);
+    expect(Object.keys(before.knowledge).sort()).toEqual(before.state.players.map((p) => p.id).sort());
+
+    await serverA.close();
+    harnesses.splice(harnesses.indexOf(serverA), 1);
+
+    const timeB = new FakeTime(time.now() + 1_000);
+    const serverB = await serverOn(await createRedisBackend(REDIS_URL, prefix, spyLogger()), { time: timeB });
+    const stored = (await serverB.server.repos.games.get(roomId))!;
+    expect(stored.knowledge).toEqual(before.knowledge);
+    expect(stored.version).toBe(before.version);
+
+    // The bot is still connected (no ghost reset for bots) and plans again after rearmAll.
+    const room = await serverB.server.repos.rooms.get(roomId);
+    expect(room!.members.find((m) => m.isBot)?.connected).toBe(true);
+    expect(serverB.server.bots.inFlight.map((e) => e.version)).toEqual([before.version]);
+    await timeB.advanceBy(2_000);
+    const after = (await serverB.server.repos.games.get(roomId))!;
+    expect(after.version).toBe(before.version + 1);
+    expect(serverB.server.bots.events.some((e) => e.kind === 'applied' && e.version === before.version)).toBe(true);
+
+    // The human resumes as usual.
+    const host2 = await serverB.connect();
+    host2.send('session:resume', { sessionToken });
+    await host2.waitFor('game:state', (s) => s.version === before.version + 1);
   });
 
   it('a corrupted game value yields GAME_NOT_STARTED, is logged, and the server keeps working', async () => {

@@ -1,4 +1,5 @@
 import type { PlayerView, PublicPlayer, RoomMember } from '@durak/shared';
+import { t } from '../i18n';
 
 /**
  * Everyone except the viewer, in clockwise order starting from the seat after the viewer
@@ -12,5 +13,13 @@ export function opponentsInOrder(view: PlayerView): PublicPlayer[] {
 }
 
 export function nicknameOf(playerId: string, members: readonly RoomMember[] | undefined): string {
-  return members?.find((m) => m.playerId === playerId)?.nickname ?? '?';
+  const member = members?.find((m) => m.playerId === playerId);
+  return member ? displayName(member) : '?';
+}
+
+/** Bots are named "Bot N" by the server; shown localized. Humans keep their nickname. */
+export function displayName(member: RoomMember): string {
+  if (!member.isBot) return member.nickname;
+  const n = /^Bot (\d+)$/.exec(member.nickname)?.[1];
+  return n ? t.bots.name(n) : member.nickname;
 }

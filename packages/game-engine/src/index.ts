@@ -40,3 +40,5 @@ export {
   type DrawScenario,
 } from './viewInference.js';
 export * from './bot/index.js';
+// Server-side turn order (needs the full state), so it is exported here, not from the view-only bot barrel.
+export { canonicalActor } from './bot/turnOrder.js';
