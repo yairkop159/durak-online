@@ -1,7 +1,28 @@
-import type { AnimationSpeed } from '../settings/settings';
+import type { AnimationSpeed, TipId } from '../settings/settings';
 import type { BotDifficulty, GameEndReason, GameErrorCode, GameMode, ServerErrorCode, Suit } from '@durak/shared';
 
 export type ErrorCode = ServerErrorCode | GameErrorCode;
+
+export type RulesSectionId =
+  | 'goal'
+  | 'deck'
+  | 'trump'
+  | 'attack'
+  | 'defense'
+  | 'throwIn'
+  | 'take'
+  | 'pass'
+  | 'transfer'
+  | 'draw'
+  | 'out'
+  | 'durak';
+export type GuideSectionId = 'highlight' | 'defendTaps' | 'buttons' | 'countdown' | 'afk' | 'reconnect' | 'leave' | 'restart';
+
+export interface HelpSection<Id extends string> {
+  readonly id: Id;
+  readonly title: string;
+  readonly body: readonly string[];
+}
 
 /**
  * Every user-visible string. Another locale = another object of type `Strings`.
@@ -147,6 +168,23 @@ export interface Strings {
     readonly showTips: string;
     readonly resetTips: string;
   };
+  readonly help: {
+    readonly title: string;
+    readonly tabs: { readonly rules: string; readonly guide: string };
+    readonly rules: readonly HelpSection<RulesSectionId>[];
+    readonly guide: readonly HelpSection<GuideSectionId>[];
+    readonly examples: {
+      readonly ranks: string;
+      readonly trump: string;
+      readonly sameSuit: string;
+      readonly trumpBeats: string;
+      readonly throwIn: string;
+      readonly transfer: string;
+      readonly playable: string;
+      readonly dimmed: string;
+    };
+  };
+  readonly tips: Record<TipId, string> & { readonly label: string; readonly dismiss: string };
   readonly suits: Record<Suit, string>;
   readonly errors: Record<ErrorCode, string>;
 }
@@ -290,6 +328,168 @@ export const he: Strings = {
     reducedMotionNote: 'אם במכשיר מוגדרת "הפחתת תנועה", האנימציות יוחלפו בהופעה מהירה בכל מקרה.',
     showTips: 'הצגת טיפים',
     resetTips: 'הצגת הטיפים מההתחלה',
+  },
+  help: {
+    title: 'חוקים ועזרה',
+    tabs: { rules: 'חוקי המשחק', guide: 'איך משחקים כאן' },
+    rules: [
+      {
+        id: 'goal',
+        title: 'מטרת המשחק',
+        body: [
+          'להיפטר מכל הקלפים. מי שנשאר אחרון עם קלפים ביד הוא ה"דוראק" ("טיפש" ברוסית) – המפסיד היחיד.',
+          'אין מנצח אחד: כל מי שיוצא לפניו ניצל.',
+        ],
+      },
+      {
+        id: 'deck',
+        title: 'למה 36 קלפים?',
+        body: [
+          'דוראק משוחק בחפיסה הרוסית הקלאסית: 36 קלפים, מ־6 עד אס בכל אחת מארבע הצורות.',
+          'בלי הקלפים 2–5 כל קלף חזק ונחשב, המשחק קצר וסוער, ויש מספיק קלפים לשישה שחקנים עם שישה קלפים לכל אחד.',
+        ],
+      },
+      {
+        id: 'trump',
+        title: 'שליט',
+        body: [
+          'אחרי החלוקה הקלף התחתון של החפיסה נחשף, והצורה שלו היא השליט לכל המשחק. הוא גם הקלף האחרון שיישלף.',
+          'כל שליט חזק מכל קלף שאינו שליט. מי שמחזיק את השליט הנמוך ביותר פותח את הסיבוב הראשון.',
+        ],
+      },
+      {
+        id: 'attack',
+        title: 'התקפה',
+        body: [
+          'התוקף פותח בקלף כלשהו מול השחקן שאחריו – המגן.',
+          'בסיבוב הראשון מותרים עד 5 קלפי התקפה, ואחריו עד 6. אף פעם לא יותר קלפים לא מכוסים ממספר הקלפים שביד המגן.',
+        ],
+      },
+      {
+        id: 'defense',
+        title: 'הגנה',
+        body: [
+          'המגן מכסה כל קלף התקפה בקלף גבוה יותר מאותה צורה, או בשליט כשקלף ההתקפה אינו שליט. שליט מול שליט – הגבוה מנצח.',
+          'אפשר לכסות את קלפי ההתקפה בכל סדר.',
+        ],
+      },
+      {
+        id: 'throwIn',
+        title: 'הוספת קלפים',
+        body: [
+          'כל שחקן חוץ מהמגן יכול להוסיף קלף בערך שכבר מופיע על השולחן – בקלף התקפה או בקלף הגנה – כל עוד יש מקום.',
+        ],
+      },
+      {
+        id: 'take',
+        title: 'לקיחה',
+        body: [
+          'מגן שלא יכול (או לא רוצה) לכסות לוקח את כל הקלפים שעל השולחן, כולל המכוסים. האחרים עוד יכולים להוסיף לו קלפים לפני שהסיבוב נסגר.',
+          'מי שלקח מפסיד את התור לתקוף: התוקף הבא הוא השחקן שאחריו.',
+        ],
+      },
+      {
+        id: 'pass',
+        title: 'סיימתי',
+        body: [
+          'מי שאין לו מה להוסיף לוחץ "סיימתי". הסיבוב נגמר כשכל הקלפים מכוסים (או שהמגן לוקח), וכל השאר סיימו או לא יכולים להוסיף.',
+          'כשהמגן הדף הכל, הקלפים יוצאים מהמשחק והמגן הוא התוקף הבא.',
+        ],
+      },
+      {
+        id: 'transfer',
+        title: 'העברה (פרבודנוי)',
+        body: [
+          'במצב פרבודנוי המגן יכול, לפני שכיסה קלף כלשהו, להניח קלף באותו ערך כמו קלפי ההתקפה ולהעביר את כל ההתקפה לשחקן הבא – אם יש לו מספיק קלפים.',
+          'מי שהעביר הופך לתוקף, ואפשר להעביר שוב ושוב.',
+        ],
+      },
+      {
+        id: 'draw',
+        title: 'השלמת קלפים',
+        body: ['בסוף כל סיבוב כולם משלימים ל־6 קלפים מהחפיסה: קודם התוקף, אחריו השאר לפי הסדר, והמגן אחרון.'],
+      },
+      {
+        id: 'out',
+        title: 'יציאה מהמשחק',
+        body: ['כשהחפיסה נגמרה, מי שנשאר בלי קלפים בסוף סיבוב יוצא מהמשחק – ניצל.'],
+      },
+      {
+        id: 'durak',
+        title: 'מי הדוראק?',
+        body: ['האחרון שנשאר עם קלפים ביד. אם השחקנים האחרונים נפטרו מהקלפים באותו סיבוב – תיקו, ואין דוראק.'],
+      },
+    ],
+    guide: [
+      {
+        id: 'highlight',
+        title: 'קלפים מודגשים ומעומעמים',
+        body: ['בתורך, קלפים שאפשר לשחק עכשיו מודגשים ומתרוממים. קלפים מעומעמים אי אפשר לשחק כרגע.'],
+      },
+      {
+        id: 'defendTaps',
+        title: 'הגנה בשתי לחיצות',
+        body: [
+          'לחצו על קלף מהיד ואז על קלף ההתקפה שהוא מכסה – או להפך: קודם קלף ההתקפה ואז הקלף מהיד.',
+          'להעברה: קלף מהיד ואז המשבצת "העברה" שעל השולחן.',
+        ],
+      },
+      {
+        id: 'buttons',
+        title: '"לקחת" ו"סיימתי"',
+        body: ['הכפתורים מופיעים מעל היד רק כשהם חוקיים: "לקחת" למגן, "סיימתי" למי שיכול להוסיף קלפים.'],
+      },
+      {
+        id: 'countdown',
+        title: 'טבעת הזמן',
+        body: [
+          'הטבעת סביב התמונה של השחקן מראה כמה זמן נשאר לו. כשהזמן נגמר המהלך נעשה אוטומטית: המגן לוקח, והאחרים מסיימים.',
+        ],
+      },
+      {
+        id: 'afk',
+        title: 'בוט משחק במקומך',
+        body: ['אחרי שני תורות ברצף שעברו בלי מהלך, בוט ממשיך בשבילך עד שתעשה/י מהלך בעצמך.'],
+      },
+      {
+        id: 'reconnect',
+        title: '"מתחבר מחדש..."',
+        body: [
+          'אם החיבור נופל מופיע פס "מתחבר מחדש..." עד שהחיבור חוזר. רענון הדף לא מוציא אותך מהחדר.',
+          'מי שלא חוזר תוך דקה נחשב כמי שפרש.',
+        ],
+      },
+      {
+        id: 'leave',
+        title: 'יציאה באמצע משחק',
+        body: ['"יציאה" באמצע משחק נחשבת הפסד. במשחק של שניים המשחק נגמר; כשיש עוד שחקנים, בוט ממשיך במקומך.'],
+      },
+      {
+        id: 'restart',
+        title: 'משחק חדש',
+        body: [
+          '"משחק חדש" פותח הצבעה. אם כל השחקנים המחוברים מסכימים תוך 30 שניות, המשחק מבוטל בלי מפסיד ומחולקים קלפים חדשים.',
+        ],
+      },
+    ],
+    examples: {
+      ranks: 'מהנמוך לגבוה',
+      trump: 'הקלף הגלוי מתחת לחפיסה קובע את השליט',
+      sameSuit: 'אותה צורה, ערך גבוה יותר',
+      trumpBeats: 'שליט מכסה כל קלף שאינו שליט',
+      throwIn: 'על השולחן 8 ו־10: אפשר להוסיף כל 8 או 10',
+      transfer: 'מעבירים 9 על 9',
+      playable: 'אפשר לשחק',
+      dimmed: 'לא עכשיו',
+    },
+  },
+  tips: {
+    label: 'טיפ',
+    dismiss: 'הבנתי',
+    firstAttack: 'תורך לפתוח: לחצו על קלף כלשהו כדי לתקוף.',
+    firstDefense: 'כדי להגן: לחצו על קלף מהיד ואז על קלף ההתקפה שהוא מכסה. אין ברירה? "לקחת".',
+    firstThrowIn: 'אפשר להוסיף קלף בערך שכבר על השולחן – או ללחוץ "סיימתי".',
+    firstTransfer: 'יש לך קלף באותו ערך: אפשר להעביר את ההתקפה לשחקן הבא (קלף ואז "העברה").',
   },
   suits: { S: 'עלה', C: 'תלתן', D: 'יהלום', H: 'לב' },
   errors: {

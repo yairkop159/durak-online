@@ -5,7 +5,7 @@ import { SettingsButton } from '../components/SettingsDialog';
 import { Button, Panel, inputClass } from '../components/ui';
 import { t } from '../i18n';
 import { useClient, useClientState } from '../net/react';
-import { navigate, roomPath } from '../routing';
+import { navigate, roomPath, RULES_PATH } from '../routing';
 
 const PLAYER_COUNTS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => MIN_PLAYERS + i);
 
@@ -133,6 +133,16 @@ export function HomeScreen() {
           </Button>
         </form>
       </Panel>
+      <a
+        href={RULES_PATH}
+        onClick={(e) => {
+          e.preventDefault();
+          navigate(RULES_PATH);
+        }}
+        className="self-center text-sm font-semibold text-accent underline-offset-4 hover:underline"
+      >
+        {t.help.title}
+      </a>
     </div>
   );
 }

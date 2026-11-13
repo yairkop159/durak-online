@@ -9,6 +9,7 @@ import { isReconnecting } from './net/store';
 import { useRoute } from './routing';
 import { HomeScreen } from './screens/HomeScreen';
 import { RoomRoute } from './screens/RoomRoute';
+import { RulesScreen } from './screens/rules/RulesScreen';
 
 /** `settings` / `audio` are injectable for tests (default: localStorage + the browser's Web Audio). */
 export function App({ settings, audio }: { settings?: SettingsStore; audio?: AudioEngine } = {}) {
@@ -35,7 +36,7 @@ function AppShell() {
     <MotionConfig reducedMotion="user">
       <div dir="rtl" className="flex min-h-dvh flex-col text-text">
         <ConnectionBanner />
-        <main className="flex flex-1 flex-col" inert={reconnecting} aria-busy={reconnecting}>{roomId === null ? <HomeScreen /> : <RoomRoute roomId={roomId} />}</main>
+        <main className="flex flex-1 flex-col" inert={reconnecting} aria-busy={reconnecting}>{roomId !== null ? <RoomRoute roomId={roomId} /> : route.name === 'rules' ? <RulesScreen /> : <HomeScreen />}</main>
         <ErrorToast />
         <NoticeToast />
       </div>

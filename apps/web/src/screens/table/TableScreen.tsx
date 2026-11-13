@@ -30,6 +30,10 @@ import { RestartButton, RestartVotePanel, canProposeRestart } from './RestartVot
 import { TopBar } from './TopBar';
 import { useGameSounds } from '../../audio/useGameSounds';
 import { SettingsButton } from '../../components/SettingsDialog';
+import { HelpButton } from '../rules/HelpButton';
+import { TipBanner } from '../../tips/TipBanner';
+import { tipFor, tipLearnedBy } from '../../tips/tips';
+import { useSettingsStore } from '../../settings/react';
 import { useSettings } from '../../settings/react';
 import { ANIMATION_SPEED_FACTOR } from '../../settings/settings';
 import { DeckPile, DiscardPile, TableArea } from './TableSurface';
@@ -71,6 +75,7 @@ export function TableScreen() {
   const remaining = useCountdown(game, client.now);
   const reduced = useReducedMotion() ?? false;
   const settings = useSettings();
+  const settingsStore = useSettingsStore();
   const anim = useBoardAnimation(game, reduced, ANIMATION_SPEED_FACTOR[settings.animationSpeed]);
 
   const [registry] = useState(() => new AnchorRegistry());
@@ -125,13 +130,19 @@ export function TableScreen() {
   });
   const myTurn = interactive && moves.length > 0;
 
+  // First-game tips: shown for the current situation until dismissed or acted on once.
+  const tip = settings.showTips && interactive ? tipFor(view, moves, settings.tipsSeen) : null;
+  const sendMove = (move: ClientMove) => {
+    if (tip && tipLearnedBy(tip, move)) settingsStore.markTipSeen(tip);
+    client.sendMove(move);
+  };
   const apply = ({ move, selection: next }: ClickResult) => {
     setPicked({ version: game.version, selection: next });
-    if (move) client.sendMove(move);
+    if (move) sendMove(move);
   };
   const send = (move: ClientMove) => {
     setPicked({ version: game.version, selection: NO_SELECTION });
-    client.sendMove(move);
+    sendMove(move);
   };
 
   return (
@@ -144,6 +155,7 @@ export function TableScreen() {
             extra={
               <>
                 {canProposeRestart(view, room) && <RestartButton disabled={!!room?.restartVote || reconnecting} />}
+                <HelpButton />
                 <SettingsButton />
               </>
             }
@@ -190,6 +202,7 @@ export function TableScreen() {
 
           <div className="mt-auto flex flex-col items-center gap-2 pb-[env(safe-area-inset-bottom)]">
             {/* Its own row ABOVE the hand: the buttons can never cover (or steal clicks from) a card. */}
+            {tip && <TipBanner tip={tip} onDismiss={() => settingsStore.markTipSeen(tip)} />}
             {interactive && <ActionBar moves={moves} onMove={send} />}
             {!spectator && me && (
               <>

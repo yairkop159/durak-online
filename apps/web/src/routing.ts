@@ -1,10 +1,13 @@
 import { useSyncExternalStore } from 'react';
 
-export type Route = { readonly name: 'home' } | { readonly name: 'room'; readonly roomId: string };
+export type Route = { readonly name: 'home' } | { readonly name: 'rules' } | { readonly name: 'room'; readonly roomId: string };
+
+export const RULES_PATH = '/rules';
 
 const ROOM_PATH = /^\/room\/([A-Za-z0-9_-]{4,32})\/?$/;
 
 export function parseRoute(pathname: string): Route {
+  if (pathname === RULES_PATH || pathname === `${RULES_PATH}/`) return { name: 'rules' };
   const match = ROOM_PATH.exec(pathname);
   return match?.[1] ? { name: 'room', roomId: match[1] } : { name: 'home' };
 }
