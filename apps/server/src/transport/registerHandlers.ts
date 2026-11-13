@@ -11,7 +11,11 @@ export interface HandlerDeps {
   readonly io: IoServer;
   readonly rooms: RoomService;
   readonly games: GameService;
-  readonly log: { error: (obj: unknown, msg: string) => void; warn: (obj: unknown, msg: string) => void };
+  readonly log: {
+    error: (obj: unknown, msg: string) => void;
+    warn: (obj: unknown, msg: string) => void;
+    info: (obj: unknown, msg: string) => void;
+  };
   /** During server shutdown, disconnects are ours and must not start reconnection graces. */
   readonly isShuttingDown: () => boolean;
   readonly limits: LimitSettings;
@@ -43,6 +47,8 @@ export function registerHandlers(deps: HandlerDeps): void {
 
   deps.io.on('connection', (socket) => {
     const ip = deps.ipOf(socket);
+    // The derived client address (after TRUST_PROXY), as the per-IP limits see it.
+    deps.log.info({ ip, transport: socket.conn.transport.name }, 'socket connected');
     shared.connections.open(ip);
     socket.once('disconnect', () => shared.connections.close(ip));
     socket.data.session = null;

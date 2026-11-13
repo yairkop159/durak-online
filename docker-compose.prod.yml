@@ -12,14 +12,17 @@ services:
     image: durak-online:local
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8080}:8080"
+      # APP_BIND=127.0.0.1 (set by `npm run tunnel`) keeps the port off the LAN, so the only way in
+      # is through the tunnel and nobody can reach the app directly with a forged X-Forwarded-For.
+      - "${APP_BIND:-0.0.0.0}:${APP_PORT:-8080}:8080"
     environment:
       NODE_ENV: production
       PORT: "8080"
       REDIS_URL: redis://redis:6379
       # Same-origin by default; list extra browser origins (comma-separated) only if needed.
       CORS_ORIGINS: ${CORS_ORIGINS:-}
-      # Number of reverse-proxy hops in front of the app (0 here: browsers connect directly).
+      # Number of reverse-proxy hops in front of the app: 0 when browsers connect directly,
+      # 1 behind a Cloudflare Quick Tunnel (`npm run tunnel` sets it; see DEPLOY.md).
       TRUST_PROXY: ${TRUST_PROXY:-0}
       BOT_WORKERS: ${BOT_WORKERS:-}
     depends_on:

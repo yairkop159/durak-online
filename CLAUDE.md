@@ -250,6 +250,7 @@ How a run works:
 
 **Running and deploying:**
 - `npm run prod:up` / `prod:down` run `docker-compose.prod.yml` (project `durak-prod`, http://localhost:8080).
+- `npm run tunnel` (`scripts/tunnel.mjs`): the prod stack behind a Cloudflare Quick Tunnel; prints the public `https://*.trycloudflare.com` URL; Ctrl+C stops the tunnel only (`prod:down` stops the stack). It sets `TRUST_PROXY=1` and `APP_BIND=127.0.0.1` (the compose port binding). Verified on a real tunnel: Cloudflare's edge appends the client to `X-Forwarded-For`, cloudflared adds nothing, and the Host header is preserved (the Origin check passes as same-origin). Trusting exactly 1 hop yields the real client; without it every player is Docker's gateway. Each socket logs `socket connected { ip, transport }`.
 - `npm run smoke -- <url>` (`scripts/smoke.mjs`, needs a built engine) checks `/health`, the SPA fallback and its assets, then plays a real game against a medium bot over a same-origin socket.
 - Deploy: `DEPLOY.md` (Hebrew) and `fly.toml`: one always-on machine, `fly deploy --ha=false`. **Single instance only** (see above).
 

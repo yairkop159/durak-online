@@ -85,6 +85,18 @@ describe('trust proxy and client IPs', () => {
     expect(clientIp('10.0.0.1', undefined, 1)).toBe('10.0.0.1');
   });
 
+  it('Cloudflare Quick Tunnel (TRUST_PROXY=1): the real client, never the Docker gateway or a forged entry', () => {
+    // Observed through a real trycloudflare.com tunnel: the edge APPENDS the client address to any
+    // X-Forwarded-For the client sent, cloudflared adds nothing, and the app's peer is Docker's
+    // gateway (cloudflared on the host -> published port).
+    const gateway = '172.19.0.1';
+    expect(clientIp(gateway, '79.181.173.179', 1)).toBe('79.181.173.179');
+    expect(clientIp(gateway, '6.6.6.6,79.181.173.179', 1)).toBe('79.181.173.179');
+    expect(clientIp(gateway, '6.6.6.6, 5.5.5.5,2001:db8::1', 1)).toBe('2001:db8::1');
+    // Without trust, every friend would be the gateway and share one set of per-IP limits.
+    expect(clientIp(gateway, '79.181.173.179', false)).toBe(gateway);
+  });
+
   it('with trust = true, the leftmost entry is the client', () => {
     expect(clientIp('10.0.0.1', '7.7.7.7, 8.8.8.8', true)).toBe('7.7.7.7');
   });
