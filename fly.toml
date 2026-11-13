@@ -1,0 +1,42 @@
+# Fly.io config for the production image (see DEPLOY.md). Nothing is deployed until you run
+# `fly deploy` yourself. Replace the app name with your own (fly apps create <name>).
+app = "durak-online-CHANGE-ME"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Update the single machine in place. Never "bluegreen": it would run two instances at once.
+  strategy = "rolling"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  # Fly's edge proxy is one hop in front of the app.
+  TRUST_PROXY = "1"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # ONE always-on instance: games, timers and the room lock live in this process, and
+  # WebSockets must not be cut by auto-stop. Never scale above 1 machine (see DEPLOY.md).
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 500
+    hard_limit = 1000
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
