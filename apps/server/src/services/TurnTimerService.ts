@@ -1,4 +1,5 @@
-import { getAwaitedPlayers, resign, type GameState } from '@durak/game-engine';
+import { getAwaitedPlayers, type GameState } from '@durak/game-engine';
+import { departSeat } from './departure.js';
 import type { Room, RoomMember, StoredGame } from '../domain/types.js';
 import type { Repositories } from '../repositories/interfaces.js';
 import type { GameCommitter } from './GameCommitter.js';
@@ -199,15 +200,10 @@ export class TurnTimerService {
         return;
       }
 
-      const resigned = resign(game.state, playerId);
-      if (!resigned.ok) return;
-      await this.commit.commit({
-        room: clearGrace(room),
-        roomChanged: true,
-        prev: game,
-        state: resigned.value,
-        endReason: 'forfeit',
-      });
+      // Same rule as leaving: the game ends (forfeit), or a bot takes over the seat (3+ players
+      // with another human still in) and everyone else plays on.
+      const departed = await departSeat(this.commit, { room: clearGrace(room), game, playerId, voluntary: false });
+      if (!departed.ok) this.deps.log.error({ roomId, error: departed.error }, 'grace expiry failed');
     });
   }
 

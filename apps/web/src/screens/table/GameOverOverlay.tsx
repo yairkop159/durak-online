@@ -31,6 +31,8 @@ export function GameOverOverlay({
   const durak = gameOver ? gameOver.durakId : view.phase.kind === 'finished' ? view.phase.durak : null;
   const reason = gameOver?.endReason ?? 'normal';
   const finishOrder = gameOver?.finishOrder ?? view.finishOrder;
+  // The forfeiting durak is already the headline; list the others who left (a bot finished for them).
+  const forfeits = (gameOver?.forfeits ?? []).filter((id) => !(reason === 'forfeit' && id === durak));
 
   let headline: string;
   if (reason === 'abandoned') headline = t.gameOver.abandoned;
@@ -91,6 +93,11 @@ export function GameOverOverlay({
                 ))}
               </ol>
             </div>
+          )}
+          {forfeits.length > 0 && (
+            <p className="text-sm text-warn" data-testid="game-over-forfeits">
+              {t.gameOver.forfeits}: {forfeits.map(nameOf).join(', ')}
+            </p>
           )}
           {canRematch ? (
             <Button size="lg" className="w-full" onClick={() => client.rematch()}>

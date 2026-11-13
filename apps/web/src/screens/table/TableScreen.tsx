@@ -26,6 +26,7 @@ import { HandFan } from './HandFan';
 import { ActionBar, Countdown, StatusBanner } from './parts';
 import { MySeat, OpponentSeat, type TurnRing } from './Seat';
 import { statusLine } from './status';
+import { TopBar } from './TopBar';
 import { DeckPile, DiscardPile, TableArea } from './TableSurface';
 
 const GAME_ERRORS: ReadonlySet<string> = new Set(GAME_ERROR_CODES);
@@ -127,6 +128,7 @@ export function TableScreen() {
     <AnchorProvider registry={registry}>
       <LayoutGroup>
         <div className="relative mx-auto flex w-full max-w-3xl flex-1 flex-col gap-3 px-2 pt-2 sm:px-4 sm:pt-4">
+          <TopBar view={view} members={members} />
           <ul className="flex flex-wrap justify-center gap-1.5 sm:gap-2.5" dir="ltr" aria-label="opponents">
             {opponentsInOrder(view).map((p) => (
               <OpponentSeat

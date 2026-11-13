@@ -12,6 +12,8 @@ export interface Strings {
     readonly loading: string;
     readonly you: string;
     readonly backHome: string;
+    readonly close: string;
+    readonly cancel: string;
   };
   readonly connection: { readonly connecting: string; readonly disconnected: string; readonly reconnecting: string };
   readonly home: {
@@ -79,6 +81,18 @@ export interface Strings {
     readonly yourTurn: string;
     readonly actions: string;
     readonly secondsLeft: (seconds: number) => string;
+    /** Top bar: leave the room (mid-game: forfeit, after a confirm). */
+    readonly leave: string;
+    readonly leaveConfirm: {
+      readonly title: string;
+      /** The game ends now (2 players, or no other human still in). */
+      readonly resign: string;
+      /** A bot takes over the seat and the game goes on. */
+      readonly takeover: string;
+      readonly confirm: string;
+    };
+    /** On a seat whose human left the game. */
+    readonly left: string;
     readonly status: {
       readonly youAttack: string;
       readonly waitAttack: (name: string) => string;
@@ -98,6 +112,8 @@ export interface Strings {
     readonly forfeit: (name: string) => string;
     readonly abandoned: string;
     readonly finishOrder: string;
+    /** Players who left (or timed out) and lost. */
+    readonly forfeits: string;
     readonly backToLobby: string;
     readonly reasons: Record<GameEndReason, string>;
   };
@@ -111,6 +127,8 @@ export const he: Strings = {
     loading: 'טוען…',
     you: 'אני',
     backHome: 'למסך הראשי',
+    close: 'סגירה',
+    cancel: 'ביטול',
   },
   connection: {
     connecting: 'מתחבר לשרת…',
@@ -184,6 +202,14 @@ export const he: Strings = {
     yourTurn: 'התור שלך',
     actions: 'פעולות',
     secondsLeft: (seconds) => `${seconds} שנ׳`,
+    leave: 'יציאה',
+    leaveConfirm: {
+      title: 'לפרוש מהמשחק?',
+      resign: 'המשחק יסתיים ותיחשב/י כמפסיד/ה.',
+      takeover: 'בוט ימשיך לשחק במקומך, ותיחשב/י כמפסיד/ה.',
+      confirm: 'פרישה',
+    },
+    left: 'פרש/ה',
     status: {
       youAttack: 'תורך לתקוף: בחר קלף',
       waitAttack: (name) => `${name} תוקף`,
@@ -200,9 +226,10 @@ export const he: Strings = {
     durak: (name) => `${name} הוא הדוראק`,
     youAreDurak: 'אתה הדוראק!',
     draw: 'תיקו — אין דוראק',
-    forfeit: (name) => `${name} התנתק והפסיד`,
+    forfeit: (name) => `${name} פרש/ה והפסיד/ה`,
     abandoned: 'המשחק הופסק: אף אחד לא שיחק',
     finishOrder: 'סדר היציאה',
+    forfeits: 'פרשו מהמשחק',
     backToLobby: 'חזרה לחדר ההמתנה',
     reasons: { normal: 'סיום רגיל', forfeit: 'הפסד טכני', abandoned: 'משחק נטוש' },
   },

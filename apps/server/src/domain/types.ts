@@ -20,6 +20,12 @@ export interface RoomMember {
   readonly consecutiveTimeouts: number;
   /** Epoch ms when an offline player forfeits, or null. Server-only. */
   readonly graceDeadline: number | null;
+  /**
+   * The human who held this seat left the running game (or their reconnection grace expired).
+   * With a bot takeover the seat is also `isBot: true` (medium) for the rest of the game.
+   * A rematch removes these seats.
+   */
+  readonly leftGame: boolean;
 }
 
 export interface Spectator {
@@ -70,6 +76,11 @@ export interface StoredGame {
    * A missing entry is rebuilt with `initKnowledge`, which is always sound.
    */
   readonly knowledge: Readonly<Record<PlayerId, PublicKnowledge>>;
-  /** Human seats a bot ever played for (AFK takeover); for ratings (Phase 3d). */
+  /** Human seats a bot ever played for (AFK or leave takeover); for ratings (Phase 3d). */
   readonly botAssisted: readonly PlayerId[];
+  /**
+   * Humans who left this game or whose reconnection grace expired, in order. Each one is a loss
+   * for ratings, whether the game then ended (forfeit) or a bot finished it for them.
+   */
+  readonly forfeits: readonly PlayerId[];
 }

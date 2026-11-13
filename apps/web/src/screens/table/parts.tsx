@@ -15,8 +15,9 @@ export function PlayerBadges({ player, view, member }: { player: PublicPlayer; v
       {playing && !player.finished && view.defenderId === player.id && <Pill tone="defend">{t.table.defender}</Pill>}
       {phase.kind === 'bout' && phase.passed.includes(player.id) && <Pill tone="muted">{t.table.passed}</Pill>}
       {player.finished && <Pill tone="accent">{t.table.out}</Pill>}
+      {member?.leftGame && <Pill tone="warn">{t.table.left}</Pill>}
       {member?.isBot && <BotPill member={member} />}
-      {member && !member.isBot && !member.connected && <Pill tone="muted">{t.table.offline}</Pill>}
+      {member && !member.isBot && !member.leftGame && !member.connected && <Pill tone="muted">{t.table.offline}</Pill>}
       {/* An AFK human is played by the bot until they act again. */}
       {member && !member.isBot && member.afk && playing && !player.finished && (
         <Pill tone="warn">{view.viewerId === player.id ? t.bots.playingForYou : t.bots.playingForThem}</Pill>

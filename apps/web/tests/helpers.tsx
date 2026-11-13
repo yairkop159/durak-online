@@ -135,6 +135,7 @@ export function roomState(status: RoomStatePayload['status'], ids: string[] = ['
       isBot: false,
       botDifficulty: null,
       afk: false,
+      leftGame: false,
     })),
     spectatorCount: 0,
     status,

@@ -22,7 +22,7 @@ describe('store reducer', () => {
   it('room:state replaces the room; going back to the lobby clears the game and its result', () => {
     let s = reducer(connected, { type: 'room:state', payload: roomState('playing') });
     s = reducer(s, { type: 'game:state', payload: gameState(makeView(), 5), receivedAt: 10 });
-    s = reducer(s, { type: 'game:over', payload: { roomId: ROOM_ID, durakId: 'bob', finishOrder: ['me'], endReason: 'normal', botAssisted: [] } });
+    s = reducer(s, { type: 'game:over', payload: { roomId: ROOM_ID, durakId: 'bob', finishOrder: ['me'], endReason: 'normal', botAssisted: [], forfeits: [] } });
     s = reducer(s, { type: 'room:state', payload: roomState('finished') });
     expect(s.game).not.toBeNull();
     expect(s.gameOver).not.toBeNull();
@@ -48,7 +48,7 @@ describe('store reducer', () => {
   });
 
   it('game:over stores the result', () => {
-    const payload = { roomId: ROOM_ID, durakId: null, finishOrder: ['me', 'bob'], endReason: 'abandoned' as const, botAssisted: [] };
+    const payload = { roomId: ROOM_ID, durakId: null, finishOrder: ['me', 'bob'], endReason: 'abandoned' as const, botAssisted: [], forfeits: [] };
     expect(reducer(connected, { type: 'game:over', payload }).gameOver).toEqual(payload);
   });
 

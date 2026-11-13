@@ -18,6 +18,7 @@ export function toRoomStatePayload(room: Room): RoomStatePayload {
       isBot: m.isBot,
       botDifficulty: m.botDifficulty,
       afk: m.afk,
+      leftGame: m.leftGame,
     })),
     spectatorCount: room.spectators.length,
     status: room.status,
@@ -53,6 +54,7 @@ export class SocketNotifier implements RoomNotifier {
       finishOrder: [...game.state.finishOrder],
       endReason: game.endReason ?? 'normal',
       botAssisted: [...game.botAssisted],
+      forfeits: [...game.forfeits],
     });
   }
 

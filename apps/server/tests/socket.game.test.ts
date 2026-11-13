@@ -82,7 +82,7 @@ describe('timer fields in payloads', () => {
 
     const room = host.last('room:state')!;
     for (const m of room.members) {
-      expect(Object.keys(m).sort()).toEqual(['afk', 'botDifficulty', 'connected', 'isBot', 'nickname', 'playerId']);
+      expect(Object.keys(m).sort()).toEqual(['afk', 'botDifficulty', 'connected', 'isBot', 'leftGame', 'nickname', 'playerId']);
     }
 
     // A timeout is broadcast to both players with the next deadline.
@@ -206,5 +206,25 @@ describe('idempotent create/join', () => {
     const { roomId: other } = await setupRoom(b, []);
     a.send('room:join', { roomId: other, nickname: 'x' });
     expect((await a.waitFor('error')).code).toBe('INVALID_SESSION');
+  });
+});
+
+describe('leaving a running game over sockets', () => {
+  it('2 players: room:leave ends the game, game:over names the leaver in forfeits, the leaver is unbound', async () => {
+    harness = await startTestServer();
+    const host = await harness.connect();
+    const guest = await harness.connect();
+    const { roomId, sessions } = await setupRoom(host, [guest]);
+    await startGame(host, [host, guest], roomId);
+
+    const hostMark = host.mark();
+    guest.send('room:leave', { roomId });
+    const over = await host.waitFor('game:over', () => true, hostMark);
+    expect(over).toMatchObject({ durakId: sessions[1]!.playerId, endReason: 'forfeit', forfeits: [sessions[1]!.playerId] });
+
+    // The guest's connection no longer holds a session: room actions are refused.
+    const guestMark = guest.mark();
+    guest.send('room:rematch', { roomId });
+    expect(await guest.waitFor('error', () => true, guestMark)).toMatchObject({ code: 'NOT_IN_ROOM' });
   });
 });

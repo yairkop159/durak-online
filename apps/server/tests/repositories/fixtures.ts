@@ -11,9 +11,9 @@ export function makeRoom(id = uid(), status: Room['status'] = 'lobby'): Room {
     maxPlayers: 4,
     config: { mode: 'perevodnoy' },
     members: [
-      { playerId: 'p_host', nickname: 'Host', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null },
-      { playerId: 'p_guest', nickname: 'Guest', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null },
-      { playerId: 'p_bot', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false, consecutiveTimeouts: 0, graceDeadline: null },
+      { playerId: 'p_host', nickname: 'Host', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false },
+      { playerId: 'p_guest', nickname: 'Guest', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false },
+      { playerId: 'p_bot', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false },
     ],
     spectators: [{ spectatorId: 's_1', nickname: 'Watcher' }],
     status,
@@ -39,6 +39,7 @@ export function makeGame(roomId: string, finished = false): StoredGame {
       p_guest: initKnowledge(sanitizeStateForPlayer(state, 'p_guest')),
     },
     botAssisted: ['p_guest'],
+    forfeits: [],
   };
 }
 

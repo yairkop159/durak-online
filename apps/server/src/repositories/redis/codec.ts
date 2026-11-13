@@ -17,6 +17,7 @@ export const RoomMemberSchema = z
     afk: z.boolean().default(false),
     consecutiveTimeouts: z.number().int().min(0).default(0),
     graceDeadline: z.number().nullable().default(null),
+    leftGame: z.boolean().default(false), // Phase 7
   })
   .strict();
 
@@ -101,6 +102,7 @@ export const StoredGameSchema = z
     // Phase 4b. Missing knowledge is rebuilt with initKnowledge (sound: it only forgets history).
     knowledge: z.record(z.string(), PublicKnowledgeSchema).default({}),
     botAssisted: z.array(z.string()).default([]),
+    forfeits: z.array(z.string()).default([]), // Phase 7
   })
   .strict();
 

@@ -30,7 +30,7 @@ function withBot(base: RoomStatePayload, maxPlayers = 3): RoomStatePayload {
     maxPlayers,
     members: [
       ...base.members,
-      { playerId: 'bot1', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false },
+      { playerId: 'bot1', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false, leftGame: false },
     ],
   };
 }

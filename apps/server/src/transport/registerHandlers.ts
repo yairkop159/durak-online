@@ -123,17 +123,7 @@ function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedL
     socket.emit('session:issued', { sessionToken: session.token, playerId: session.id, roomId: session.roomId });
   };
 
-  const unbind = (session: Session) => {
-    socket.data.session = null;
-    for (const channel of [
-      channels.room(session.roomId),
-      channels.player(session.id),
-      channels.spectators(session.roomId),
-      channels.spectator(session.id),
-    ]) {
-      void socket.leave(channel);
-    }
-  };
+  const unbind = (session: Session) => unbindSocket(socket, session);
 
   /** Re-sends an existing session instead of creating a second seat for the same connection. */
   const reissue = async (session: Session) => {
@@ -178,6 +168,10 @@ function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedL
     }
     const result = await rooms.leaveRoom(session);
     if (!result.ok) { sendError(result.error); return; }
+    // The session is gone: every connection holding it is unbound, not only this one.
+    for (const other of io.sockets.sockets.values()) {
+      if (other.data.session?.token === session.token) unbindSocket(other, session);
+    }
     unbind(session);
   });
 
@@ -254,4 +248,16 @@ function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedL
       log.error({ err: error }, 'disconnect handling failed');
     });
   });
+}
+
+function unbindSocket(socket: IoSocket, session: Session): void {
+  socket.data.session = null;
+  for (const channel of [
+    channels.room(session.roomId),
+    channels.player(session.id),
+    channels.spectators(session.roomId),
+    channels.spectator(session.id),
+  ]) {
+    void socket.leave(channel);
+  }
 }

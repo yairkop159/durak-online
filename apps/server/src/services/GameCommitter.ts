@@ -37,6 +37,8 @@ export interface CommitInput {
   readonly endReason?: GameEndReason | null;
   /** Default: unchanged. */
   readonly botAssisted?: readonly PlayerId[];
+  /** Default: unchanged. */
+  readonly forfeits?: readonly PlayerId[];
 }
 
 /** Moves the bots-only fast-forward may play before it gives up and abandons the game. */
@@ -89,6 +91,7 @@ export class GameCommitter {
       turnDeadline: timers.deadlineFor(room, state),
       knowledge: advanceKnowledge(prev.state, state, prev.knowledge),
       botAssisted: input.botAssisted ?? prev.botAssisted,
+      forfeits: input.forfeits ?? prev.forfeits,
     };
 
     if (roomChanged) await repos.atomic.saveRoomAndGame(room, game);

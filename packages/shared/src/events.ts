@@ -117,6 +117,8 @@ export interface RoomMember {
   readonly botDifficulty: BotDifficulty | null;
   /** Two consecutive turn timeouts; cleared by a human move or session:resume. */
   readonly afk: boolean;
+  /** The human who held this seat left the running game; if `isBot`, a bot now plays it. */
+  readonly leftGame: boolean;
 }
 
 export interface RoomStatePayload {
@@ -141,7 +143,8 @@ export interface GameStatePayload {
 /**
  * How a game ended:
  * - normal: played out (durak may be null for a simultaneous last-card draw);
- * - forfeit: a player's reconnection grace expired (that player is the durak);
+ * - forfeit: a player left, or their reconnection grace expired, and nobody could continue for
+ *   them (that player is the durak);
  * - abandoned: everyone idle — stopped by the server's abandon guard, no durak.
  *   Abandoned games are not rated.
  */
@@ -153,8 +156,13 @@ export interface GameOverPayload {
   readonly durakId: string | null;
   readonly finishOrder: readonly string[];
   readonly endReason: GameEndReason;
-  /** Human seats a bot ever played for (AFK takeover). For ratings (Phase 3d). */
+  /** Human seats a bot ever played for (AFK or leave takeover). For ratings (Phase 3d). */
   readonly botAssisted: readonly string[];
+  /**
+   * Humans who left the game (or whose reconnection grace expired). Rating semantics (Phase 3d):
+   * every id here is a loss, `durakId` is a loss, and games ending 'abandoned' are not rated.
+   */
+  readonly forfeits: readonly string[];
 }
 
 export interface SessionIssuedPayload {

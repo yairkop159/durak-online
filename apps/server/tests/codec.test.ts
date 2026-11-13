@@ -75,3 +75,22 @@ describe('codec: GameState.lastBout (Phase 5b)', () => {
     expect(logger.error).toHaveBeenCalledOnce();
   });
 });
+
+describe('codec: leaving games (Phase 7)', () => {
+  it('records stored before Phase 7 decode with leftGame = false and forfeits = []', () => {
+    const room = makeRoom('room1');
+    const oldRoom = { ...room, members: room.members.map(({ leftGame: _l, ...m }) => m) };
+    expect(decode(RoomSchema, encode(oldRoom), 'k', log())?.members.every((m) => m.leftGame === false)).toBe(true);
+
+    const { forfeits: _f, ...oldGame } = makeGame('room1');
+    expect(decode(StoredGameSchema, encode(oldGame), 'k', log())?.forfeits).toEqual([]);
+  });
+
+  it('round-trips leftGame and forfeits', () => {
+    const room = makeRoom('room1');
+    const left = { ...room, members: room.members.map((m) => ({ ...m, leftGame: m.playerId === 'p_guest' })) };
+    expect(decode(RoomSchema, encode(left), 'k', log())).toEqual(left);
+    const game = { ...makeGame('room1'), forfeits: ['p_guest'] };
+    expect(decode(StoredGameSchema, encode(game), 'k', log())).toEqual(game);
+  });
+});

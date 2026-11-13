@@ -36,19 +36,15 @@ describe('RoomService', () => {
     expect(notifier.events.map((e) => e.kind)).toEqual(['room']);
   });
 
-  it('leaving the lobby transfers host; leaving during a game is refused', async () => {
+  it('leaving the lobby transfers host and frees the seat', async () => {
     const { rooms, repos } = setup();
     const host = await unwrap(rooms.createRoom({ nickname: 'h', maxPlayers: 2 }, noBind));
     const guest = await unwrap(rooms.joinRoom(host.roomId, 'g', noBind));
     await unwrap(rooms.leaveRoom(host));
-    expect((await repos.rooms.get(host.roomId))?.hostId).toBe(guest.id);
+    const room = await repos.rooms.get(host.roomId);
+    expect(room?.hostId).toBe(guest.id);
+    expect(room?.members.map((m) => m.playerId)).toEqual([guest.id]);
     expect(await repos.sessions.get(host.token)).toBeNull();
-
-    const other = setup();
-    const h2 = await unwrap(other.rooms.createRoom({ nickname: 'h', maxPlayers: 2 }, noBind));
-    await unwrap(other.rooms.joinRoom(h2.roomId, 'g', noBind));
-    await unwrap(other.rooms.startGame(h2));
-    expect(await other.rooms.leaveRoom(h2)).toMatchObject({ ok: false, error: { code: 'GAME_IN_PROGRESS' } });
   });
 });
 
