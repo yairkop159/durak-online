@@ -2,17 +2,15 @@ import { cardId, type ClientMove, type GameMode, type Move } from '@durak/shared
 import { describe, expect, it } from 'vitest';
 import {
   applyMove,
-  boutCardLimit,
   createGame,
   createRng,
   getLegalMoves,
   getLegalMovesForView,
   getPlayersToAct,
-  isFinished,
   sanitizeStateForPlayer,
   type GameState,
 } from '../src/index.js';
-import { allCards, isFullDeckPermutation } from './helpers.js';
+import { checkInvariants } from './helpers.js';
 
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -20,24 +18,6 @@ function deepFreeze<T>(value: T): T {
     for (const key of Object.keys(value)) deepFreeze((value as Record<string, unknown>)[key]);
   }
   return value;
-}
-
-function checkInvariants(state: GameState): void {
-  expect(isFullDeckPermutation(allCards(state))).toBe(true);
-  if (state.phase.kind === 'finished') return;
-
-  expect(state.attackerIndex).not.toBe(state.defenderIndex);
-  expect(isFinished(state, state.attackerIndex) && state.phase.kind === 'awaitingAttack').toBe(false);
-  expect(isFinished(state, state.defenderIndex)).toBe(false);
-  expect(state.table.length).toBeLessThanOrEqual(boutCardLimit(state));
-  const uncovered = state.table.filter((p) => p.defense === null).length;
-  expect(uncovered).toBeLessThanOrEqual(state.players[state.defenderIndex]!.hand.length);
-  if (state.phase.kind === 'awaitingAttack') {
-    expect(state.table).toEqual([]);
-    expect(state.players[state.attackerIndex]!.hand.length).toBeGreaterThan(0);
-  }
-  // Liveness: somebody can always act in an unfinished game.
-  expect(getPlayersToAct(state).length).toBeGreaterThan(0);
 }
 
 /**

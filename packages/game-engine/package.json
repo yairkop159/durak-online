@@ -11,15 +11,21 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "bench": "tsx bench/run.ts"
   },
   "dependencies": {
     "@durak/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
   }
 }

@@ -26,3 +26,17 @@ export {
   timeoutOpeningCard,
   type TimeoutResult,
 } from './timeout.js';
+export {
+  tableCards,
+  withoutCards,
+  includesCard,
+  leftViewerHand,
+  viewHandCounts,
+  viewDrawOrder,
+  simulateViewDraws,
+  isBoutResolutionStep,
+  inferBoutResolution,
+  type BoutResolution,
+  type DrawScenario,
+} from './viewInference.js';
+export * from './bot/index.js';

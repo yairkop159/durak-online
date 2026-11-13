@@ -29,7 +29,7 @@ This is the single source of truth for the server, bot and UI. Any change here m
 - **Pass & bout end:** `pass` (non-defenders only) means "done throwing in for now". Any new card on the table (attack, throw-in, defense, transfer) and a `take` clear all passes. The bout ends automatically as soon as (every card is covered OR the defender is taking) AND every non-defender still in the game has either passed or cannot legally throw in. No explicit pass is needed from a player who has no legal throw-in.
 - **Transfer (`perevodnoy` mode only):** the defender, before any card is covered and before taking, adds a card whose rank equals the rank of every attack card. The new defender is the next player still in the game clockwise. It is allowed only if the new table size is ≤ the bout limit and ≤ the new defender's hand size. **The transferring player becomes the main attacker** (so they lead the draw order). Passes reset. Transfers may chain. With 2 players the attack bounces back to the original attacker. There is no "show a trump" transfer.
 - **After the bout:** beaten → table cards are discarded and the defender attacks next (or, if the defender went out, the next player still in). Taken → the player after the defender attacks next. The new defender is the next player still in after the new attacker.
-- **`lastBout`:** every bout resolution stores `{ table, outcome: 'beaten' | 'taken', defenderId }` with the final table (including a closing defense/throw-in that ended the bout inside the same move). It is public (copied into `PlayerView`), is not a card location, and is kept until the next bout resolves (`null` before the first). The client animates resolutions from it.
+- **`lastBout`:** every bout resolution stores `{ table, outcome: 'beaten' | 'taken', defenderId }` with the final table (including a closing defense/throw-in that ended the bout inside the same move). It is public (copied into `PlayerView`), is not a card location, and is kept until the next bout resolves (`null` before the first). The client animates resolutions from it. `src/viewInference.ts` explains a resolution from two consecutive views (`inferBoutResolution`: the closing card, who could have closed it, how many cards each player drew). It is shared by the web animations (`apps/web/src/anim/diffViews.ts`) and the bot's `PublicKnowledge`.
 - **Draw order:** the main attacker first, then the other players clockwise, the defender last; each refills to 6 while the stock lasts.
 - **Finishing:** players only go out at the end of a bout. After drawing, if the stock is empty, every player with 0 cards goes out (recorded in seating order starting from the main attacker). When ≤1 player remains the game is over: `durak` = the remaining player, or `null` (a draw) if the last players went out together.
 - **Determinism:** a game is fully determined by the seed, player order, config and the sequence of moves.
@@ -81,9 +81,78 @@ React 19 + Vite + Tailwind v4, Hebrew UI (`dir="rtl"`). `@durak/shared` and `@du
 - **Strings:** every UI string and every error code's Hebrew message live in `src/i18n/he.ts` (typed `Strings`; `errors` must cover every `ServerErrorCode | GameErrorCode`). Cards are drawn with CSS (rank + suit symbol), no image assets.
 - **Env:** `VITE_SERVER_URL` (default `http://localhost:3000`). Vite runs on 5173 (`strictPort`), matching the server's default `CORS_ORIGINS`.
 
+## Bot (`packages/game-engine/src/bot`, Phase 4a)
+A pure library: no server or UI wiring (that is 4b). Exported from `@durak/game-engine`.
+
+**No-cheating rule (NEVER VIOLATE):** the bot only gets what a human player gets.
+- The public API is `chooseBotMove(view: PlayerView, knowledge: PublicKnowledge, options) -> ClientMove | null` (`null` = no legal move), plus `Bot.choose(view, knowledge, rng)` for `RandomBot`, `GreedyBot` and `createIsmctsBot`. None of them ever receives a `GameState`.
+- A `GameState` exists in the bot only as a *determinization*: a world sampled from the view and the knowledge (`determinize.ts`, the only file that assembles one), then simulated.
+- `tests/bot/noCheating.test.ts` enforces this by checking imports:
+  - View-only files (`knowledge`, `greedy`, `baselines`, `moveKey`, and the barrel `index`) may import only `@durak/shared`, `viewMoves`, `viewInference`, `rng`, `deck`, `result` and other view-only files.
+  - Simulation files (`determinize`, `ismcts`, `turnOrder`, `rewards`) may also import `state` and `rules`.
+  - No bot file may call `sanitizeStateForPlayer` or `createGame*`.
+  - A type test pins the `chooseBotMove` signature.
+  - A new bot file must be classified in that test.
+
+**`PublicKnowledge` (`knowledge.ts`)** is plain JSON, so it can be persisted. It is built by `initKnowledge(view)` and advanced with `updateKnowledge(k, prevView, nextView)` on every view the player receives. It only records facts it can prove; property tests check it against the real state on every step for every seat.
+- `discard`: cards proven to be in the discard pile. Beaten `lastBout` cards are added at each resolution, and cards never leave the discard.
+- `knownHands[opponent]`:
+  - Table cards the opponent picked up with a take are added. They are removed from every other opponent's known hand.
+  - When the stock runs out, the face-up trump goes to the last drawer. This is added only if every closer scenario from `inferBoutResolution` agrees on who that is.
+  - With 6 players the trump starts in seat 5's hand during bout 1.
+  - A card disappears from a known hand as soon as it is visible on the table, in my hand or in the discard.
+  - Finished players know nothing.
+- Missed steps (a bout jump, a different viewer, or any inconsistency) keep the discard and restart hand knowledge from the current view.
+- Not inferred (future refinements): suit voids from strategic takes, and the bout-1 "first attacker holds the lowest trump" constraint.
+- `unseenCards(k, view)` = everything not in my hand, on the table, in `discard`, in a known hand, or (while the stock lasts) the face-up trump.
+
+**Determinization (`sampleWorld`)**:
+1. Shuffle the unseen cards.
+2. Deal them in a fixed order: each opponent in seat order gets their known cards plus enough unseen cards to match their hand count; then the stock gets `deckCount - 1` cards with the trump last; then the unidentified part of the discard.
+3. Everything else is copied from the view.
+
+Every sampled world passes the fuzz invariants and re-sanitizes to exactly the bot's view (property test). If the knowledge doesn't fit the view, the bot falls back to `initKnowledge(view)`.
+
+**Search (`ismcts.ts`): Single-Observer IS-MCTS** (Cowling, Powley & Whitehouse 2012). Every Durak move is public; only card locations are hidden. The tree is built over the bot's information sets, with a fresh determinization each iteration.
+- Children are keyed by `actorSeat|moveKey`. UCB1 uses availability counts: `mean + c*sqrt(ln(availability)/visits)`, with `c = 0.7`. The final move is the root child with the most visits. Draws are absorbed by the determinization; there are no chance nodes.
+- **Canonical player to move** (`turnOrder.ts`, `canonicalActor`):
+  - `awaitingAttack` → the main attacker.
+  - A card is uncovered and the defender isn't taking → the defender.
+  - Otherwise → the first non-defender clockwise from the main attacker who is still in, hasn't passed and can throw in.
+
+  So attackers throw in after seeing the defense. The **root** is always the bot itself, even when it is "out of order" (an attacker throwing in while the defender still thinks). The benchmark harness uses the same order.
+- **Rewards** (`rewards.ts`) are a per-seat vector in [0, 1], and each node maximizes the reward of the player who moved into it.
+  - At the end of the game, the durak gets 0 and everyone else 1. In a draw, the players who went out together get 0.5 and earlier finishers keep 1.
+  - At the rollout-depth cutoff (default 200 plies), finished players get 1. Each active player gets `1 - badness/sum(badness)`, where badness is the hand weighted by card weakness.
+- **Rollout policy = `GreedyBot`** (`greedy.ts`, `pickGreedy` over the legal moves):
+  - Defender: the cheapest defense if every uncovered card can be beaten, otherwise take. It never transfers.
+  - Opening: the cheapest card. Cost is the rank for a non-trump and 100 + rank for a trump.
+  - Throw-in: the cheapest non-trump, otherwise pass.
+- **Budget:** `{ iterations }` (deterministic) or `{ deadlineMs, now }`, where `now` is an injected clock and the deadline is absolute. The engine never reads a clock. A seeded `Rng` (`options.seed`) makes every search reproducible. A single legal move is returned without searching. `searchBotMove` returns diagnostics: iterations and root statistics.
+
+**Benchmark** (`packages/game-engine/bench`, not part of the unit tests; run with `tsx`):
+- `npm run bench --workspace=packages/game-engine`: the quick run. It plays 100 games per config over {2,3,4} players × {podkidnoy, perevodnoy} × {Random, Greedy}, on worker threads.
+- `-- --full`: the same matrix with 500 games per config.
+- `-- --realtime`: 2 players vs Greedy, both modes, 500 games each, at a real 300 ms deadline, on 1 worker by default.
+- Options: `--games N`, `--workers N`, `--ms N`.
+- Filters (comma-separated lists): `--players 2,3`, `--opponents random,greedy`, `--modes podkidnoy,perevodnoy`.
+
+**Resumable runs:**
+- Every finished game is appended to a JSON-lines results file, together with the calibration. The default file is `bench/results/<iterations|realtime>-<ms>ms.jsonl`; it is gitignored, and `--out FILE` overrides it.
+- A rerun reuses the stored calibration and skips the games already in the file, so an interrupted run loses only the games that were in flight. A cut-off last line is ignored.
+- Quick and `--full` runs share a file (same seeds and budget), so `--full` after a quick run only plays the extra games.
+- `--fresh` discards the file and starts over. Use it after changing the bot, since stored outcomes would be stale.
+
+How a run works:
+- Every run starts by calibrating how many iterations take about 300 ms on this machine. The quick and full runs then use that fixed iteration count, so their results are reproducible.
+- One IS-MCTS seat plays against n−1 copies of the opponent. The IS-MCTS seat rotates over every seat, and the seeds are fixed.
+- The harness (`bench/match.ts`, also used by the tests) gives each seat only its view and its own `PublicKnowledge`, and validates every move against the real state.
+- The report shows durak rates with Wilson 95% CIs, draws and abandoned games (capped at 3000 moves), iterations/s and ms per move, plus a PASS/FAIL line for the 2-player target: IS-MCTS's CI must lie entirely below Greedy's.
+
 ## Development Workflow & Commands
 - Build all workspaces: `npm run build --workspaces`
-- Run engine tests: `npm test --workspace=packages/game-engine`
+- Run engine tests: `npm test --workspace=packages/game-engine` (includes the bot tests in `tests/bot/`)
+- Run the bot benchmark: `npm run bench --workspace=packages/game-engine` (`-- --full`, `-- --realtime`; see "Bot" above)
 - Run server tests: `npm test --workspace=apps/server` (Redis tests need `docker-compose up -d` or any Redis at `REDIS_URL`; without one they are skipped with a warning)
 - Run server + web together: `npm run dev` (builds `shared` + `game-engine` for the server's `tsx`, then runs both with `concurrently`; open http://localhost:5173)
 - Run the server in dev mode: `npm run dev --workspace=apps/server` (env: `PORT`, `HOST`, `CORS_ORIGINS`)
@@ -109,6 +178,8 @@ React 19 + Vite + Tailwind v4, Hebrew UI (`dir="rtl"`). `@durak/shared` and `@du
     - **Startup order:** ghost reset (everyone offline) → `buildServer` → `timers.rearmAll()` (re-arms every persisted deadline; past ones fire immediately; offline players without a grace get one) → `listen`.
     - **Testing:** `Clock` and `Scheduler` are injected (`services/scheduling.ts`). Tests use `tests/helpers/fakeTime.ts` (`advanceBy` / `runDue`), never real sleeps.
 - **Phase 4: IS-MCTS AI Bot.** Implement determinized Monte Carlo Tree Search in `packages/game-engine/src/bot` with a configurable thinking time budget (e.g., 300ms per move) and benchmark win rates against a random baseline bot.
+  - **4a (done):** the pure bot library: `PublicKnowledge`, determinization, SO-ISMCTS, Random/Greedy baselines, benchmark. See "Bot" above.
+  - **4b:** server integration. The bot plays for AFK players and bot seats. The server keeps one `PublicKnowledge` per bot seat, updated from every `game:state` view, and decides when to invoke the bot (e.g. when it is the `canonicalActor`).
 - **Phase 5: Mobile-First Web Client.** Build `apps/web` with clean card animations, responsive table layout for 2-6 players, and room invite links.
   - **5a (done):** playable client: home, invite links, lobby, table with legal-move highlighting, countdown, game over + rematch, spectators. See "Web Client" above.
   - **5b:** animations and visual polish.

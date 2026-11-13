@@ -10,7 +10,7 @@ import {
   type TablePair,
 } from '@durak/shared';
 import { expect } from 'vitest';
-import { applyMove, createDeck, type GameState } from '../src/index.js';
+import { applyMove, boutCardLimit, createDeck, getPlayersToAct, isFinished, type GameState } from '../src/index.js';
 
 const RANK_BY_LABEL: Record<string, Rank> = {
   '6': 6,
@@ -136,4 +136,23 @@ export function stackedDeck(top: string, bottom: string): Card[] {
   const trump = c(bottom);
   const rest = createDeck().filter((x) => !sameCard(x, trump) && !head.some((h) => sameCard(h, x)));
   return [...head, ...rest, trump];
+}
+
+/** Structural invariants every reachable state satisfies (shared by the fuzz and bot property tests). */
+export function checkInvariants(state: GameState): void {
+  expect(isFullDeckPermutation(allCards(state))).toBe(true);
+  if (state.phase.kind === 'finished') return;
+
+  expect(state.attackerIndex).not.toBe(state.defenderIndex);
+  expect(isFinished(state, state.attackerIndex) && state.phase.kind === 'awaitingAttack').toBe(false);
+  expect(isFinished(state, state.defenderIndex)).toBe(false);
+  expect(state.table.length).toBeLessThanOrEqual(boutCardLimit(state));
+  const uncovered = state.table.filter((p) => p.defense === null).length;
+  expect(uncovered).toBeLessThanOrEqual(state.players[state.defenderIndex]!.hand.length);
+  if (state.phase.kind === 'awaitingAttack') {
+    expect(state.table).toEqual([]);
+    expect(state.players[state.attackerIndex]!.hand.length).toBeGreaterThan(0);
+  }
+  // Liveness: somebody can always act in an unfinished game.
+  expect(getPlayersToAct(state).length).toBeGreaterThan(0);
 }
