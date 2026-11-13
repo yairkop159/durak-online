@@ -5,10 +5,18 @@ import { useClient, useClientState } from '../net/react';
 type Variant = 'primary' | 'secondary' | 'danger';
 
 const VARIANT: Record<Variant, string> = {
-  primary: 'bg-accent text-accent-ink hover:bg-accent-strong disabled:bg-accent/35 disabled:text-accent-ink/60',
-  secondary: 'bg-surface-2 text-text ring-1 ring-line-strong hover:bg-surface-3',
-  danger: 'bg-take text-white hover:brightness-110',
+  primary: 'bg-accent text-accent-ink enabled:not-aria-disabled:hover:bg-accent-strong',
+  secondary: 'bg-surface-2 text-text ring-1 ring-line-strong enabled:not-aria-disabled:hover:bg-surface-3',
+  danger: 'bg-take text-white enabled:not-aria-disabled:hover:brightness-110',
 };
+
+/**
+ * One disabled look for every variant. Applies to `disabled` and to `aria-disabled="true"`
+ * (a button that stays clickable, e.g. to explain why it can't act yet).
+ */
+export const DISABLED_BUTTON_CLASSES =
+  'disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted disabled:ring-1 disabled:ring-line disabled:shadow-none disabled:filter-none disabled:opacity-55 ' +
+  'aria-disabled:cursor-not-allowed aria-disabled:bg-surface-2 aria-disabled:text-muted aria-disabled:ring-1 aria-disabled:ring-line aria-disabled:shadow-none aria-disabled:filter-none aria-disabled:opacity-55 aria-disabled:active:translate-y-0';
 
 /** Real, clickable actions: solid fill, rounded, shadow — never confused with a Pill. */
 export function Button({
@@ -21,7 +29,7 @@ export function Button({
   return (
     <button
       type="button"
-      className={`rounded-btn font-bold shadow-btn transition-[background-color,filter,translate] duration-(--dur-hover) active:translate-y-px disabled:cursor-not-allowed disabled:shadow-none ${sizing} ${VARIANT[variant]} ${className}`}
+      className={`rounded-btn font-bold shadow-btn transition-[background-color,filter,translate] duration-(--dur-hover) active:translate-y-px ${sizing} ${VARIANT[variant]} ${DISABLED_BUTTON_CLASSES} ${className}`}
       {...props}
     />
   );

@@ -147,6 +147,24 @@ describe('Take / Pass buttons', () => {
     expect(pass()).toBeNull();
   });
 
+  it('the buttons sit in their own row above the hand, never pinned over it', () => {
+    renderTable(defending('7C'));
+    const row = screen.getByRole('toolbar', { name: t.table.actions });
+    const hand = screen.getByTestId('hand');
+    // Document order: the action row comes before the hand (it is laid out above it).
+    expect(row.compareDocumentPosition(hand) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(row.contains(hand)).toBe(false);
+    expect(row.className).not.toMatch(/\b(sticky|fixed|absolute)\b/);
+  });
+
+  it('the action row keeps its place when there is nothing to press (the hand does not jump)', () => {
+    renderTable(makeView({ hand: '9C' }));
+    expect(screen.queryByRole('toolbar')).toBeNull();
+    const placeholder = screen.getByTestId('action-row');
+    expect(placeholder).toHaveClass('min-h-12');
+    expect(placeholder.compareDocumentPosition(screen.getByTestId('hand')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('the opening attacker sees neither', () => {
     renderTable(makeView({ hand: '9C' }));
     expect(take()).toBeNull();

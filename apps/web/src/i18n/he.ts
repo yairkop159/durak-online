@@ -18,6 +18,7 @@ export interface Strings {
     readonly subtitle: string;
     readonly nickname: string;
     readonly nicknamePlaceholder: string;
+    readonly nicknameRequired: string;
     readonly players: string;
     readonly mode: string;
     readonly modes: Record<GameMode, string>;
@@ -119,6 +120,7 @@ export const he: Strings = {
     subtitle: 'משחק הקלפים הרוסי, עם חברים, בזמן אמת',
     nickname: 'הכינוי שלך',
     nicknamePlaceholder: 'למשל: סשה',
+    nicknameRequired: 'נא להזין כינוי כדי להתחיל',
     players: 'מספר שחקנים',
     mode: 'סוג משחק',
     modes: { podkidnoy: 'פודקידנוי', perevodnoy: 'פרבודנוי' },

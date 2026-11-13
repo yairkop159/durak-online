@@ -25,16 +25,20 @@ export function PlayerBadges({ player, view, member }: { player: PublicPlayer; v
   );
 }
 
-/** Take / Pass: big solid buttons in a bar pinned to the bottom of the screen. */
+/**
+ * Take / Pass: big solid buttons in their own row above the hand (never overlapping it).
+ * The row keeps its height when there is nothing to press, so the hand never jumps.
+ */
 export function ActionBar({ moves, onMove }: { moves: readonly ClientMove[]; onMove: (move: ClientMove) => void }) {
   const take = moves.find((m) => m.type === 'take');
   const pass = moves.find((m) => m.type === 'pass');
-  if (!take && !pass) return null;
+  if (!take && !pass) return <div aria-hidden="true" data-testid="action-row" className="min-h-12 w-full" />;
   return (
     <div
       role="toolbar"
       aria-label={t.table.actions}
-      className="sticky bottom-0 z-20 -mx-2 flex justify-center gap-3 bg-gradient-to-t from-bg-1 via-bg-1/90 to-transparent px-4 pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:-mx-4"
+      data-testid="action-row"
+      className="relative z-20 flex min-h-12 w-full justify-center gap-3 px-4"
     >
       {take && (
         <Button variant="danger" size="lg" className="min-w-36 flex-1 sm:flex-none" onClick={() => onMove(take)}>

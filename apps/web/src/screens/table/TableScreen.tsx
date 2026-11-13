@@ -137,7 +137,7 @@ export function TableScreen() {
           </ul>
 
           <section
-            className="mx-auto flex w-full items-center gap-2 rounded-table bg-gradient-to-b from-surface-2 to-surface p-3 shadow-table ring-1 ring-line sm:min-h-[clamp(14rem,38vh,30rem)] sm:flex-1 sm:gap-4 sm:p-6"
+            className="mx-auto flex w-full items-center gap-2 rounded-table bg-gradient-to-b from-surface-2 to-surface p-3 shadow-table ring-1 ring-line sm:min-h-[clamp(12rem,30vh,30rem)] sm:flex-1 sm:gap-4 sm:p-6"
             dir="ltr"
           >
             <DeckPile view={view} />
@@ -162,7 +162,9 @@ export function TableScreen() {
             />
           )}
 
-          <div className="mt-auto flex flex-col items-center">
+          <div className="mt-auto flex flex-col items-center gap-2 pb-[env(safe-area-inset-bottom)]">
+            {/* Its own row ABOVE the hand: the buttons can never cover (or steal clicks from) a card. */}
+            {interactive && <ActionBar moves={moves} onMove={send} />}
             {!spectator && me && (
               <>
                 <MySeat player={me} name={nameOf(me.id)} view={view} member={members?.find((m) => m.playerId === me.id)} ring={ringOf(me.id)} />
@@ -178,7 +180,6 @@ export function TableScreen() {
                 />
               </>
             )}
-            {interactive && <ActionBar moves={moves} onMove={send} />}
           </div>
 
           <FlightLayer key={flights.version} flights={flights.list} />

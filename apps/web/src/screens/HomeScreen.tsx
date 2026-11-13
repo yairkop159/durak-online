@@ -1,5 +1,5 @@
 import { GAME_MODES, MAX_PLAYERS, MIN_PLAYERS, type BotDifficulty, type GameMode } from '@durak/shared';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { DifficultyPicker } from '../components/DifficultyPicker';
 import { Button, Panel, inputClass } from '../components/ui';
 import { t } from '../i18n';
@@ -22,19 +22,27 @@ export function HomeScreen() {
     if (submitted && session) navigate(roomPath(session.roomId));
   }, [submitted, session]);
 
+  const nicknameRef = useRef<HTMLInputElement>(null);
+  const missingNickname = !nickname.trim();
+
+  /** Both start buttons stay clickable while "disabled" (aria-disabled): a click points at the field. */
+  const needNickname = (): boolean => {
+    if (!missingNickname) return false;
+    nicknameRef.current?.focus();
+    return true;
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const name = nickname.trim();
-    if (!name) return;
+    if (needNickname()) return;
     setSubmitted(true);
-    client.createRoom({ nickname: name, maxPlayers: players, mode });
+    client.createRoom({ nickname: nickname.trim(), maxPlayers: players, mode });
   };
 
   const vsComputer = () => {
-    const name = nickname.trim();
-    if (!name) return;
+    if (needNickname()) return;
     setSubmitted(true);
-    client.playVsComputer({ nickname: name, mode, difficulty });
+    client.playVsComputer({ nickname: nickname.trim(), mode, difficulty });
   };
 
   return (
@@ -46,18 +54,27 @@ export function HomeScreen() {
       </header>
       <Panel>
         <form onSubmit={submit} className="flex flex-col gap-5">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">{t.home.nickname}</span>
-            <input
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              maxLength={24}
-              required
-              autoFocus
-              placeholder={t.home.nicknamePlaceholder}
-              className={inputClass}
-            />
-          </label>
+          <div className="flex flex-col gap-1.5">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">{t.home.nickname}</span>
+              <input
+                ref={nicknameRef}
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                maxLength={24}
+                autoFocus
+                placeholder={t.home.nicknamePlaceholder}
+                aria-describedby={missingNickname ? 'nickname-hint' : undefined}
+                className={inputClass}
+              />
+            </label>
+            {/* Outside the label: it describes the field, it is not part of its name. */}
+            {missingNickname && (
+              <span id="nickname-hint" className="text-xs text-muted">
+                {t.home.nicknameRequired}
+              </span>
+            )}
+          </div>
 
           <fieldset className="flex flex-col gap-1.5">
             <legend className="mb-1.5 text-sm font-medium">{t.home.players}</legend>
@@ -92,7 +109,7 @@ export function HomeScreen() {
             ))}
           </fieldset>
 
-          <Button type="submit" disabled={!nickname.trim()}>
+          <Button type="submit" aria-disabled={missingNickname}>
             {t.home.create}
           </Button>
 
@@ -107,7 +124,7 @@ export function HomeScreen() {
             <DifficultyPicker value={difficulty} onChange={setDifficulty} />
             <span className="text-xs text-muted">{t.home.vsComputerHint}</span>
           </fieldset>
-          <Button type="button" variant="secondary" disabled={!nickname.trim()} onClick={vsComputer}>
+          <Button type="button" variant="secondary" aria-disabled={missingNickname} onClick={vsComputer}>
             🤖 {t.home.vsComputer}
           </Button>
         </form>
