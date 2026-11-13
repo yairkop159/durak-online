@@ -21,5 +21,7 @@ export default defineConfig({
     include: ['tests/**/*.test.{ts,tsx}'],
     setupFiles: ['tests/setup.ts'],
     testTimeout: 20_000,
+    hookTimeout: 20_000,
+    teardownTimeout: 10_000,
   },
 });

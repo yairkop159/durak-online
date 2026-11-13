@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "npm run build --workspaces",
-    "test": "npm test --workspaces",
+    "test": "node scripts/run-tests.mjs",
     "typecheck": "npm run typecheck --workspaces",
     "clean": "npm run clean --workspaces",
     "smoke": "node scripts/smoke.mjs",
