@@ -12,7 +12,7 @@ export function RulesScreen() {
         <button
           type="button"
           onClick={() => navigate('/')}
-          className="min-h-9 rounded-pill bg-surface/70 px-3 text-sm font-semibold ring-1 ring-line hover:bg-surface-2"
+          className="min-h-11 rounded-pill bg-surface/70 px-3 text-sm font-semibold ring-1 ring-line hover:bg-surface-2"
         >
           {t.common.backHome}
         </button>

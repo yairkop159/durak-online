@@ -8,25 +8,10 @@
  * context, painted after the absolutely positioned gear) covered the settings gear, so a real
  * click never reached it while every jsdom test passed.
  */
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { chromium, type Browser, type Page } from 'playwright-core';
-import { createServer, type ViteDevServer } from 'vite';
+import { type Browser } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { t } from '../../src/i18n';
-
-const CANDIDATES = [
-  process.env.CHROME_PATH,
-  'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/usr/bin/google-chrome',
-  '/usr/bin/google-chrome-stable',
-  '/usr/bin/chromium',
-  '/usr/bin/chromium-browser',
-].filter((p): p is string => !!p);
-const executablePath = CANDIDATES.find((p) => existsSync(p));
-if (!executablePath) console.warn('[browser tests] no Chrome/Chromium found (set CHROME_PATH): skipped');
+import { LIFECYCLE_TIMEOUT_MS, coveredControls, executablePath, startBrowserEnv, stopBrowserEnv, type BrowserEnv } from './harness';
 
 const VIEWPORTS = [
   { name: 'phone', width: 390, height: 844 },
@@ -39,54 +24,22 @@ const FIT_VIEWPORTS = [
   { width: 1366, height: 768 },
   { width: 1920, height: 1080 },
   { width: 360, height: 740 },
+  { width: 390, height: 844 },
+  // A phone on its side: the "short" layout (seats in one row, my seat and Take beside the hand).
+  { width: 740, height: 360 },
 ] as const;
 
-/**
- * Every visible button/link/input whose center point is covered by something that isn't itself or
- * its content. `skip`: controls checked another way (overlapping hand cards: their visible slice).
- */
-async function coveredControls(page: Page, skip?: string): Promise<string[]> {
-  return page.evaluate((skip) => {
-    const covered: string[] = [];
-    for (const el of document.querySelectorAll<HTMLElement>('button, a[href], input, [role="radio"], [role="switch"]')) {
-      if (skip && el.matches(skip)) continue;
-      // sr-only inputs (styled switches) are clicked through their label.
-      const target = el.matches('input.sr-only') ? (el.closest('label') ?? el) : el;
-      const r = target.getBoundingClientRect();
-      if (r.width === 0 || r.height === 0) continue;
-      const x = r.left + r.width / 2;
-      const y = r.top + r.height / 2;
-      if (y < 0 || y > window.innerHeight) continue; // off screen: a scroll away, not covered
-      const hit = document.elementFromPoint(x, y);
-      if (!hit || !(target === hit || target.contains(hit) || (el instanceof HTMLInputElement && el.labels?.[0]?.contains(hit)))) {
-        covered.push(`${el.outerHTML.slice(0, 80)} covered by ${hit?.outerHTML.slice(0, 80) ?? 'nothing'}`);
-      }
-    }
-    return covered;
-  }, skip);
-}
-
 describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
-  let server: ViteDevServer;
+  let env: BrowserEnv | undefined;
   let browser: Browser;
   let base: string;
 
   beforeAll(async () => {
-    server = await createServer({
-      configFile: fileURLToPath(new URL('../../vite.config.ts', import.meta.url)),
-      server: { port: 0, strictPort: false },
-      logLevel: 'error',
-    });
-    await server.listen();
-    base = server.resolvedUrls!.local[0]!;
-    browser = await chromium.launch({ executablePath: executablePath! });
-  }, 60_000);
+    env = await startBrowserEnv();
+    ({ browser, base } = env);
+  }, LIFECYCLE_TIMEOUT_MS);
 
-  // Like startup, shutting Chrome and Vite down can take well over 20 s on a loaded machine
-  // (seen during a full `npm test` on Windows): same bound as beforeAll.
-  afterAll(async () => {
-    await Promise.all([browser?.close(), server?.close()]);
-  }, 60_000);
+  afterAll(() => stopBrowserEnv(env), LIFECYCLE_TIMEOUT_MS);
 
   for (const vp of VIEWPORTS) {
     it(`Home (${vp.name}): the settings gear opens the dialog with a real mouse click`, async () => {

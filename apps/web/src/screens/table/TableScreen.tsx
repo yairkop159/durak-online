@@ -37,6 +37,7 @@ import { useSettingsStore } from '../../settings/react';
 import { useSettings } from '../../settings/react';
 import { ANIMATION_SPEED_FACTOR } from '../../settings/settings';
 import { DeckPile, DiscardPile, TableArea } from './TableSurface';
+import { useLayoutMode } from '../../layout/layoutMode';
 import { useReactions } from '../../reactions/useReactions';
 import { ReactionAnnouncer } from '../../reactions/ReactionBubble';
 import { ReactionButton } from '../../reactions/ReactionPicker';
@@ -83,6 +84,8 @@ export function TableScreen() {
   const [picked, setPicked] = useState<{ version: number; selection: Selection }>({ version: -1, selection: NO_SELECTION });
   const remaining = useCountdown(game, client.now);
   const reduced = useReducedMotion() ?? false;
+  const mode = useLayoutMode();
+  const short = mode === 'short';
   const settings = useSettings();
   const settingsStore = useSettingsStore();
   const speed = ANIMATION_SPEED_FACTOR[settings.animationSpeed];
@@ -166,7 +169,8 @@ export function TableScreen() {
   const revealing = finished && overlayReady && revealPlan !== null && revealDoneFor !== game.gameId;
 
   // First-game tips: shown for the current situation until dismissed or acted on once.
-  const tip = settings.showTips && interactive ? tipFor(view, moves, settings.tipsSeen) : null;
+  // A short landscape screen has no room for them (they show in portrait and on bigger screens).
+  const tip = settings.showTips && interactive && !short ? tipFor(view, moves, settings.tipsSeen) : null;
   const sendMove = (move: ClientMove) => {
     if (tip && tipLearnedBy(tip, move)) settingsStore.markTipSeen(tip);
     client.sendMove(move);
@@ -180,11 +184,85 @@ export function TableScreen() {
     sendMove(move);
   };
 
+  const opponents = (
+    <ul
+      className={`flex shrink-0 justify-center ${short ? 'min-w-0 flex-nowrap gap-1' : 'flex-wrap gap-1.5 sm:gap-2.5'} ${mode === 'phone' ? 'gap-1' : ''}`}
+      dir="ltr"
+      aria-label="opponents"
+    >
+      {opponentsInOrder(view).map((p) => (
+        <OpponentSeat
+          key={p.id}
+          player={p}
+          name={nameOf(p.id)}
+          view={view}
+          member={members?.find((m) => m.playerId === p.id)}
+          ring={ringOf(p.id)}
+          reaction={reactions.byPlayer.get(p.id) ?? null}
+          effect={effectOf(p.id)}
+          reduced={reduced}
+          variant={short ? 'inline' : mode === 'phone' ? 'compact' : 'regular'}
+        />
+      ))}
+    </ul>
+  );
+  const tableArea = (
+    <TableArea
+      table={view.table}
+      anim={anim}
+      moves={moves}
+      selection={selection}
+      interactive={interactive}
+      transferMove={transferTarget(moves, selection)}
+      onAttackClick={(index) => apply(clickAttackCard(index, moves, selection))}
+      onTransferClick={() => apply(clickTransfer(moves, selection))}
+    />
+  );
+  const status = (
+    <StatusBanner
+      text={spectator ? t.table.spectating : statusLine(view, moves, nameOf, t)}
+      myTurn={myTurn}
+      countdown={<Countdown ms={remaining} fraction={fraction} />}
+      compact={short}
+    />
+  );
+  const mySeat = me && (
+    <MySeat
+      player={me}
+      name={nameOf(me.id)}
+      view={view}
+      member={myMember}
+      ring={ringOf(me.id)}
+      reaction={reactions.byPlayer.get(me.id) ?? null}
+      effect={effectOf(me.id)}
+      reduced={reduced}
+      extra={canReact && <ReactionButton disabled={reconnecting} />}
+    />
+  );
+  const handFan = (
+    <HandFan
+      hand={hand}
+      anim={anim}
+      moves={moves}
+      selection={selection}
+      interactive={interactive}
+      shakeHand={shakeHand}
+      onShakeHandEnd={() => setShakeHand(false)}
+      onCardClick={(card: Card) => interactive && apply(clickHandCard(card, moves, selection))}
+      short={short}
+    />
+  );
+
   return (
     <AnchorProvider registry={registry}>
       <LayoutGroup>
         {/* Exactly one screen tall (App sets h-dvh): the table takes what the other rows leave. */}
-        <div className="relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-2 px-2 pt-2 sm:gap-3 sm:px-4 sm:pt-3 [@media(max-height:820px)]:gap-2">
+        <div
+          className={`relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-2 pt-2 sm:px-4 ${
+            short ? 'max-w-none gap-1.5 pt-1.5 sm:pt-1.5' : 'gap-2 sm:gap-3 sm:pt-3 [@media(max-height:820px)]:gap-2'
+          }`}
+          data-layout={mode}
+        >
           <TopBar
             view={view}
             members={members}
@@ -197,82 +275,61 @@ export function TableScreen() {
             }
           />
           <RestartVotePanel viewerId={view.viewerId} />
-          <ul className="flex shrink-0 flex-wrap justify-center gap-1.5 sm:gap-2.5" dir="ltr" aria-label="opponents">
-            {opponentsInOrder(view).map((p) => (
-              <OpponentSeat
-                key={p.id}
-                player={p}
-                name={nameOf(p.id)}
-                view={view}
-                member={members?.find((m) => m.playerId === p.id)}
-                ring={ringOf(p.id)}
-                reaction={reactions.byPlayer.get(p.id) ?? null}
-                effect={effectOf(p.id)}
-                reduced={reduced}
-              />
-            ))}
-          </ul>
+          {opponents}
 
           <section
-            className="mx-auto flex min-h-0 w-full flex-1 items-center gap-2 rounded-table bg-gradient-to-b from-surface-2 to-surface p-2 shadow-table ring-1 ring-line sm:gap-4 sm:p-4"
+            className={`mx-auto flex min-h-0 w-full flex-1 gap-2 rounded-table bg-gradient-to-b from-surface-2 to-surface p-2 shadow-table ring-1 ring-line sm:gap-4 sm:p-4 ${
+              mode === 'phone' ? 'flex-col' : 'items-center'
+            } ${short ? 'sm:gap-2 sm:p-2' : ''}`}
             dir="ltr"
           >
-            <DeckPile view={view} />
-            <TableArea
-              table={view.table}
-              anim={anim}
-              moves={moves}
-              selection={selection}
-              interactive={interactive}
-              transferMove={transferTarget(moves, selection)}
-              onAttackClick={(index) => apply(clickAttackCard(index, moves, selection))}
-              onTransferClick={() => apply(clickTransfer(moves, selection))}
-            />
-            <DiscardPile view={view} showLastBout={peek && view.table.length === 0} />
+            {mode === 'phone' ? (
+              // Phones: the stock and the discard pile become one small strip, the table gets the full width.
+              <div className="flex shrink-0 items-center justify-between px-1" data-testid="piles">
+                <DeckPile view={view} small />
+                <DiscardPile view={view} showLastBout={peek && view.table.length === 0} small />
+              </div>
+            ) : (
+              <DeckPile view={view} small={short} />
+            )}
+            {tableArea}
+            {mode !== 'phone' && <DiscardPile view={view} showLastBout={peek && view.table.length === 0} small={short} />}
           </section>
 
-          {!finished && (
-            <StatusBanner
-              text={spectator ? t.table.spectating : statusLine(view, moves, nameOf, t)}
-              myTurn={myTurn}
-              countdown={<Countdown ms={remaining} fraction={fraction} />}
-            />
-          )}
+          {!finished && !short && status}
 
           <div
-            className={`flex shrink-0 flex-col items-center gap-1.5 pb-[env(safe-area-inset-bottom)] sm:gap-2 transition duration-500 ${
-              revealing ? 'translate-y-24 opacity-0' : ''
-            }`}
+            className={`flex shrink-0 pb-[env(safe-area-inset-bottom)] transition duration-500 ${
+              short ? 'flex-row-reverse items-end gap-2' : 'flex-col items-center gap-1.5 sm:gap-2'
+            } ${revealing ? 'translate-y-24 opacity-0' : ''}`}
           >
             {tip && <TipBanner tip={tip} onDismiss={() => settingsStore.markTipSeen(tip)} />}
-            {!spectator && me && (
+            {short ? (
+              // Short landscape: the hand takes the width; my seat, the status and Take/Pass stand beside it.
               <>
-                {/* My seat and Take / Pass share the row ABOVE the hand: the buttons can never cover (or steal clicks from) a card. */}
-                <div className="flex w-full max-w-xl items-center justify-between gap-2 px-1">
-                  <MySeat
-                    player={me}
-                    name={nameOf(me.id)}
-                    view={view}
-                    member={myMember}
-                    ring={ringOf(me.id)}
-                    reaction={reactions.byPlayer.get(me.id) ?? null}
-                    effect={effectOf(me.id)}
-                    reduced={reduced}
-                    extra={canReact && <ReactionButton disabled={reconnecting} />}
-                  />
-                  {interactive && <ActionBar moves={moves} onMove={send} />}
+                <div className="flex w-72 shrink-0 flex-col items-stretch gap-1 pb-1" data-testid="side-panel">
+                  {!finished && status}
+                  {!spectator && me && (
+                    <div className="flex items-center justify-between gap-1.5">
+                      {mySeat}
+                      {interactive && <ActionBar moves={moves} onMove={send} compact />}
+                    </div>
+                  )}
                 </div>
-                <HandFan
-                  hand={hand}
-                  anim={anim}
-                  moves={moves}
-                  selection={selection}
-                  interactive={interactive}
-                  shakeHand={shakeHand}
-                  onShakeHandEnd={() => setShakeHand(false)}
-                  onCardClick={(card: Card) => interactive && apply(clickHandCard(card, moves, selection))}
-                />
+                {!spectator && me && <div className="min-w-0 flex-1">{handFan}</div>}
               </>
+            ) : (
+              !spectator &&
+              me && (
+                <>
+                  {/* My seat and Take / Pass share the row ABOVE the hand: the buttons can never cover (or steal clicks from) a card. */}
+                  <div className="flex w-full max-w-xl items-center justify-between gap-2 px-1">
+                    {mySeat}
+                    {interactive && <ActionBar moves={moves} onMove={send} />}
+                  </div>
+                  {handFan}
+                </>
+              )
             )}
           </div>
 

@@ -76,10 +76,10 @@ export function RestartVotePanel({ viewerId }: { viewerId: string | null }) {
       {seconds !== null && <span className="tabular-nums text-muted">⏱ {seconds}</span>}
       {asked ? (
         <span className="flex gap-2">
-          <Button className="min-h-9" onClick={() => client.respondRestart(vote.voteId, true)}>
+          <Button className="min-h-11" onClick={() => client.respondRestart(vote.voteId, true)}>
             {t.restart.accept}
           </Button>
-          <Button variant="secondary" className="min-h-9" onClick={() => client.respondRestart(vote.voteId, false)}>
+          <Button variant="secondary" className="min-h-11" onClick={() => client.respondRestart(vote.voteId, false)}>
             {t.restart.decline}
           </Button>
         </span>

@@ -65,7 +65,7 @@ export function LobbyScreen({ room, session }: { room: RoomStatePayload; session
                     onClick={() => client.removeBot(m.playerId)}
                     aria-label={t.bots.remove(name)}
                     title={t.bots.remove(name)}
-                    className="grid size-7 place-items-center rounded-full text-muted ring-1 ring-line transition-colors hover:bg-danger/15 hover:text-danger"
+                    className="grid size-11 place-items-center rounded-full text-muted ring-1 ring-line transition-colors hover:bg-danger/15 hover:text-danger"
                   >
                     ✕
                   </button>

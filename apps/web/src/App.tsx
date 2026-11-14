@@ -37,7 +37,14 @@ function AppShell() {
   return (
     // reducedMotion="user": with prefers-reduced-motion, Framer skips transform/layout animations.
     <MotionConfig reducedMotion="user">
-      <div dir="rtl" className={`flex flex-col text-text ${fitScreen ? 'h-dvh overflow-hidden' : 'min-h-dvh'}`} data-fit-screen={fitScreen || undefined}>
+      {/* Safe areas (notch, rounded corners, home bar; needs viewport-fit=cover): the table's bottom row pads itself. */}
+      <div
+        dir="rtl"
+        className={`flex flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-text ${
+          fitScreen ? 'h-dvh overflow-hidden' : 'min-h-dvh pb-[env(safe-area-inset-bottom)]'
+        }`}
+        data-fit-screen={fitScreen || undefined}
+      >
         <ConnectionBanner />
         <main className="flex min-h-0 flex-1 flex-col" inert={reconnecting} aria-busy={reconnecting}>{roomId !== null ? <RoomRoute roomId={roomId} /> : route.name === 'rules' ? <RulesScreen /> : <HomeScreen />}</main>
         <ErrorToast />

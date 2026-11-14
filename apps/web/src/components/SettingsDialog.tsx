@@ -83,7 +83,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 role="radio"
                 aria-checked={s.animationSpeed === speed}
                 onClick={() => set((p) => ({ ...p, animationSpeed: speed }))}
-                className={`min-h-9 rounded-[10px] text-sm font-semibold ${
+                className={`min-h-11 rounded-[10px] text-sm font-semibold ${
                   s.animationSpeed === speed ? 'bg-accent text-accent-ink' : 'text-muted hover:text-text'
                 }`}
               >
@@ -125,7 +125,7 @@ export function SettingsButton({ className = '' }: { className?: string }) {
         type="button"
         aria-label={t.settings.title}
         onClick={() => setOpen(true)}
-        className={`grid size-9 place-items-center rounded-full bg-surface/70 text-lg ring-1 ring-line hover:bg-surface-2 ${className}`}
+        className={`grid size-11 shrink-0 place-items-center rounded-full bg-surface/70 text-lg ring-1 ring-line hover:bg-surface-2 ${className}`}
       >
         <span aria-hidden="true">⚙</span>
       </button>

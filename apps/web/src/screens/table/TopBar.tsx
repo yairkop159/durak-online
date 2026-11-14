@@ -7,8 +7,8 @@ import { useClient } from '../../net/react';
 import { navigate } from '../../routing';
 
 const ICON_BUTTON =
-  'grid size-9 place-items-center rounded-full bg-surface/70 text-base ring-1 ring-line hover:bg-surface-2 aria-disabled:opacity-50';
-const TEXT_BUTTON = 'min-h-9 rounded-pill bg-surface/70 px-3 text-sm font-semibold ring-1 ring-line hover:bg-surface-2';
+  'grid size-11 shrink-0 place-items-center rounded-full bg-surface/70 text-base ring-1 ring-line hover:bg-surface-2 aria-disabled:opacity-50';
+const TEXT_BUTTON = 'min-h-11 shrink-0 whitespace-nowrap rounded-pill bg-surface/70 px-3 text-sm font-semibold ring-1 ring-line hover:bg-surface-2';
 
 /** The small bar above the table: leave (start side), and the room tools (end side). */
 export function TopBar({
@@ -35,7 +35,7 @@ export function TopBar({
       <button type="button" className={TEXT_BUTTON} onClick={() => (outcome === 'none' ? leave() : setConfirming(true))}>
         {t.table.leave}
       </button>
-      <div className="flex items-center gap-1.5">{extra}</div>
+      <div className="flex shrink-0 items-center gap-1.5">{extra}</div>
       {confirming && (
         <ConfirmDialog
           title={t.table.leaveConfirm.title}

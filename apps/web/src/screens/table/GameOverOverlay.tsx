@@ -53,7 +53,7 @@ export function GameOverOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-bg-0/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-bg-0/70 p-safe-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="game-over-title"
@@ -119,16 +119,19 @@ export function GameOverOverlay({
               ))}
             </ul>
           )}
-          {canReact && <ReactionButton />}
-          {canRematch ? (
-            <Button size="lg" className="w-full" onClick={() => client.rematch()}>
-              {t.gameOver.backToLobby}
-            </Button>
-          ) : (
-            <Button variant="secondary" className="w-full" onClick={() => navigate('/')}>
-              {t.common.backHome}
-            </Button>
-          )}
+          {/* The actions stay in view while the stats scroll (a short landscape phone). */}
+          <div className="sticky -bottom-5 -mx-5 -mb-5 flex w-[calc(100%+2.5rem)] flex-col items-center gap-3 rounded-b-[22px] bg-surface px-5 pt-2 pb-5" data-testid="game-over-actions">
+            {canReact && <ReactionButton />}
+            {canRematch ? (
+              <Button size="lg" className="w-full" onClick={() => client.rematch()}>
+                {t.gameOver.backToLobby}
+              </Button>
+            ) : (
+              <Button variant="secondary" className="w-full" onClick={() => navigate('/')}>
+                {t.common.backHome}
+              </Button>
+            )}
+          </div>
         </Panel>
       </motion.div>
     </div>

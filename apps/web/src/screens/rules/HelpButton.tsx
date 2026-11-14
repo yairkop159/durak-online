@@ -15,7 +15,7 @@ export function HelpButton() {
         type="button"
         aria-label={t.help.title}
         onClick={() => setOpen(true)}
-        className="grid size-9 place-items-center rounded-full bg-surface/70 text-base font-black ring-1 ring-line hover:bg-surface-2"
+        className="grid size-11 shrink-0 place-items-center rounded-full bg-surface/70 text-base font-black ring-1 ring-line hover:bg-surface-2"
       >
         ?
       </button>

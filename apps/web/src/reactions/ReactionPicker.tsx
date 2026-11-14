@@ -68,7 +68,7 @@ export function ReactionButton({ disabled = false, placement = 'up' }: { disable
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((o) => !o)}
-        className="grid size-8 place-items-center rounded-full bg-surface-2 text-lg ring-1 ring-line transition-colors hover:bg-white/10 disabled:opacity-40"
+        className="grid size-11 shrink-0 place-items-center rounded-full bg-surface-2 text-lg ring-1 ring-line transition-colors hover:bg-white/10 disabled:opacity-40"
       >
         💬
       </button>
@@ -95,7 +95,7 @@ export function ReactionButton({ disabled = false, placement = 'up' }: { disable
                 aria-label={item.label}
                 title={item.label}
                 onClick={() => send(id)}
-                className={`grid h-10 min-w-10 place-items-center rounded-xl px-1.5 font-bold transition-colors hover:bg-white/10 disabled:opacity-40 ${
+                className={`grid h-11 min-w-11 place-items-center rounded-xl px-1.5 font-bold transition-colors hover:bg-white/10 disabled:opacity-40 ${
                   emoji ? 'text-2xl' : 'text-xs'
                 }`}
               >

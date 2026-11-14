@@ -1,5 +1,5 @@
 import { cardId, type Card, type ClientMove } from '@durak/shared';
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { anchorKey, useAnchorRegistry } from '../../anim/anchors';
 import { revealStyle, type BoardAnimation } from '../../anim/useBoardAnimation';
 import { PlayingCard, type CardState } from '../../components/cards/PlayingCard';
@@ -17,6 +17,12 @@ export function fanLayout(count: number): { rotate: number[]; drop: number[]; ov
     overlap,
   };
 }
+
+/** On a short landscape screen the hand row is the main thing: up to 27% of the height. */
+const SHORT_HAND = {
+  '--card-hand-h-lg': 'min(96px, 27dvh)',
+  '--card-hand-w-lg': 'calc(min(96px, 27dvh) * 0.7)',
+} as CSSProperties;
 
 /** The narrowest slice of a covered card that stays visible (its index and a click target). */
 export const MIN_VISIBLE_SLICE = 16;
@@ -73,6 +79,7 @@ export function HandFan({
   shakeHand,
   onShakeHandEnd,
   onCardClick,
+  short = false,
 }: {
   hand: readonly Card[];
   anim: BoardAnimation;
@@ -82,6 +89,8 @@ export function HandFan({
   shakeHand: boolean;
   onShakeHandEnd: () => void;
   onCardClick: (card: Card) => void;
+  /** A short landscape screen: the hand is beside the side panel and may be taller than 15dvh. */
+  short?: boolean;
 }) {
   const registry = useAnchorRegistry();
   const [shaking, setShaking] = useState<string | null>(null);
@@ -95,7 +104,7 @@ export function HandFan({
   const maxTilt = rotate.length > 0 ? Math.max(...rotate.map(Math.abs)) : 0;
   const padBottom = Math.ceil(maxDrop + maxTilt * 0.6 + 6);
   return (
-    <div className="w-full">
+    <div className="w-full" style={short ? SHORT_HAND : undefined}>
       <ul
         ref={roomRef}
         className={`mx-auto flex w-full justify-center px-2 pt-5 ${shakeHand ? 'animate-shake' : ''}`}

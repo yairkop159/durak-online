@@ -144,13 +144,13 @@ export function RulesContent({ initialTab = 'rules' }: { initialTab?: Tab }) {
             aria-selected={tab === id}
             aria-controls={`panel-${id}`}
             onClick={() => setTab(id)}
-            className={`min-h-9 rounded-[10px] text-sm font-semibold ${tab === id ? 'bg-accent text-accent-ink' : 'text-muted hover:text-text'}`}
+            className={`min-h-11 rounded-[10px] text-sm font-semibold ${tab === id ? 'bg-accent text-accent-ink' : 'text-muted hover:text-text'}`}
           >
             {t.help.tabs[id]}
           </button>
         ))}
       </div>
-      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} data-selectable>
         {tab === 'rules' ? (
           <Sections sections={t.help.rules} examples={RULE_EXAMPLES} />
         ) : (

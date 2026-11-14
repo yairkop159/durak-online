@@ -7,6 +7,9 @@
  *
  * `?scenario=crowded`: the worst case for the layout. Six pairs on the table (three uncovered) and a
  * 15-card hand; the second state still reads as a transfer (the defender changes), so the banner shows.
+ * `?scenario=crowded6`: the same with six players (five opponent seats, long nicknames).
+ * `?scenario=lobby`: the host's lobby (two bots, one free seat). `?scenario=gameover`: a finished
+ * six-player game (a reload into it: no reveal, the game-over overlay right away).
  */
 import {
   DEFAULT_GAME_CONFIG,
@@ -54,7 +57,11 @@ class PageTransport implements Transport {
 
 const ROOM = 'room1234';
 const card = (rank: Card['rank'], suit: Card['suit']): Card => ({ rank, suit });
-const crowded = new URLSearchParams(window.location.search).get('scenario') === 'crowded';
+const scenario = new URLSearchParams(window.location.search).get('scenario') ?? 'default';
+const crowded = scenario === 'crowded' || scenario === 'crowded6' || scenario === 'gameover';
+const six = scenario === 'crowded6' || scenario === 'gameover';
+const OTHERS = six ? ['bob', 'carl', 'dana', 'eli', 'fay'] : ['bob', 'carl'];
+const PLAYERS = ['me', ...OTHERS];
 const hand: Card[] = crowded
   ? [
       ...([8, 9, 12, 13, 14] as const).map((r) => card(r, 'S')),
@@ -83,11 +90,11 @@ function view(step: 1 | 2): PlayerView {
   return {
     viewerId: 'me',
     hand,
-    players: [
-      { id: 'me', handCount: hand.length, finished: false },
-      { id: 'bob', handCount: 5, finished: false },
-      { id: 'carl', handCount: step === 1 ? 6 : 5, finished: false },
-    ],
+    players: PLAYERS.map((id) => ({
+      id,
+      handCount: id === 'me' ? hand.length : id === 'carl' && step === 1 ? 6 : 5,
+      finished: false,
+    })),
     deckCount: crowded ? 0 : 12,
     trumpCard: card(6, 'D'),
     trumpSuit: 'D',
@@ -119,24 +126,69 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-const members = ['me', 'bob', 'carl'].map((id) => ({
+const NICKNAMES: Record<string, string> = {
+  me: 'ME',
+  bob: 'BOB',
+  carl: 'CARL',
+  dana: 'Dana the Long-Named',
+  eli: 'אליעזר בן יהודה',
+  fay: 'FAY',
+};
+const member = (id: string, bot = false) => ({
   playerId: id,
-  nickname: id.toUpperCase(),
+  nickname: bot ? `Bot ${id}` : NICKNAMES[id]!,
   connected: true,
-  isBot: false,
-  botDifficulty: null,
+  isBot: bot,
+  botDifficulty: bot ? ('medium' as const) : null,
   afk: false,
   leftGame: false,
-}));
+});
+const members = PLAYERS.map((id) => member(id));
 const game = (step: 1 | 2) => ({ roomId: ROOM, gameId: 'g1', version: step, view: view(step), turnDeadline: Date.now() + 60_000, serverTime: Date.now() });
+const room = (status: 'lobby' | 'playing' | 'finished', list = members) => ({
+  roomId: ROOM,
+  hostId: 'me',
+  maxPlayers: Math.max(3, list.length + (status === 'lobby' ? 1 : 0)),
+  members: list,
+  spectatorCount: 0,
+  status,
+  restartVote: null,
+});
 
 transport.connect();
 transport.send('session:issued', { sessionToken: 'x'.repeat(43), playerId: 'me', roomId: ROOM });
-transport.send('room:state', { roomId: ROOM, hostId: 'me', maxPlayers: 3, members, spectatorCount: 0, status: 'playing', restartVote: null });
-transport.send('game:state', game(1));
-setTimeout(() => {
-  transport.send('game:state', game(2));
-  transport.send('room:reaction', { roomId: ROOM, playerId: 'me', reactionId: 'again' });
-  transport.send('room:reaction', { roomId: ROOM, playerId: 'carl', reactionId: 'laugh' });
+if (scenario === 'lobby') {
+  transport.send('room:state', room('lobby', [member('me'), member('b1', true), member('b2', true)]));
   fixture.ready = true;
-}, 300);
+} else if (scenario === 'gameover') {
+  const finishOrder = ['bob', 'carl', 'dana', 'eli', 'fay'];
+  const over: PlayerView = {
+    ...view(2),
+    table: [],
+    players: PLAYERS.map((id) => ({ id, handCount: id === 'me' ? 4 : 0, finished: id !== 'me' })),
+    phase: { kind: 'finished', durak: 'me' },
+    finishOrder,
+  };
+  const stat = (n: number) => ({ boutsAttacked: n, boutsDefended: n, defenses: n - 1, takes: 1, cardsTaken: 3 * n, throwIns: n, transfers: n % 3, cardsPlayed: 10 * n });
+  transport.send('room:state', room('finished'));
+  transport.send('game:state', { ...game(2), view: over, turnDeadline: null });
+  transport.send('game:over', {
+    roomId: ROOM,
+    durakId: 'me',
+    finishOrder: [...finishOrder, 'me'],
+    endReason: 'normal',
+    botAssisted: [],
+    forfeits: [],
+    stats: Object.fromEntries(PLAYERS.map((id, i) => [id, stat(i + 2)])),
+  });
+  fixture.ready = true;
+} else {
+  transport.send('room:state', room('playing'));
+  transport.send('game:state', game(1));
+  setTimeout(() => {
+    transport.send('game:state', game(2));
+    transport.send('room:reaction', { roomId: ROOM, playerId: 'me', reactionId: 'again' });
+    transport.send('room:reaction', { roomId: ROOM, playerId: 'carl', reactionId: 'laugh' });
+    fixture.ready = true;
+  }, 300);
+}

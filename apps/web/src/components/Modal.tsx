@@ -42,7 +42,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-bg-0/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-bg-0/70 p-safe-4 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
@@ -63,7 +63,7 @@ export function Modal({
                 type="button"
                 onClick={onClose}
                 aria-label={t.common.close}
-                className="grid size-9 place-items-center rounded-full text-muted hover:bg-white/8 hover:text-text"
+                className="grid size-11 place-items-center rounded-full text-muted hover:bg-white/8 hover:text-text"
               >
                 ✕
               </button>
