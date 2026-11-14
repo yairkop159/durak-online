@@ -70,10 +70,11 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
     browser = await chromium.launch({ executablePath: executablePath! });
   }, 60_000);
 
+  // Like startup, shutting Chrome and Vite down can take well over 20 s on a loaded machine
+  // (seen during a full `npm test` on Windows): same bound as beforeAll.
   afterAll(async () => {
-    await browser?.close();
-    await server?.close();
-  });
+    await Promise.all([browser?.close(), server?.close()]);
+  }, 60_000);
 
   for (const vp of VIEWPORTS) {
     it(`Home (${vp.name}): the settings gear opens the dialog with a real mouse click`, async () => {
