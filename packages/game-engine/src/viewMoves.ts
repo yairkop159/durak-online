@@ -4,7 +4,7 @@ import { beats } from './deck.js';
 /**
  * Every legal move for the viewer, computed ONLY from their sanitized view (no hidden information).
  * Mirrors `getLegalMoves(state, viewerId)` exactly, without the `playerId` (a property test in
- * `tests/fuzz.test.ts` checks the two agree on every reachable state). Same candidate order.
+ * `tests/selfPlay.ts` (fuzz.*.test.ts) checks the two agree on every reachable state). Same candidate order.
  * Returns `[]` for a spectator view, a finished game, or a viewer who is already out.
  */
 export function getLegalMovesForView(view: PlayerView): ClientMove[] {

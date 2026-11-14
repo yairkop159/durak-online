@@ -9,14 +9,15 @@ describe('bots never play an illegal move', () => {
   const roster: Bot[] = [ismcts, GreedyBot, RandomBot];
   for (const mode of ['podkidnoy', 'perevodnoy'] as GameMode[]) {
     for (const players of [2, 3, 4, 5, 6]) {
-      it(`${players} players, ${mode}`, () => {
-        for (let g = 0; g < 3; g++) {
+      // One test per game (3 rotations of the roster): short synchronous blocks, see tests/setup/eventLoop.ts.
+      for (let g = 0; g < 3; g++) {
+        it(`${players} players, ${mode}, rotation ${g + 1}/3`, () => {
           const bots = Array.from({ length: players }, (_, seat) => roster[(seat + g) % roster.length]!);
           const result = playMatch({ players, mode, seed: 500 + 31 * players + g, bots });
           expect(result.abandoned).toBe(false);
           expect(result.final.phase.kind).toBe('finished');
-        }
-      }, 120_000);
+        }, 60_000);
+      }
     }
   }
 });

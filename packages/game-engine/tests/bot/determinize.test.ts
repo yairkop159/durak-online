@@ -24,8 +24,9 @@ function handOf(state: GameState, id: string): readonly string[] {
 describe('determinization (property tests)', () => {
   for (const mode of ['podkidnoy', 'perevodnoy'] as GameMode[]) {
     for (const players of [2, 3, 4, 5, 6]) {
-      it(`${players} players, ${mode}: every sampled world is valid, re-sanitizes to the view, and knowledge is sound`, () => {
-        for (let g = 0; g < 4; g++) {
+      // One test per game (4 games per case): short synchronous blocks, see tests/setup/eventLoop.ts.
+      for (let g = 0; g < 4; g++) {
+        it(`${players} players, ${mode}, game ${g + 1}/4: every sampled world is valid, re-sanitizes to the view, and knowledge is sound`, () => {
           const seed = 1000 * players + 17 * g + (mode === 'perevodnoy' ? 7 : 0);
           const rng = createRng(seed);
           let steps = 0;
@@ -63,8 +64,8 @@ describe('determinization (property tests)', () => {
             },
           });
           expect(steps).toBeGreaterThan(0);
-        }
-      }, 60_000);
+        }, 60_000);
+      }
     }
   }
 

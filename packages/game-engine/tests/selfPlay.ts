@@ -1,3 +1,8 @@
+/**
+ * Random self-play property tests, shared by fuzz.podkidnoy.test.ts and fuzz.perevodnoy.test.ts.
+ * Every (players, mode) case plays the same 40 seeds, split into chunks of 10 games per test so no
+ * single synchronous block runs long (see tests/setup/eventLoop.ts).
+ */
 import { cardId, type ClientMove, type GameMode, type Move } from '@durak/shared';
 import { describe, expect, it } from 'vitest';
 import {
@@ -72,7 +77,7 @@ function checkViewParity(state: GameState): void {
   }
 }
 
-function playRandomGame(players: number, mode: GameMode, seed: number): GameState {
+export function playRandomGame(players: number, mode: GameMode, seed: number): GameState {
   const ids = Array.from({ length: players }, (_, i) => `p${i}`);
   const created = createGame({ playerIds: ids, seed, config: { mode } });
   if (!created.ok) throw new Error(created.error.message);
@@ -111,29 +116,32 @@ function playRandomGame(players: number, mode: GameMode, seed: number): GameStat
   throw new Error(`Game ${players}/${mode}/${seed} did not terminate`);
 }
 
-describe('random self-play (property tests)', () => {
-  for (const mode of ['podkidnoy', 'perevodnoy'] as const) {
-    for (const players of [2, 3, 4, 5, 6]) {
-      it(`${players} players, ${mode}: 40 random games terminate with every invariant holding`, () => {
-        for (let seed = 1; seed <= 40; seed++) {
-          const final = playRandomGame(players, mode, seed * 7919 + players);
-          if (final.phase.kind !== 'finished') throw new Error('not finished');
-          const durakCount = final.phase.durak === null ? 0 : 1;
-          expect(final.finishOrder.length + durakCount).toBe(players);
-          const durak = final.phase.durak;
-          if (durak !== null) {
-            expect(final.finishOrder).not.toContain(durak);
-            expect(final.players.find((p) => p.id === durak)!.hand.length).toBeGreaterThan(0);
-          }
-          for (const id of final.finishOrder) {
-            expect(final.players.find((p) => p.id === id)!.hand).toEqual([]);
-          }
-        }
-      }, 60_000);
-    }
-  }
+export const SEEDS_PER_CASE = 40;
+export const SEEDS_PER_TEST = 10;
 
-  it('the same seed and the same choices replay identically', () => {
-    expect(playRandomGame(4, 'perevodnoy', 123)).toEqual(playRandomGame(4, 'perevodnoy', 123));
+function checkFinal(final: GameState, players: number): void {
+  if (final.phase.kind !== 'finished') throw new Error('not finished');
+  const durakCount = final.phase.durak === null ? 0 : 1;
+  expect(final.finishOrder.length + durakCount).toBe(players);
+  const durak = final.phase.durak;
+  if (durak !== null) {
+    expect(final.finishOrder).not.toContain(durak);
+    expect(final.players.find((p) => p.id === durak)!.hand.length).toBeGreaterThan(0);
+  }
+  for (const id of final.finishOrder) {
+    expect(final.players.find((p) => p.id === id)!.hand).toEqual([]);
+  }
+}
+
+export function describeSelfPlay(mode: GameMode): void {
+  describe(`random self-play, ${mode} (property tests)`, () => {
+    for (const players of [2, 3, 4, 5, 6]) {
+      for (let from = 1; from <= SEEDS_PER_CASE; from += SEEDS_PER_TEST) {
+        const to = from + SEEDS_PER_TEST - 1;
+        it(`${players} players: games ${from}-${to} of ${SEEDS_PER_CASE} terminate with every invariant holding`, () => {
+          for (let seed = from; seed <= to; seed++) checkFinal(playRandomGame(players, mode, seed * 7919 + players), players);
+        }, 60_000);
+      }
+    }
   });
-});
+}
