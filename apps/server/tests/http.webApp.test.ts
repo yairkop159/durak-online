@@ -22,6 +22,7 @@ beforeAll(async () => {
   writeFileSync(join(dir, 'sw.js'), 'self.addEventListener("fetch", () => {});');
   writeFileSync(join(dir, 'offline.html'), '<!doctype html><title>offline</title>');
   writeFileSync(join(dir, 'icons', 'icon-192.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  writeFileSync(join(dir, 'icons', 'apple-touch-icon.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   server = buildServer({ webDistDir: dir, botRunner: new InProcessRunner() });
   await server.app.ready();
 });
@@ -64,6 +65,8 @@ describe('serving the web client', () => {
       '/sw.js': /javascript/,
       '/offline.html': /text\/html/,
       '/icons/icon-192.png': /^image\/png/,
+      // iOS "Add to Home Screen" reads the apple-touch-icon link, not the manifest's icons.
+      '/icons/apple-touch-icon.png': /^image\/png/,
     };
     for (const [url, type] of Object.entries(expected)) {
       const res = await server.app.inject({ method: 'GET', url });
@@ -72,6 +75,14 @@ describe('serving the web client', () => {
       // A new deploy's service worker / manifest must be picked up: never long-cached.
       expect(res.headers['cache-control'], url).toBe('no-cache');
       expect(res.body, url).not.toBe(INDEX);
+    }
+  });
+
+  it('the PWA start_url and scope ("/") answer 200 directly: no redirect, so an installed app starts inside its scope', async () => {
+    for (const url of ['/', '/?source=pwa', '/room/abcd1234']) {
+      const res = await server.app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.headers.location, url).toBeUndefined();
     }
   });
 
