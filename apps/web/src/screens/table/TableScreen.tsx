@@ -37,6 +37,9 @@ import { useSettingsStore } from '../../settings/react';
 import { useSettings } from '../../settings/react';
 import { ANIMATION_SPEED_FACTOR } from '../../settings/settings';
 import { DeckPile, DiscardPile, TableArea } from './TableSurface';
+import { useReactions } from '../../reactions/useReactions';
+import { ReactionAnnouncer } from '../../reactions/ReactionBubble';
+import { ReactionButton } from '../../reactions/ReactionPicker';
 
 const GAME_ERRORS: ReadonlySet<string> = new Set(GAME_ERROR_CODES);
 const LAST_BOUT_PEEK_MS = 2500;
@@ -113,6 +116,7 @@ export function TableScreen() {
   const viewerId = view?.viewerId ?? null;
   const soundTurn = !!view && viewerId !== null && view.phase.kind !== 'finished' && !reconnecting && moves.length > 0;
   useGameSounds({ anim, myTurn: soundTurn, remaining, gameOver, viewerId });
+  const reactions = useReactions();
 
   if (!game || !view) return null;
 
@@ -123,6 +127,9 @@ export function TableScreen() {
   const finished = view.phase.kind === 'finished' || room?.status === 'finished';
   const interactive = !spectator && !finished && !reconnecting;
   const me = view.players.find((p) => p.id === view.viewerId);
+  const myMember = me ? members?.find((m) => m.playerId === me.id) : undefined;
+  // Seated players who still hold their seat (not spectators, not a seat a bot took over).
+  const canReact = reactions.enabled && !!myMember && !myMember.leftGame && !myMember.isBot;
   const awaited = awaitedPlayers(view, interactive ? moves : []);
   const ringOf = (id: string): TurnRing => ({
     progress: !finished && awaited.has(id) ? (fraction ?? 1) : null,
@@ -170,6 +177,7 @@ export function TableScreen() {
                 view={view}
                 member={members?.find((m) => m.playerId === p.id)}
                 ring={ringOf(p.id)}
+                reaction={reactions.byPlayer.get(p.id) ?? null}
               />
             ))}
           </ul>
@@ -206,7 +214,15 @@ export function TableScreen() {
             {interactive && <ActionBar moves={moves} onMove={send} />}
             {!spectator && me && (
               <>
-                <MySeat player={me} name={nameOf(me.id)} view={view} member={members?.find((m) => m.playerId === me.id)} ring={ringOf(me.id)} />
+                <MySeat
+                  player={me}
+                  name={nameOf(me.id)}
+                  view={view}
+                  member={myMember}
+                  ring={ringOf(me.id)}
+                  reaction={reactions.byPlayer.get(me.id) ?? null}
+                  extra={canReact && <ReactionButton disabled={reconnecting} />}
+                />
                 <HandFan
                   hand={hand}
                   anim={anim}
@@ -222,9 +238,18 @@ export function TableScreen() {
           </div>
 
           <FlightLayer key={flights.version} flights={flights.list} />
+          <ReactionAnnouncer latest={reactions.latest} nameOf={nameOf} />
 
           {finished && overlayReady && gameOver?.endReason !== 'restarted' && (
-            <GameOverOverlay view={view} gameOver={gameOver} nameOf={nameOf} canRematch={!spectator} reduced={reduced} />
+            <GameOverOverlay
+              view={view}
+              gameOver={gameOver}
+              nameOf={nameOf}
+              canRematch={!spectator}
+              reduced={reduced}
+              reactions={reactions}
+              canReact={canReact}
+            />
           )}
         </div>
       </LayoutGroup>

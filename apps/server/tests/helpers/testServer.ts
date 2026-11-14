@@ -4,6 +4,7 @@ import type {
   ErrorPayload,
   GameOverPayload,
   GameStatePayload,
+  ReactionPayload,
   RestartVoteEndedPayload,
   RoomStatePayload,
   ServerToClientEvents,
@@ -22,6 +23,7 @@ export interface ReceivedEvents {
   'game:over': GameOverPayload;
   'session:issued': SessionIssuedPayload;
   'room:restartVoteEnded': RestartVoteEndedPayload;
+  'room:reaction': ReactionPayload;
   error: ErrorPayload;
 }
 export type ReceivedName = keyof ReceivedEvents;
@@ -136,6 +138,9 @@ export async function startTestServer(
       seedSource: () => botSeed++,
       ...rest.botSettings,
     },
+    // Bot reactions off unless a test turns them on (no extra events or timers elsewhere).
+    reactionRandom: rest.reactionRandom ?? (() => 0.5),
+    reactionSettings: { botChance: 0, ...rest.reactionSettings },
   });
   await server.app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = server.app.server.address() as AddressInfo;

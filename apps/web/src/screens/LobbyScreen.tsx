@@ -6,6 +6,9 @@ import { Avatar, Button, Panel, Pill } from '../components/ui';
 import { displayName } from '../game/seats';
 import { t } from '../i18n';
 import { useClient } from '../net/react';
+import { ReactionAnnouncer, ReactionBubble } from '../reactions/ReactionBubble';
+import { ReactionButton } from '../reactions/ReactionPicker';
+import { useReactions } from '../reactions/useReactions';
 import { navigate, roomUrl } from '../routing';
 
 export function LobbyScreen({ room, session }: { room: RoomStatePayload; session: SessionIssuedPayload }) {
@@ -13,6 +16,8 @@ export function LobbyScreen({ room, session }: { room: RoomStatePayload; session
   const isHost = room.hostId === session.playerId;
   const canStart = room.members.length >= 2;
   const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
+  const reactions = useReactions();
+  const seated = room.members.some((m) => m.playerId === session.playerId && !m.isBot);
 
   const leave = () => {
     client.leaveRoom();
@@ -42,6 +47,9 @@ export function LobbyScreen({ room, session }: { room: RoomStatePayload; session
                       className={`absolute right-0.5 bottom-0.5 size-2.5 rounded-full ring-2 ring-surface-2 ${m.connected ? 'bg-accent' : 'bg-muted'}`}
                     />
                   )}
+                  {reactions.byPlayer.get(m.playerId) && (
+                    <ReactionBubble key={reactions.byPlayer.get(m.playerId)!.id} reaction={reactions.byPlayer.get(m.playerId)!} />
+                  )}
                 </span>
                 <span className="flex-1 font-medium">
                   {name}
@@ -67,6 +75,15 @@ export function LobbyScreen({ room, session }: { room: RoomStatePayload; session
           })}
         </ul>
         {room.spectatorCount > 0 && <p className="text-sm text-muted">{t.lobby.spectators(room.spectatorCount)}</p>}
+        {seated && reactions.enabled && (
+          <div className="flex justify-center">
+            <ReactionButton placement="down" />
+          </div>
+        )}
+        <ReactionAnnouncer latest={reactions.latest} nameOf={(id) => {
+          const m = room.members.find((x) => x.playerId === id);
+          return m ? displayName(m) : '';
+        }} />
         {isHost && room.members.length < room.maxPlayers && (
           <div className="flex flex-col gap-2 border-t border-line pt-3">
             <span className="text-sm font-semibold">🤖 {t.bots.addTitle}</span>

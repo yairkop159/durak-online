@@ -1,8 +1,11 @@
 import type { PlayerView, PublicPlayer, RoomMember } from '@durak/shared';
+import type { ReactNode } from 'react';
 import { anchorKey, useAnchor } from '../../anim/anchors';
 import { CardBackFan } from '../../components/cards/CardBack';
 import { Avatar } from '../../components/ui';
 import { t } from '../../i18n';
+import type { ClientReaction } from '../../net/store';
+import { ReactionBubble } from '../../reactions/ReactionBubble';
 import { PlayerBadges } from './parts';
 
 export interface TurnRing {
@@ -18,12 +21,15 @@ export function OpponentSeat({
   view,
   member,
   ring,
+  reaction = null,
 }: {
   player: PublicPlayer;
   name: string;
   view: PlayerView;
   member: RoomMember | undefined;
   ring: TurnRing;
+  /** The player's latest quick reaction, shown as a bubble above the avatar. */
+  reaction?: ClientReaction | null;
 }) {
   const anchor = useAnchor(anchorKey.seat(player.id));
   const awaited = ring.progress !== null;
@@ -44,6 +50,7 @@ export function OpponentSeat({
           urgent={ring.urgent}
           dim={member ? !member.connected : false}
         />
+        {reaction && <ReactionBubble key={reaction.id} reaction={reaction} />}
       </div>
       <span className="max-w-full truncate text-xs font-semibold sm:text-sm">{name}</span>
       <div className="flex items-center gap-1">
@@ -60,28 +67,35 @@ export function OpponentSeat({
   );
 }
 
-/** The viewer's own strip above the hand: avatar with ring, name and pills. */
+/** The viewer's own strip above the hand: avatar with ring, name, pills and the reaction button. */
 export function MySeat({
   player,
   name,
   view,
   member,
   ring,
+  reaction = null,
+  extra,
 }: {
   player: PublicPlayer;
   name: string;
   view: PlayerView;
   member: RoomMember | undefined;
   ring: TurnRing;
+  reaction?: ClientReaction | null;
+  /** E.g. the quick-reaction button. */
+  extra?: ReactNode;
 }) {
   const anchor = useAnchor(anchorKey.seat(player.id));
   return (
     <div className="flex items-center justify-center gap-2" data-testid={`seat-${player.id}`}>
-      <div ref={anchor}>
+      <div ref={anchor} className="relative">
         <Avatar id={player.id} name={name} size={30} progress={ring.progress} urgent={ring.urgent} />
+        {reaction && <ReactionBubble key={reaction.id} reaction={reaction} />}
       </div>
       <span className="text-sm font-semibold">{name}</span>
       <PlayerBadges player={player} view={view} member={member} />
+      {extra}
     </div>
   );
 }

@@ -115,6 +115,14 @@ One rule decides what a departure does: `departureKind` in `packages/shared/src/
   - `dealGame` (`services/dealing.ts`, shared with `game:start`) deals a new game with the same seats and config and a fresh seed. `GameCommitter.start` saves it at version 0.
   - `StoredGame.gameId` / `GameStatePayload.gameId` identify a game. The web reducer replaces its game when the id changes, and the BotDriver keys its plans by `(gameId, version)`.
 
+### Quick reactions (Phase 8)
+A fixed list, no free text: `REACTION_IDS` in `packages/shared/src/reactions.ts` (`laugh 😂, fire 🔥, shock 😱, clap 👏, think 🤔, nice "יפה!", lucky "מזל...", ohNo "אוי לא", again "עוד סיבוב?"`; the glyphs/phrases live in `he.ts`).
+- **Events:** `room:react { roomId, reactionId }` (Zod enum) → the server broadcasts `room:reaction { roomId, playerId, reactionId }` to the whole room, spectators included.
+- **Who:** a seated member of that room who is not `leftGame` and not a bot seat; otherwise `NOT_IN_ROOM`. Works in the lobby, while playing and after the game.
+- **Limit:** per player, a token bucket (burst `REACTION_BURST` 3, one per `REACTION_REFILL_MS` 2 s), on top of the per-socket limiter. Over the limit the reaction is **dropped silently** (no error, no broadcast); the web client mirrors the bucket (`reactions/bucket.ts`) and greys the picker out.
+- **Ephemeral:** `services/ReactionService.ts` reads the room once, checks and broadcasts through `RoomNotifier.reaction`. No lock, nothing written to Redis, payloads never logged. Idle buckets are swept.
+- **Bot reactions:** `ReactionService` is also a `GameChangeListener` (the committer calls its listeners in order: BotDriver, then ReactionService). On each committed move it diffs the full states with `services/gameEvents.ts` (pure, public events only) and finds each bot seat's own biggest moment: durak (`ohNo`/`shock`) > went out (`clap`/`fire`) > perfect defense, a beaten bout with ≥ `PERFECT_DEFENSE_MIN_PAIRS` (3) pairs (`fire`/`nice`) > transfer (`laugh`/`think`). Chance 0.35 (injectable `random`), per-bot bucket (1 per 15 s), sent 700-1500 ms later on the injected `Scheduler`. Never on start/resume/startup (`prev === null`) or for the bots-only fast-forward (`GameChangeInfo.fastForwarded`). The test harnesses set `botChance: 0` unless a test turns it on.
+
 ### Bots in games (Phase 4b)
 **Seats.**
 - `RoomMember.isBot: boolean` and `botDifficulty: 'easy' | 'medium' | 'hard' | null`. Both are public in `room:state`.
@@ -186,8 +194,8 @@ React 19 + Vite + Tailwind v4, Hebrew UI (`dir="rtl"`). `@durak/shared` and `@du
   - Home's "play vs computer" takes a difficulty and a number of opponents (1-5, default 1). It is a `GameClient.playVsComputer` intent: `room:create` (opponents + 1 seats) → one `room:addBot` at a time (the next once the previous bot appears in `room:state`) → `game:start` once all are seated. Any error or leaving cancels it, and so does a human filling the last free seat.
 - **Table interaction (`src/game/selection.ts`, pure):** legal moves come from `getLegalMovesForView`; legal hand cards are highlighted, others dimmed. Attack/throw-in = one click. Defend = hand card then attack card, or attack card then hand card. Transfer = hand card then the "transfer" slot. Selection is tied to the game version (any new state clears it). Take/Pass buttons appear only when legal; spectators get no hand and no buttons.
 - **Settings (Phase 7, `src/settings/`):**
-  - Per device in `localStorage['durak:settings']`: `{ v: 1, sfx: { enabled, volume }, music: { enabled, volume }, animationSpeed: 'normal'|'fast', showTips, tipsSeen }`.
-  - Defaults: sound on at 0.7, music off, normal speed, tips on.
+  - Per device in `localStorage['durak:settings']`: `{ v: 2, sfx: { enabled, volume }, music: { enabled, volume }, animationSpeed: 'normal'|'fast', showTips, tipsSeen, showReactions }`. v2 (Phase 8) added `showReactions`; v1 data migrates field by field.
+  - Defaults: sound on at 0.7, music off, normal speed, tips on, reactions on.
   - Parsed field by field: bad data falls back to the defaults, every storage access is in try/catch, and the store works in memory if storage is blocked.
   - `App` wraps everything in `PrefsProvider` (`settings/react.tsx`: `useSettings`, `useSettingsStore`, `useAudio`); tests can inject `settings` / `audio`.
   - The gear (`SettingsButton`) is on Home and in the table's top bar.
@@ -204,6 +212,7 @@ React 19 + Vite + Tailwind v4, Hebrew UI (`dir="rtl"`). `@durak/shared` and `@du
   - It is shown as the `/rules` page (linked from Home) and as the in-game "?" dialog (`HelpButton`). In a room it must stay a dialog, because navigating away from `/room/:id` drops the room binding.
   - First-game tips: `tips/tips.ts` (pure) has `tipFor(view, moves, tipsSeen)`, giving `firstAttack | firstDefense | firstThrowIn | firstTransfer`. `TipBanner` sits above the hand.
   - A tip is marked seen when it is dismissed or when its move is made (`tipLearnedBy`). Tips are hidden when `showTips` is off, and the settings can reset them.
+- **Quick reactions (Phase 8, `src/reactions/`):** `room:reaction` → the store keeps the recent ones (`ClientState.reactions`, pruned after `REACTION_SHOW_MS` 2.5 s by `useReactions`). `ReactionButton` (💬, a 3×3 picker; Esc / click outside closes and returns focus) sits in my seat row, in the lobby and on the game-over overlay; spectators and left seats get none. `ReactionBubble` floats above the sender's avatar (`pointer-events-none`, scaled by the animation speed, a fade under reduced motion), `ReactionAnnouncer` is a polite live region, and each new reaction plays the soft `reaction` sfx. "Show reactions" off hides bubbles, sound and the button.
 - **Leave / restart (Phase 7):** the table's `TopBar` holds "leave" (a confirm whose text comes from the shared departure rule), "new game" (the restart vote), "?" and the gear. `RestartVotePanel` shows the open vote, and `NoticeToast` shows how it ended.
 - **Countdown:** `remainingMs = turnDeadline − serverTime − (now − receivedAt)` using the client's clock for both `receivedAt` and `now`, so clock skew between client and server doesn't matter.
 - **Strings:** every UI string and every error code's Hebrew message live in `src/i18n/he.ts` (typed `Strings`; `errors` must cover every `ServerErrorCode | GameErrorCode`). Cards are drawn with CSS (rank + suit symbol), no image assets.

@@ -1,6 +1,7 @@
 import { ClientEvents, type ClientEventName, type ErrorPayload } from '@durak/shared';
 import type { Session } from '../domain/types.js';
 import type { GameService } from '../services/GameService.js';
+import type { ReactionService } from '../services/ReactionService.js';
 import type { RestartVoteService } from '../services/RestartVoteService.js';
 import type { RoomService } from '../services/RoomService.js';
 import { ConnectionCounter, SlidingWindowLimiter, SocketEventLimiter, type LimitSettings } from './rateLimit.js';
@@ -13,6 +14,7 @@ export interface HandlerDeps {
   readonly rooms: RoomService;
   readonly games: GameService;
   readonly votes: RestartVoteService;
+  readonly reactions: ReactionService;
   readonly log: {
     error: (obj: unknown, msg: string) => void;
     warn: (obj: unknown, msg: string) => void;
@@ -61,7 +63,7 @@ export function registerHandlers(deps: HandlerDeps): void {
 }
 
 function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedLimiters): void {
-  const { io, rooms, games, votes, log } = deps;
+  const { io, rooms, games, votes, reactions, log } = deps;
   /**
    * Who this socket is, for log lines: never the session token, never a payload (payloads can
    * carry tokens and are attacker-controlled).
@@ -233,6 +235,17 @@ function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedL
       return;
     }
     const result = await votes.respond(session, payload.voteId, payload.accept);
+    if (!result.ok) sendError(result.error);
+  });
+
+  // Ephemeral: no lock, nothing stored. Over the per-player limit the reaction is dropped silently.
+  on(ClientEvents.React, async (payload) => {
+    const session = socket.data.session;
+    if (!session || session.roomId !== payload.roomId) {
+      sendError({ code: 'NOT_IN_ROOM', message: 'You are not in this room' });
+      return;
+    }
+    const result = await reactions.react(session, payload.roomId, payload.reactionId);
     if (!result.ok) sendError(result.error);
   });
 

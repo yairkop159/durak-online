@@ -104,6 +104,13 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             {t.settings.resetTips}
           </Button>
         </section>
+        <section className="flex flex-col gap-2">
+          <Switch
+            label={t.settings.showReactions}
+            checked={s.showReactions}
+            onChange={(showReactions) => set((p) => ({ ...p, showReactions }))}
+          />
+        </section>
       </div>
     </Modal>
   );

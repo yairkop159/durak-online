@@ -3,6 +3,8 @@ import type {
   GameOverPayload,
   GameStatePayload,
   PlayerView,
+  ReactionId,
+  ReactionPayload,
   RestartVoteEndedPayload,
   RoomStatePayload,
   SessionIssuedPayload,
@@ -36,6 +38,21 @@ export interface ClientNotice {
   readonly id: number;
 }
 
+/** A quick reaction someone sent, as received (shown for REACTION_SHOW_MS, then pruned). */
+export interface ClientReaction {
+  /** Local sequence number (React key, and "is this new?"). */
+  readonly id: number;
+  readonly playerId: string;
+  readonly reactionId: ReactionId;
+  /** Local `Date.now()` when it arrived. */
+  readonly at: number;
+}
+
+/** How long a reaction bubble stays up. */
+export const REACTION_SHOW_MS = 2_500;
+/** At most this many recent reactions are kept. */
+const MAX_REACTIONS = 12;
+
 export interface ClientState {
   readonly connection: ConnectionStatus;
   readonly session: SessionIssuedPayload | null;
@@ -55,6 +72,8 @@ export interface ClientState {
   readonly gameOver: GameOverPayload | null;
   readonly lastError: ClientError | null;
   readonly notice: ClientNotice | null;
+  /** Recent quick reactions in this room (ephemeral, never stored). */
+  readonly reactions: readonly ClientReaction[];
 }
 
 export type ClientAction =
@@ -63,6 +82,9 @@ export type ClientAction =
   | { readonly type: 'room:state'; readonly payload: RoomStatePayload; readonly receivedAt?: number }
   | { readonly type: 'restart:ended'; readonly payload: RestartVoteEndedPayload }
   | { readonly type: 'dismissNotice' }
+  | { readonly type: 'reaction'; readonly payload: ReactionPayload; readonly receivedAt: number }
+  /** Drop reactions that arrived before `before` (local time). */
+  | { readonly type: 'reactions:prune'; readonly before: number }
   | { readonly type: 'game:state'; readonly payload: GameStatePayload; readonly receivedAt: number }
   | { readonly type: 'game:over'; readonly payload: GameOverPayload }
   | { readonly type: 'error'; readonly payload: ErrorPayload }
@@ -83,6 +105,7 @@ export const initialState: ClientState = {
   gameOver: null,
   lastError: null,
   notice: null,
+  reactions: [],
 };
 
 /** Errors that mean "your stored session is no good": drop it and ask for a nickname. */
@@ -155,6 +178,20 @@ export function reducer(state: ClientState, action: ClientAction): ClientState {
 
     case 'dismissNotice':
       return { ...state, notice: null };
+
+    case 'reaction': {
+      const p = action.payload;
+      // Only reactions for the room we are in.
+      if (!state.session || p.roomId !== state.session.roomId) return state;
+      const id = (state.reactions.at(-1)?.id ?? 0) + 1;
+      const next = [...state.reactions, { id, playerId: p.playerId, reactionId: p.reactionId, at: action.receivedAt }];
+      return { ...state, reactions: next.slice(-MAX_REACTIONS) };
+    }
+
+    case 'reactions:prune': {
+      const kept = state.reactions.filter((r) => r.at >= action.before);
+      return kept.length === state.reactions.length ? state : { ...state, reactions: kept };
+    }
 
     case 'error': {
       const { code, message } = action.payload;

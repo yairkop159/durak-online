@@ -1,5 +1,5 @@
 import { sanitizeStateForPlayer } from '@durak/game-engine';
-import type { GameStatePayload, RestartVoteEndedPayload, RoomStatePayload } from '@durak/shared';
+import type { GameStatePayload, ReactionPayload, RestartVoteEndedPayload, RoomStatePayload } from '@durak/shared';
 import type { Room, Session, StoredGame } from '../domain/types.js';
 import type { RoomNotifier } from '../services/ports.js';
 import type { Clock } from '../services/scheduling.js';
@@ -71,6 +71,10 @@ export class SocketNotifier implements RoomNotifier {
 
   restartVoteEnded(room: Room, ended: Omit<RestartVoteEndedPayload, 'roomId'>): void {
     this.io.to(channels.room(room.id)).emit('room:restartVoteEnded', { roomId: room.id, ...ended });
+  }
+
+  reaction(room: Room, reaction: Omit<ReactionPayload, 'roomId'>): void {
+    this.io.to(channels.room(room.id)).emit('room:reaction', { roomId: room.id, ...reaction });
   }
 
   sendGameStateTo(_room: Room, game: StoredGame, viewer: Session): void {

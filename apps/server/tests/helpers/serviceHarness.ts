@@ -1,4 +1,4 @@
-import type { RestartVoteEndedPayload } from '@durak/shared';
+import type { ReactionPayload, RestartVoteEndedPayload } from '@durak/shared';
 import { InProcessRunner } from '../../src/bot/InProcessRunner.js';
 import type { BotPolicies, BotRunner } from '../../src/bot/job.js';
 import type { Room, Session, StoredGame } from '../../src/domain/types.js';
@@ -9,14 +9,16 @@ import { createInMemoryRepositories } from '../../src/repositories/inMemory/inde
 import { GameService } from '../../src/services/GameService.js';
 import { KeyedMutex } from '../../src/services/KeyedMutex.js';
 import type { RoomNotifier } from '../../src/services/ports.js';
+import { ReactionService, type ReactionSettings } from '../../src/services/ReactionService.js';
 import { DEFAULT_RESTART_VOTE_SETTINGS, RestartVoteService } from '../../src/services/RestartVoteService.js';
 import { RoomService } from '../../src/services/RoomService.js';
 import { DEFAULT_TIMER_SETTINGS, TurnTimerService, type TimerSettings } from '../../src/services/TurnTimerService.js';
 import { FakeTime } from './fakeTime.js';
 
 export interface NotifierEvent {
-  readonly kind: 'room' | 'game' | 'over' | 'gameTo' | 'voteEnded';
+  readonly kind: 'room' | 'game' | 'over' | 'gameTo' | 'voteEnded' | 'reaction';
   readonly ended?: Omit<RestartVoteEndedPayload, 'roomId'>;
+  readonly reaction?: Omit<ReactionPayload, 'roomId'>;
   readonly version?: number;
   readonly to?: string;
   readonly room: Room;
@@ -36,6 +38,9 @@ export class RecordingNotifier implements RoomNotifier {
   }
   restartVoteEnded(room: Room, ended: Omit<RestartVoteEndedPayload, 'roomId'>): void {
     this.events.push({ kind: 'voteEnded', room, ended });
+  }
+  reaction(room: Room, reaction: Omit<ReactionPayload, 'roomId'>): void {
+    this.events.push({ kind: 'reaction', room, reaction });
   }
   sendGameStateTo(room: Room, game: StoredGame, viewer: Session): void {
     this.events.push({ kind: 'gameTo', version: game.version, to: viewer.id, room, game });
@@ -62,6 +67,8 @@ export interface ServiceHarnessOptions {
    * observing raw timeout behaviour; bot tests turn it on.
    */
   bots?: { afkTakeover?: boolean; runner?: BotRunner; random?: () => number; policies?: BotPolicies };
+  /** Bot reactions are off by default here (chance 0), so existing tests see no extra timers. */
+  reactions?: { random?: () => number; settings?: Partial<ReactionSettings> };
 }
 
 /** Services wired exactly like buildServer, on in-memory repos and fake time, without sockets. */
@@ -74,7 +81,15 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
   const log = { error: () => undefined };
   const timers = new TurnTimerService({ repos, mutex, notifier, clock: time, scheduler: time, settings, log });
   let driver: BotDriver | null = null;
-  const committer = new GameCommitter({ repos, notifier, timers, listener: () => driver });
+  const reactions = new ReactionService({
+    repos,
+    notifier,
+    clock: time,
+    scheduler: time,
+    random: options.reactions?.random ?? (() => 0.5),
+    settings: { botChance: 0, ...options.reactions?.settings },
+  });
+  const committer = new GameCommitter({ repos, notifier, timers, listeners: () => (driver ? [driver, reactions] : [reactions]) });
   timers.attachCommitter(committer);
   const seed = options.seed ?? 42;
   const votes = new RestartVoteService({
@@ -104,7 +119,7 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     log,
   });
   driver = bots;
-  return { repos, rooms, games, timers, votes, notifier, time, settings, bots, runner, committer, mutex };
+  return { repos, rooms, games, timers, votes, notifier, time, settings, bots, runner, committer, mutex, reactions };
 }
 
 export const noBind = (): void => undefined;

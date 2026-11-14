@@ -2,7 +2,7 @@
  * Every sound effect, synthesized with the Web Audio API (no audio files). Each recipe schedules
  * a few short-lived nodes at `t` (AudioContext time, seconds) into `out`.
  */
-export const SOUND_NAMES = ['cardPlay', 'defend', 'take', 'sweep', 'draw', 'yourTurn', 'tick', 'win', 'durak'] as const;
+export const SOUND_NAMES = ['cardPlay', 'defend', 'take', 'sweep', 'draw', 'yourTurn', 'tick', 'win', 'durak', 'reaction'] as const;
 export type SoundName = (typeof SOUND_NAMES)[number];
 
 type Recipe = (ctx: AudioContext, out: AudioNode, t: number, noise: AudioBuffer) => void;
@@ -101,6 +101,11 @@ export const RECIPES: Record<SoundName, Recipe> = {
   durak: (ctx, out, t) => {
     notes(ctx, out, t, [392, 349.23, 311.13], 0.22, { type: 'triangle', dur: 0.4, gain: 0.2, attack: 0.02 });
     tone(ctx, out, t + 0.66, { freq: 293.66, freqEnd: 196, type: 'triangle', dur: 0.8, gain: 0.2, attack: 0.02 });
+  },
+  // A quick reaction arrived: a soft, quiet two-note pop.
+  reaction: (ctx, out, t) => {
+    tone(ctx, out, t, { freq: 880, freqEnd: 1180, type: 'sine', dur: 0.09, gain: 0.08, attack: 0.004 });
+    tone(ctx, out, t + 0.07, { freq: 1320, type: 'sine', dur: 0.12, gain: 0.06, attack: 0.004 });
   },
 };
 

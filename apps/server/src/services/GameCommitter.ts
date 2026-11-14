@@ -13,15 +13,15 @@ import {
 import type { GameEndReason, PlayerId } from '@durak/shared';
 import type { Room, StoredGame } from '../domain/types.js';
 import type { Repositories } from '../repositories/interfaces.js';
-import type { GameChangeListener, RoomNotifier } from './ports.js';
+import type { GameChangeInfo, GameChangeListener, RoomNotifier } from './ports.js';
 import type { TurnTimerService } from './TurnTimerService.js';
 
 export interface GameCommitterDeps {
   readonly repos: Repositories;
   readonly notifier: RoomNotifier;
   readonly timers: TurnTimerService;
-  /** Late-bound (the BotDriver is built after the services it uses). */
-  readonly listener: () => GameChangeListener | null;
+  /** Late-bound (the BotDriver is built after the services it uses). Called in order. */
+  readonly listeners: () => readonly GameChangeListener[];
 }
 
 export interface CommitInput {
@@ -110,13 +110,13 @@ export class GameCommitter {
     } else {
       timers.armTurn(game);
     }
-    this.announce(room, game, prev.state);
+    this.announce(room, game, prev.state, { fastForwarded: forwarded !== null });
     return { room, game };
   }
 
   /** Tells the listener about a change that did not go through `commit` (resume, startup). */
-  announce(room: Room, game: StoredGame, prev: GameState | null): void {
-    this.deps.listener()?.onGameChanged(room, game, prev);
+  announce(room: Room, game: StoredGame, prev: GameState | null, info: GameChangeInfo = { fastForwarded: false }): void {
+    for (const listener of this.deps.listeners()) listener.onGameChanged(room, game, prev, info);
   }
 }
 

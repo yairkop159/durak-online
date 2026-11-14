@@ -7,6 +7,8 @@ import { t } from '../../i18n';
 import { useClient } from '../../net/react';
 import { navigate } from '../../routing';
 import { motionTokens as M } from '../../theme/motion';
+import { ReactionButton } from '../../reactions/ReactionPicker';
+import type { ReactionsInView } from '../../reactions/useReactions';
 
 type Mood = 'celebrate' | 'durak' | 'neutral';
 
@@ -20,12 +22,17 @@ export function GameOverOverlay({
   nameOf,
   canRematch,
   reduced = false,
+  reactions = null,
+  canReact = false,
 }: {
   view: PlayerView;
   gameOver: GameOverPayload | null;
   nameOf: (id: string) => string;
   canRematch: boolean;
   reduced?: boolean;
+  /** Reactions keep flowing on the result screen ("עוד סיבוב?"). */
+  reactions?: ReactionsInView | null;
+  canReact?: boolean;
 }) {
   const client = useClient();
   const durak = gameOver ? gameOver.durakId : view.phase.kind === 'finished' ? view.phase.durak : null;
@@ -99,6 +106,16 @@ export function GameOverOverlay({
               {t.gameOver.forfeits}: {forfeits.map(nameOf).join(', ')}
             </p>
           )}
+          {reactions && reactions.byPlayer.size > 0 && (
+            <ul className="pointer-events-none flex flex-wrap justify-center gap-1.5" data-testid="game-over-reactions" aria-hidden="true">
+              {[...reactions.byPlayer.values()].map((r) => (
+                <li key={r.id} className="rounded-pill bg-white/8 px-2 py-0.5 text-sm">
+                  {nameOf(r.playerId)}: {t.reactions.items[r.reactionId].text}
+                </li>
+              ))}
+            </ul>
+          )}
+          {canReact && <ReactionButton />}
           {canRematch ? (
             <Button size="lg" className="w-full" onClick={() => client.rematch()}>
               {t.gameOver.backToLobby}

@@ -1,4 +1,15 @@
-import { MAX_PLAYERS, type BotDifficulty, type ClientMove, type GameMode, type RoomStatePayload, type SessionIssuedPayload } from '@durak/shared';
+import {
+  MAX_PLAYERS,
+  REACTION_BURST,
+  REACTION_REFILL_MS,
+  type BotDifficulty,
+  type ClientMove,
+  type GameMode,
+  type ReactionId,
+  type RoomStatePayload,
+  type SessionIssuedPayload,
+} from '@durak/shared';
+import { ReactionBucket } from '../reactions/bucket';
 import { SessionTokens, type KeyValueStorage } from './sessionStore';
 import { Store, canAct, type ClientState } from './store';
 import type { Transport } from './transport';
@@ -27,11 +38,14 @@ export class GameClient {
    * they are all seated. Driven by `room:state`; any error or leaving cancels it.
    */
   private vsComputer: { readonly difficulty: BotDifficulty; readonly bots: number; requested: number } | null = null;
+  /** Mirrors the server's per-player reaction limit, so the picker can grey out instead of sending. */
+  private readonly reactionBucket: ReactionBucket;
 
   constructor(options: GameClientOptions) {
     this.transport = options.transport;
     this.tokens = new SessionTokens(options.storage);
     this.now = options.now ?? Date.now;
+    this.reactionBucket = new ReactionBucket(REACTION_BURST, REACTION_REFILL_MS, this.now);
     const { transport, store } = this;
 
     // Resume first: nothing else is emitted on a new socket before it is bound again.
@@ -53,6 +67,7 @@ export class GameClient {
     );
     transport.on('game:over', (payload) => store.dispatch({ type: 'game:over', payload }));
     transport.on('room:restartVoteEnded', (payload) => store.dispatch({ type: 'restart:ended', payload }));
+    transport.on('room:reaction', (payload) => store.dispatch({ type: 'reaction', payload, receivedAt: this.now() }));
     transport.on('error', (payload) => {
       if (payload.code !== 'STALE_STATE') this.vsComputer = null;
       const pendingRoom = this.state.resumeStatus === 'pending' ? this.routeRoomId : null;
@@ -148,6 +163,28 @@ export class GameClient {
   respondRestart(voteId: string, accept: boolean): void {
     const session = this.boundSession();
     if (session) this.transport.emit('room:restartRespond', { roomId: session.roomId, voteId, accept });
+  }
+
+  /**
+   * Sends a quick reaction (seated players only; the UI hides the button for spectators). Dropped
+   * while we can't act, or when the local mirror of the server's limit is empty.
+   */
+  react(reactionId: ReactionId): boolean {
+    const session = this.boundSession();
+    if (!session || this.state.room?.members.every((m) => m.playerId !== session.playerId)) return false;
+    if (!this.reactionBucket.tryTake()) return false;
+    this.transport.emit('room:react', { roomId: session.roomId, reactionId });
+    return true;
+  }
+
+  /** Milliseconds until another reaction may be sent (0 = now). */
+  reactionReadyIn(): number {
+    return this.reactionBucket.readyIn();
+  }
+
+  /** Forgets reactions older than the bubble lifetime. */
+  pruneReactions(before: number): void {
+    this.store.dispatch({ type: 'reactions:prune', before });
   }
 
   dismissNotice(): void {

@@ -12,6 +12,7 @@ import { GameCommitter } from './services/GameCommitter.js';
 import { GameService } from './services/GameService.js';
 import { KeyedMutex } from './services/KeyedMutex.js';
 import { cryptoSeedSource, type SeedSource } from './services/random.js';
+import { ReactionService, type ReactionSettings } from './services/ReactionService.js';
 import { DEFAULT_RESTART_VOTE_SETTINGS, RestartVoteService, type RestartVoteSettings } from './services/RestartVoteService.js';
 import { RoomService } from './services/RoomService.js';
 import { createSystemScheduler, systemClock, type Clock, type Scheduler } from './services/scheduling.js';
@@ -64,6 +65,10 @@ export interface BuildServerOptions {
   readonly onClose?: () => Promise<void>;
   /** Serve the built web client from this directory (with an SPA fallback). Default: not served. */
   readonly webDistDir?: string | null;
+  /** Quick reactions: limits and bot behaviour (tests tune them). */
+  readonly reactionSettings?: Partial<ReactionSettings>;
+  /** Randomness for bot reactions in [0, 1) (default Math.random). */
+  readonly reactionRandom?: () => number;
   /** Abuse limits (default DEFAULT_LIMITS). */
   readonly limits?: Partial<LimitSettings>;
   /** Reverse-proxy trust for client IPs (default false). */
@@ -80,6 +85,7 @@ export interface DurakServer {
   readonly votes: RestartVoteService;
   readonly bots: BotDriver;
   readonly botRunner: BotRunner;
+  readonly reactions: ReactionService;
 }
 
 export function buildServer(options: BuildServerOptions = {}): DurakServer {
@@ -135,9 +141,17 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   });
 
   // Wiring order: the committer reports to the BotDriver, which applies moves through GameService,
-  // which commits through the committer — so the listener is bound late.
+  // which commits through the committer — so the listeners are bound late.
   let bots: BotDriver | null = null;
-  const committer = new GameCommitter({ repos, notifier, timers, listener: () => bots });
+  const reactions = new ReactionService({
+    repos,
+    notifier,
+    clock,
+    scheduler,
+    ...(options.reactionRandom ? { random: options.reactionRandom } : {}),
+    ...(options.reactionSettings ? { settings: options.reactionSettings } : {}),
+  });
+  const committer = new GameCommitter({ repos, notifier, timers, listeners: () => (bots ? [bots, reactions] : [reactions]) });
   timers.attachCommitter(committer);
 
   const now = () => clock.now();
@@ -181,7 +195,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   bots = driver;
 
   let shuttingDown = false;
-  registerHandlers({ io, rooms, games, votes, log: app.log, isShuttingDown: () => shuttingDown, limits, now, ipOf });
+  registerHandlers({ io, rooms, games, votes, reactions, log: app.log, isShuttingDown: () => shuttingDown, limits, now, ipOf });
 
   const health = options.health ?? (async (): Promise<HealthReport> => ({ ok: true, repository: 'memory' }));
   // Probed every few seconds by Docker and the hosting platform: keep it out of the info log.
@@ -198,6 +212,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     timers.dispose();
     votes.dispose();
     driver.dispose();
+    reactions.dispose();
     await botRunner.dispose();
     io.disconnectSockets(true);
     io.engine.close();
@@ -205,5 +220,5 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   const onClose = options.onClose;
   if (onClose) app.addHook('onClose', async () => onClose());
 
-  return { app, io, repos, rooms, games, timers, votes, bots: driver, botRunner };
+  return { app, io, repos, rooms, games, timers, votes, bots: driver, botRunner, reactions };
 }

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { GameConfigInputSchema, MAX_PLAYERS, MIN_PLAYERS } from './config.js';
 import { ClientMoveSchema } from './moves.js';
 import type { GameErrorCode } from './errors.js';
+import { ReactionIdSchema, type ReactionId } from './reactions.js';
 import type { PlayerView } from './view.js';
 
 /** Socket.io event names, client -> server. */
@@ -17,6 +18,7 @@ export const ClientEvents = {
   RemoveBot: 'room:removeBot',
   RestartPropose: 'room:restartPropose',
   RestartRespond: 'room:restartRespond',
+  React: 'room:react',
 } as const;
 export type ClientEventName = (typeof ClientEvents)[keyof typeof ClientEvents];
 
@@ -27,6 +29,7 @@ export const ServerEvents = {
   GameOver: 'game:over',
   Session: 'session:issued',
   RestartVoteEnded: 'room:restartVoteEnded',
+  Reaction: 'room:reaction',
   Error: 'error',
 } as const;
 export type ServerEventName = (typeof ServerEvents)[keyof typeof ServerEvents];
@@ -80,6 +83,9 @@ export const RestartRespondPayloadSchema = z
   .object({ roomId: RoomIdSchema, voteId: VoteIdSchema, accept: z.boolean() })
   .strict();
 
+/** A seated player sends a quick reaction (ephemeral: broadcast to the room, never stored). */
+export const ReactPayloadSchema = z.object({ roomId: RoomIdSchema, reactionId: ReactionIdSchema }).strict();
+
 export const MakeMovePayloadSchema = z
   .object({
     roomId: RoomIdSchema,
@@ -111,6 +117,7 @@ export const ClientEventSchemas = {
   [ClientEvents.RemoveBot]: RemoveBotPayloadSchema,
   [ClientEvents.RestartPropose]: RestartProposePayloadSchema,
   [ClientEvents.RestartRespond]: RestartRespondPayloadSchema,
+  [ClientEvents.React]: ReactPayloadSchema,
 } as const satisfies Record<ClientEventName, z.ZodTypeAny>;
 
 export type CreateRoomPayload = z.infer<typeof CreateRoomPayloadSchema>;
@@ -124,6 +131,7 @@ export type AddBotPayload = z.infer<typeof AddBotPayloadSchema>;
 export type RemoveBotPayload = z.infer<typeof RemoveBotPayloadSchema>;
 export type RestartProposePayload = z.infer<typeof RestartProposePayloadSchema>;
 export type RestartRespondPayload = z.infer<typeof RestartRespondPayloadSchema>;
+export type ReactPayload = z.infer<typeof ReactPayloadSchema>;
 
 export interface RoomMember {
   readonly playerId: string;
@@ -171,6 +179,13 @@ export interface RestartVoteEndedPayload {
   readonly outcome: RestartVoteOutcome;
   /** Who declined (outcome 'declined'), else null. */
   readonly by: string | null;
+}
+
+/** Someone in the room reacted (players and bots; sent to everyone, spectators included). */
+export interface ReactionPayload {
+  readonly roomId: string;
+  readonly playerId: string;
+  readonly reactionId: ReactionId;
 }
 
 export interface GameStatePayload {
@@ -267,6 +282,7 @@ export interface ClientToServerEvents {
   'room:removeBot': (payload: RemoveBotPayload) => void;
   'room:restartPropose': (payload: RestartProposePayload) => void;
   'room:restartRespond': (payload: RestartRespondPayload) => void;
+  'room:react': (payload: ReactPayload) => void;
 }
 
 export interface ServerToClientEvents {
@@ -275,5 +291,6 @@ export interface ServerToClientEvents {
   'game:over': (payload: GameOverPayload) => void;
   'session:issued': (payload: SessionIssuedPayload) => void;
   'room:restartVoteEnded': (payload: RestartVoteEndedPayload) => void;
+  'room:reaction': (payload: ReactionPayload) => void;
   error: (payload: ErrorPayload) => void;
 }

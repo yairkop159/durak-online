@@ -1,4 +1,4 @@
-import type { RestartVoteEndedPayload } from '@durak/shared';
+import type { ReactionPayload, RestartVoteEndedPayload } from '@durak/shared';
 import type { Room, Session, StoredGame } from '../domain/types.js';
 
 /**
@@ -13,6 +13,8 @@ export interface RoomNotifier {
   gameOver(room: Room, game: StoredGame): void;
   /** A restart vote ended (passed, declined, expired or cancelled); sent to the whole room. */
   restartVoteEnded(room: Room, ended: Omit<RestartVoteEndedPayload, 'roomId'>): void;
+  /** A quick reaction (ephemeral); sent to the whole room, spectators included. */
+  reaction(room: Room, reaction: Omit<ReactionPayload, 'roomId'>): void;
   /** Send the current view to a single participant only (resync / resume). */
   sendGameStateTo(room: Room, game: StoredGame, viewer: Session): void;
 }
@@ -20,10 +22,15 @@ export interface RoomNotifier {
 /**
  * Told about every committed game change (and about re-arms: startup, resume), inside the room lock,
  * after the broadcast. `prev` is the state before the change, or null when there was no move
- * (start, resume, startup). The BotDriver implements this.
+ * (start, resume, startup). The BotDriver and the ReactionService implement this.
  */
 export interface GameChangeListener {
-  onGameChanged(room: Room, game: StoredGame, prev: StoredGame['state'] | null): void;
+  onGameChanged(room: Room, game: StoredGame, prev: StoredGame['state'] | null, info?: GameChangeInfo): void;
+}
+
+export interface GameChangeInfo {
+  /** The bots-only fast-forward played the rest of the game inside this commit. */
+  readonly fastForwarded: boolean;
 }
 
 /**

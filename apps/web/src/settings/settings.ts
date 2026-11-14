@@ -6,23 +6,29 @@ export type TipId = (typeof TIP_IDS)[number];
 
 export type AnimationSpeed = 'normal' | 'fast';
 
-/** Per-device preferences, kept in localStorage (never sent to the server). */
+/**
+ * Per-device preferences, kept in localStorage (never sent to the server).
+ * v2 (Phase 8) added `showReactions`; v1 data is read field by field with the new default.
+ */
 export interface Settings {
-  readonly v: 1;
+  readonly v: 2;
   readonly sfx: { readonly enabled: boolean; readonly volume: number };
   readonly music: { readonly enabled: boolean; readonly volume: number };
   readonly animationSpeed: AnimationSpeed;
   readonly showTips: boolean;
   readonly tipsSeen: readonly TipId[];
+  /** Show other players' quick reactions (bubbles + sound) and my reaction button. */
+  readonly showReactions: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  v: 1,
+  v: 2,
   sfx: { enabled: true, volume: 0.7 },
   music: { enabled: false, volume: 0.35 },
   animationSpeed: 'normal',
   showTips: true,
   tipsSeen: [],
+  showReactions: true,
 };
 
 /** Multiplier for every animation duration (reduced motion still wins over it). */
@@ -40,7 +46,10 @@ function channel(v: unknown, fallback: Settings['sfx']): Settings['sfx'] {
   return { enabled: bool(v.enabled, fallback.enabled), volume: volume(v.volume, fallback.volume) };
 }
 
-/** Field by field: anything missing or invalid falls back to its default (never throws). */
+/**
+ * Field by field: anything missing or invalid falls back to its default (never throws). Any older
+ * version is migrated the same way (a field it lacks gets its default).
+ */
 export function parseSettings(raw: string | null): Settings {
   if (raw === null) return DEFAULT_SETTINGS;
   let data: unknown;
@@ -52,7 +61,7 @@ export function parseSettings(raw: string | null): Settings {
   if (!isRecord(data)) return DEFAULT_SETTINGS;
   const d = DEFAULT_SETTINGS;
   return {
-    v: 1,
+    v: 2,
     sfx: channel(data.sfx, d.sfx),
     music: channel(data.music, d.music),
     animationSpeed: data.animationSpeed === 'fast' || data.animationSpeed === 'normal' ? data.animationSpeed : d.animationSpeed,
@@ -60,6 +69,7 @@ export function parseSettings(raw: string | null): Settings {
     tipsSeen: Array.isArray(data.tipsSeen)
       ? TIP_IDS.filter((id) => (data.tipsSeen as unknown[]).includes(id))
       : d.tipsSeen,
+    showReactions: bool(data.showReactions, d.showReactions),
   };
 }
 

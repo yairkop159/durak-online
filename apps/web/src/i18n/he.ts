@@ -1,5 +1,5 @@
 import type { AnimationSpeed, TipId } from '../settings/settings';
-import type { BotDifficulty, GameEndReason, GameErrorCode, GameMode, ServerErrorCode, Suit } from '@durak/shared';
+import type { BotDifficulty, GameEndReason, GameErrorCode, GameMode, ReactionId, ServerErrorCode, Suit } from '@durak/shared';
 
 export type ErrorCode = ServerErrorCode | GameErrorCode;
 
@@ -161,6 +161,15 @@ export interface Strings {
     readonly expired: string;
     readonly cancelled: string;
   };
+  readonly reactions: {
+    /** The button that opens the picker. */
+    readonly button: string;
+    readonly pickerTitle: string;
+    /** What each reaction shows (an emoji or a short phrase) and how a screen reader says it. */
+    readonly items: Record<ReactionId, { readonly text: string; readonly label: string }>;
+    /** Read out by the polite live region. */
+    readonly announce: (name: string, label: string) => string;
+  };
   readonly settings: {
     readonly title: string;
     readonly sfx: string;
@@ -172,6 +181,7 @@ export interface Strings {
     readonly reducedMotionNote: string;
     readonly showTips: string;
     readonly resetTips: string;
+    readonly showReactions: string;
   };
   readonly help: {
     readonly title: string;
@@ -325,6 +335,22 @@ export const he: Strings = {
     expired: 'פג הזמן להצבעה',
     cancelled: 'ההצבעה בוטלה',
   },
+  reactions: {
+    button: 'תגובה מהירה',
+    pickerTitle: 'שליחת תגובה',
+    items: {
+      laugh: { text: '😂', label: 'צוחק/ת' },
+      fire: { text: '🔥', label: 'אש' },
+      shock: { text: '😱', label: 'בהלה' },
+      clap: { text: '👏', label: 'מחיאות כפיים' },
+      think: { text: '🤔', label: 'חושב/ת' },
+      nice: { text: 'יפה!', label: 'יפה!' },
+      lucky: { text: 'מזל...', label: 'מזל...' },
+      ohNo: { text: 'אוי לא', label: 'אוי לא' },
+      again: { text: 'עוד סיבוב?', label: 'עוד סיבוב?' },
+    },
+    announce: (name, label) => `${name}: ${label}`,
+  },
   settings: {
     title: 'הגדרות',
     sfx: 'צלילים',
@@ -336,6 +362,7 @@ export const he: Strings = {
     reducedMotionNote: 'אם במכשיר מוגדרת "הפחתת תנועה", האנימציות יוחלפו בהופעה מהירה בכל מקרה.',
     showTips: 'הצגת טיפים',
     resetTips: 'הצגת הטיפים מההתחלה',
+    showReactions: 'הצגת תגובות מהירות',
   },
   help: {
     title: 'חוקים ועזרה',
