@@ -51,6 +51,8 @@ export interface Strings {
     readonly or: string;
     readonly vsComputer: string;
     readonly vsComputerHint: string;
+    /** Legend of the "number of bot opponents" picker (1-5). */
+    readonly opponents: string;
   };
   readonly bots: {
     readonly badge: string;
@@ -59,6 +61,9 @@ export interface Strings {
     readonly difficulty: string;
     readonly difficulties: Record<BotDifficulty, string>;
     readonly add: string;
+    /** Lobby: the heading and hint over the add-bot controls. */
+    readonly addTitle: string;
+    readonly addHint: string;
     readonly remove: (name: string) => string;
     /** On an AFK human's seat while the bot plays for them. */
     readonly playingForYou: string;
@@ -219,7 +224,8 @@ export const he: Strings = {
     create: 'יצירת חדר',
     or: 'או',
     vsComputer: 'משחק נגד המחשב',
-    vsComputerHint: 'משחק מיידי אחד על אחד מול בוט',
+    vsComputerHint: 'משחק מיידי מול בוטים, בלי לחכות לשחקנים',
+    opponents: 'מספר יריבים',
   },
   bots: {
     badge: 'בוט',
@@ -227,6 +233,8 @@ export const he: Strings = {
     difficulty: 'רמת קושי',
     difficulties: { easy: 'קל', medium: 'בינוני', hard: 'קשה' },
     add: 'הוספת בוט',
+    addTitle: 'חסרים שחקנים? הוסיפו בוט',
+    addHint: 'בוט ממלא מקום פנוי ומשחק מיד. אפשר להוסיף כמה שרוצים, עד שהחדר מתמלא.',
     remove: (name) => `הסרת ${name}`,
     playingForYou: 'הבוט משחק במקומך',
     playingForThem: 'בוט משחק',

@@ -69,7 +69,11 @@ export function LobbyScreen({ room, session }: { room: RoomStatePayload; session
         {room.spectatorCount > 0 && <p className="text-sm text-muted">{t.lobby.spectators(room.spectatorCount)}</p>}
         {isHost && room.members.length < room.maxPlayers && (
           <div className="flex flex-col gap-2 border-t border-line pt-3">
-            <span className="text-sm font-medium">{t.bots.difficulty}</span>
+            <span className="text-sm font-semibold">🤖 {t.bots.addTitle}</span>
+            <span className="text-xs text-muted" data-testid="add-bot-hint">
+              {t.bots.addHint}
+            </span>
+            <span className="mt-1 text-sm font-medium">{t.bots.difficulty}</span>
             <DifficultyPicker value={difficulty} onChange={setDifficulty} />
             <Button variant="secondary" onClick={() => client.addBot(difficulty)}>
               🤖 {t.bots.add}

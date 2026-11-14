@@ -8,6 +8,11 @@ import { useClient, useClientState } from '../net/react';
 import { navigate, roomPath, RULES_PATH } from '../routing';
 
 const PLAYER_COUNTS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => MIN_PLAYERS + i);
+/** Bot opponents for "play vs computer": 1 .. MAX_PLAYERS - 1. */
+const OPPONENT_COUNTS = Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => i + 1);
+
+const countButtonClass = (selected: boolean) =>
+  `rounded-btn py-2 font-bold ring-1 transition-colors ${selected ? 'bg-accent text-accent-ink ring-accent shadow-[0_0_16px_rgb(45_212_191/0.35)]' : 'bg-surface-2 ring-line hover:bg-surface-3'}`;
 
 export function HomeScreen() {
   const client = useClient();
@@ -16,6 +21,7 @@ export function HomeScreen() {
   const [players, setPlayers] = useState(2);
   const [mode, setMode] = useState<GameMode>('podkidnoy');
   const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
+  const [bots, setBots] = useState(1);
   const [submitted, setSubmitted] = useState(false);
 
   // The room we just created: go there once the session arrives.
@@ -43,7 +49,7 @@ export function HomeScreen() {
   const vsComputer = () => {
     if (needNickname()) return;
     setSubmitted(true);
-    client.playVsComputer({ nickname: nickname.trim(), mode, difficulty });
+    client.playVsComputer({ nickname: nickname.trim(), mode, difficulty, bots });
   };
 
   return (
@@ -91,7 +97,7 @@ export function HomeScreen() {
                   type="button"
                   aria-pressed={players === n}
                   onClick={() => setPlayers(n)}
-                  className={`rounded-btn py-2 font-bold ring-1 transition-colors ${players === n ? 'bg-accent text-accent-ink ring-accent shadow-[0_0_16px_rgb(45_212_191/0.35)]' : 'bg-surface-2 ring-line hover:bg-surface-3'}`}
+                  className={countButtonClass(players === n)}
                 >
                   {n}
                 </button>
@@ -128,6 +134,16 @@ export function HomeScreen() {
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1.5 text-sm font-medium">{t.bots.difficulty}</legend>
             <DifficultyPicker value={difficulty} onChange={setDifficulty} />
+          </fieldset>
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="mb-1.5 text-sm font-medium">{t.home.opponents}</legend>
+            <div className="grid grid-cols-5 gap-2">
+              {OPPONENT_COUNTS.map((n) => (
+                <button key={n} type="button" aria-pressed={bots === n} onClick={() => setBots(n)} className={countButtonClass(bots === n)}>
+                  {n}
+                </button>
+              ))}
+            </div>
             <span className="text-xs text-muted">{t.home.vsComputerHint}</span>
           </fieldset>
           <Button type="button" variant="secondary" aria-disabled={missingNickname} onClick={vsComputer}>

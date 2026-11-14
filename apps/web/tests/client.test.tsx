@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { App } from '../src/App';
@@ -81,7 +81,7 @@ describe('home and lobby', () => {
     const { transport } = setup('/');
     act(() => transport.connect());
     await userEvent.type(screen.getByRole('textbox'), 'Dana');
-    await userEvent.click(screen.getByRole('button', { name: '4' }));
+    await userEvent.click(within(screen.getByRole('group', { name: t.home.players })).getByRole('button', { name: '4' }));
     await userEvent.click(screen.getByRole('radio', { name: new RegExp(t.home.modes.perevodnoy) }));
     await userEvent.click(screen.getByRole('button', { name: t.home.create }));
     expect(transport.emittedOf('room:create')).toEqual([

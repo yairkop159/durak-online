@@ -59,10 +59,17 @@ describe('lobby bots', () => {
     expect(transport.emittedOf('room:removeBot')).toEqual([{ roomId: ROOM_ID, playerId: 'bot1' }]);
   });
 
+  it('the host sees a hint explaining that bots fill free seats', () => {
+    lobbyAs('me', { ...roomState('lobby', ['me']), maxPlayers: 3 });
+    expect(screen.getByText(t.bots.addTitle, { exact: false })).toBeInTheDocument();
+    expect(screen.getByTestId('add-bot-hint')).toHaveTextContent(t.bots.addHint);
+  });
+
   it('a guest sees the bot badge but no bot controls', () => {
     lobbyAs('bob', withBot(roomState('lobby', ['me', 'bob']), 4));
     expect(screen.getByTestId('bot-badge')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: new RegExp(t.bots.add) })).toBeNull();
+    expect(screen.queryByTestId('add-bot-hint')).toBeNull();
     expect(screen.queryByRole('button', { name: t.bots.remove(t.bots.name('1')) })).toBeNull();
   });
 
@@ -96,6 +103,65 @@ describe('play vs computer', () => {
     act(() => transport.serverSends('room:state', withBot(lobby, 2)));
     expect(transport.emittedOf('game:start')).toHaveLength(1);
     expect(transport.emittedOf('room:addBot')).toHaveLength(1);
+  });
+
+  it('with 3 opponents: a 4-seat room, the bots are added one at a time, then the game starts', async () => {
+    const { transport } = setup('/');
+    await userEvent.type(screen.getByRole('textbox'), 'Dana');
+    const opponents = within(screen.getByRole('group', { name: t.home.opponents }));
+    expect(opponents.getByRole('button', { name: '1' })).toHaveAttribute('aria-pressed', 'true'); // default
+    expect(opponents.getAllByRole('button').map((b) => b.textContent)).toEqual(['1', '2', '3', '4', '5']);
+    await userEvent.click(opponents.getByRole('button', { name: '3' }));
+    await userEvent.click(screen.getByRole('radio', { name: t.bots.difficulties.easy }));
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(t.home.vsComputer) }));
+    expect(transport.emittedOf('room:create')).toEqual([{ nickname: 'Dana', maxPlayers: 4, config: { mode: 'podkidnoy' } }]);
+
+    const lobby: RoomStatePayload = { ...roomState('lobby', ['me']), maxPlayers: 4 };
+    const withBots = (n: number): RoomStatePayload => ({
+      ...lobby,
+      members: [
+        ...lobby.members,
+        ...Array.from({ length: n }, (_, i) => ({
+          playerId: `bot${i + 1}`,
+          nickname: `Bot ${i + 1}`,
+          connected: true,
+          isBot: true,
+          botDifficulty: 'easy' as const,
+          afk: false,
+          leftGame: false,
+        })),
+      ],
+    });
+    act(() => {
+      transport.serverSends('session:issued', { sessionToken: TOKEN, playerId: 'me', roomId: ROOM_ID });
+      transport.serverSends('room:state', lobby);
+    });
+    expect(transport.emittedOf('room:addBot')).toEqual([{ roomId: ROOM_ID, difficulty: 'easy' }]);
+    // A repeated state before the bot lands asks for nothing more.
+    act(() => transport.serverSends('room:state', lobby));
+    expect(transport.emittedOf('room:addBot')).toHaveLength(1);
+
+    act(() => transport.serverSends('room:state', withBots(1)));
+    expect(transport.emittedOf('room:addBot')).toHaveLength(2);
+    act(() => transport.serverSends('room:state', withBots(2)));
+    expect(transport.emittedOf('room:addBot')).toHaveLength(3);
+    expect(transport.emittedOf('game:start')).toEqual([]);
+    act(() => transport.serverSends('room:state', withBots(3)));
+    expect(transport.emittedOf('room:addBot')).toHaveLength(3);
+    expect(transport.emittedOf('game:start')).toEqual([{ roomId: ROOM_ID }]);
+  });
+
+  it('a human taking a free seat mid-flow cancels it (the lobby takes over)', async () => {
+    const { transport } = setup('/');
+    await userEvent.type(screen.getByRole('textbox'), 'Dana');
+    await userEvent.click(within(screen.getByRole('group', { name: t.home.opponents })).getByRole('button', { name: '1' }));
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(t.home.vsComputer) }));
+    act(() => {
+      transport.serverSends('session:issued', { sessionToken: TOKEN, playerId: 'me', roomId: ROOM_ID });
+      transport.serverSends('room:state', { ...roomState('lobby', ['me', 'bob']), maxPlayers: 2 });
+    });
+    expect(transport.emittedOf('room:addBot')).toEqual([]);
+    expect(transport.emittedOf('game:start')).toEqual([]);
   });
 
   it('an error cancels the flow', async () => {

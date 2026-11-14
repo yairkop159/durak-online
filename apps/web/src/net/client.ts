@@ -1,4 +1,4 @@
-import type { BotDifficulty, ClientMove, GameMode, RoomStatePayload, SessionIssuedPayload } from '@durak/shared';
+import { MAX_PLAYERS, type BotDifficulty, type ClientMove, type GameMode, type RoomStatePayload, type SessionIssuedPayload } from '@durak/shared';
 import { SessionTokens, type KeyValueStorage } from './sessionStore';
 import { Store, canAct, type ClientState } from './store';
 import type { Transport } from './transport';
@@ -22,10 +22,11 @@ export class GameClient {
   /** The room shown by the current route (`/room/:id`), or null on the home screen. */
   private routeRoomId: string | null = null;
   /**
-   * "Play vs computer": create a 2-seat room, then add a bot once our lobby arrives, then start
-   * once the bot is seated. Driven by `room:state`; any error or leaving cancels it.
+   * "Play vs computer": create a room with `bots + 1` seats, then add the bots one at a time (the
+   * next `room:addBot` goes out once the previous bot shows up in `room:state`), then start once
+   * they are all seated. Driven by `room:state`; any error or leaving cancels it.
    */
-  private vsComputer: { readonly difficulty: BotDifficulty; stage: 'create' | 'addBot' } | null = null;
+  private vsComputer: { readonly difficulty: BotDifficulty; readonly bots: number; requested: number } | null = null;
 
   constructor(options: GameClientOptions) {
     this.transport = options.transport;
@@ -100,10 +101,11 @@ export class GameClient {
     });
   }
 
-  /** One click to a game against a bot: room:create -> room:addBot -> game:start. */
-  playVsComputer(input: { nickname: string; mode: GameMode; difficulty: BotDifficulty }): void {
-    this.createRoom({ nickname: input.nickname, maxPlayers: 2, mode: input.mode });
-    this.vsComputer = { difficulty: input.difficulty, stage: 'create' };
+  /** One click to a game against `bots` bots (1-5): room:create -> room:addBot × bots -> game:start. */
+  playVsComputer(input: { nickname: string; mode: GameMode; difficulty: BotDifficulty; bots?: number }): void {
+    const bots = Math.min(MAX_PLAYERS - 1, Math.max(1, Math.trunc(input.bots ?? 1)));
+    this.createRoom({ nickname: input.nickname, maxPlayers: bots + 1, mode: input.mode });
+    this.vsComputer = { difficulty: input.difficulty, bots, requested: 0 };
   }
 
   addBot(difficulty: BotDifficulty): void {
@@ -184,12 +186,16 @@ export class GameClient {
       this.vsComputer = null;
       return;
     }
-    if (intent.stage === 'create' && room.members.length === 1) {
-      intent.stage = 'addBot';
-      this.transport.emit('room:addBot', { roomId: room.roomId, difficulty: intent.difficulty });
-    } else if (intent.stage === 'addBot' && room.members.length >= 2) {
+    const seated = room.members.filter((m) => m.isBot).length;
+    if (seated >= intent.bots) {
       this.vsComputer = null;
       this.transport.emit('game:start', { roomId: room.roomId });
+    } else if (seated === intent.requested && room.members.length < room.maxPlayers) {
+      // The last requested bot is seated (or none was requested yet): ask for the next one.
+      intent.requested += 1;
+      this.transport.emit('room:addBot', { roomId: room.roomId, difficulty: intent.difficulty });
+    } else if (room.members.length >= room.maxPlayers) {
+      this.vsComputer = null; // someone else took the free seat: leave it to the lobby
     }
   }
 
