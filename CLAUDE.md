@@ -7,10 +7,10 @@ A real-time, server-authoritative multiplayer web implementation of the Russian 
 - **Language:** Strict TypeScript across all workspaces (`strict: true`, no `any`).
 - **Monorepo:** `npm workspaces` (`packages/shared`, `packages/game-engine`, `apps/server`, `apps/web`).
 - **Backend:** Node.js, Fastify, Socket.io, Zod (payload validation).
-- **Databases:** Redis (active game state & session tokens with TTL), PostgreSQL + Prisma (completed match history & ELO ratings).
+- **Databases:** Redis (active game state & session tokens with TTL), PostgreSQL + Prisma 7 (device profiles, completed match history & ELO ratings; optional at runtime, see "Profiles, history and ratings").
 - **Frontend:** React 19, Vite, Tailwind CSS, Framer Motion (mobile-first responsive UI).
 - **Testing:** Vitest (unit & state-machine edge-case testing).
-- **Infrastructure:** Docker Compose for local Redis and PostgreSQL (`docker-compose.yml`); one production image (`Dockerfile`) and `docker-compose.prod.yml` (app + Redis). See "Production" below.
+- **Infrastructure:** Docker Compose for local Redis and PostgreSQL (`docker-compose.yml`); one production image (`Dockerfile`) and `docker-compose.prod.yml` (app + Redis + Postgres). See "Production" below.
 
 ## Core Architectural Invariants (NEVER VIOLATE)
 1. **Pure Game Engine (`packages/game-engine`):** Must have ZERO external I/O dependencies (no Socket.io, no Redis, no `Date.now()`, no `Math.random()` without an injectable PRNG seed). Every state transition must be a pure function: `applyMove(state, move) -> Result<GameState, GameError>`.
@@ -87,7 +87,7 @@ One rule decides what a departure does: `departureKind` in `packages/shared/src/
   - `StoredGame.forfeits: PlayerId[]` holds every human who left or timed out. The codec defaults it to `[]`, and it is sent in `game:over`.
   - A takeover also adds the leaver to `botAssisted`.
 - `session:resume` for a seat that is now `isBot`/`leftGame` deletes the session and returns `INVALID_SESSION`.
-- **Rating semantics (for 3d):** every id in `forfeits` is a loss, `durakId` is a loss, and `endReason` `abandoned`/`restarted` games are not rated.
+- **Rating semantics (Phase 10):** every id in `forfeits` is a loss, `durakId` is a loss, and `endReason` `abandoned`/`restarted` games are not rated.
 
 ### Restart vote (Phase 7)
 `services/RestartVoteService.ts` runs the vote; the pure rules are in `services/restartVote.ts`. Every mutation happens inside the room lock, and the timer runs on the injected `Scheduler`.
@@ -159,7 +159,7 @@ A fixed list, no free text: `REACTION_IDS` in `packages/shared/src/reactions.ts`
 
 **Data:**
 - `StoredGame.knowledge: Record<PlayerId, PublicKnowledge>` covers every seat, humans included, because of the AFK takeover. A missing entry is rebuilt with `initKnowledge`, which is sound.
-- `StoredGame.botAssisted: PlayerId[]` lists the humans a bot ever moved for. It is sent in `game:over`, for Phase 3d ratings.
+- `StoredGame.botAssisted: PlayerId[]` lists the humans a bot ever moved for. It is sent in `game:over` and marked in the match history (Phase 10).
 - The codec defaults (`{}`, `[]`, `botDifficulty: null`) let older records decode.
 
 **BotDriver** (`services/BotDriver.ts`). There is one entry per `(room, seat)`: `thinking` → `ready` → `applying`, or dropped.
@@ -190,7 +190,7 @@ A fixed list, no free text: `REACTION_IDS` in `packages/shared/src/reactions.ts`
 
 ## Web Client (`apps/web`)
 React 19 + Vite + Tailwind v4, Hebrew UI (`dir="rtl"`). `@durak/shared` and `@durak/game-engine` are aliased to their `src/` (no prebuild for dev, tests or `vite build`).
-- **Routes:** `/` (home: nickname, player count, mode → `room:create`), `/rules` (rules + interface guide) and `/room/:id` (join prompt / lobby / table / game-over overlay / room not found). Tiny router in `src/routing.ts` (History API).
+- **Routes:** `/` (home: nickname, player count, mode → `room:create`), `/rules` (rules + interface guide), `/profile`, `/profile/:id`, `/leaderboard` (Phase 10) and `/room/:id` (join prompt / lobby / table / game-over overlay / room not found). Tiny router in `src/routing.ts` (History API).
 - **`src/net/`:** `Transport` (socket.io-client wrapper; tests use `FakeTransport`), `GameClient` (the single connection: feeds server events into the store, owns session tokens, exposes actions), `Store` + pure `reducer` read via `useSyncExternalStore`. Every `game:move` carries `expectedVersion` = the last received `game:state` version. `STALE_STATE` errors are swallowed (the server re-sends the state). A `game:state` older than the held version of the same game (`gameId`) is ignored; a new `gameId` (restart vote) replaces the game. `room:state` with status `lobby` clears the game (rematch).
 - **Sessions:** tokens are kept in **`sessionStorage`** (`durak:sessions` = `{ roomId: token }`), NOT `localStorage`, so every tab is its own seat (two windows of one browser = two players). A reload keeps the seat: on every (re)connect, the room in the URL is resumed with `session:resume`. **Every new socket must resume, socket.io's automatic reconnects included:** the server binds sessions per socket, so the store's `bound` flag is cleared on every disconnect and set by `session:issued`. `session:resume` is the first event on a new socket. Moves and other session actions are dropped while `!canAct(state)` (disconnected or resuming), never buffered: socket.io would flush them before the resume, and they would hit `NOT_IN_ROOM`. Regression tests: `tests/reconnect.test.tsx`, and a real-server TCP-relay cut in `tests/sessions.test.ts`. A `NOT_IN_ROOM` while holding a session means the server lost this socket's binding: the client marks itself unbound and resumes, which resends room + game state. No toast is shown, and only one resume runs at a time. While `isReconnecting(state)` (in a room and `!canAct`, or a resume pending), the `ConnectionBanner` shows "מתחבר מחדש...", `<main>` is `inert`, and the table offers no moves. **Trade-off:** closing the tab forgets the token, so that seat is forfeited once `RECONNECT_GRACE_MS` expires. A rejected token (`INVALID_SESSION` / `ROOM_NOT_FOUND`) is deleted and the join prompt (or "room not found") is shown. A connection holds one session, so switching rooms reconnects the socket first.
 - **Bots (4b):**
@@ -304,6 +304,100 @@ How a run works:
 - The harness (`bench/match.ts`, also used by the tests) gives each seat only its view and its own `PublicKnowledge`, and validates every move against the real state.
 - The report shows durak rates with Wilson 95% CIs, draws and abandoned games (capped at 3000 moves), iterations/s and ms per move, plus a PASS/FAIL line for the 2-player target: IS-MCTS's CI must lie entirely below Greedy's.
 
+## Profiles, history and ratings (Phase 10)
+Postgres + Prisma hold device profiles, the match history and ELO ratings. **Postgres is optional at runtime:** with `DATABASE_URL` unset, or Postgres down, games run exactly as before; only the profile/rating features answer "unavailable". Nothing on the game path ever awaits Postgres.
+
+**Prisma 7.10.1, pinned exactly** (`prisma`, `@prisma/client`, `@prisma/adapter-pg`, plus `pg` 8.23.1). npm's `latest` tag for `prisma` was an 8.0 RC while `@prisma/client` was 7.10.1, so never `npm i prisma@latest`.
+- Prisma 7 setup:
+  - the `prisma-client` generator (ESM, `.js` imports) writes to `apps/server/src/generated/prisma` (gitignored). The server's `build`, `typecheck`, `test` and `dev` scripts run `prisma generate` first.
+  - `apps/server/prisma.config.ts` holds the URL (Prisma 7 reads neither `url` from the schema nor `.env`).
+  - The client connects through the pg driver adapter (no Rust query engine). The CLI's schema engine is fetched by `@prisma/engines`' postinstall (linux-musl in the image).
+- Schema: `apps/server/prisma/schema.prisma`. Migrations: `apps/server/prisma/migrations/`. A new migration: `npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --script` into a new folder (or `migrate dev --create-only` against a dev database).
+- `?schema=name` in `DATABASE_URL` selects a Postgres schema. Tests use one per suite. The pg adapter's `schema` option only qualifies generated queries, so `createPrismaClient` also sets `search_path` (raw SQL relies on it).
+
+**Lifecycle (`src/db/database.ts`):**
+- States `disabled` (no URL) | `down` | `ok`.
+- After `listen`, in the background: `prisma migrate deploy` (`DB_MIGRATE_ON_START`, default true; `src/db/migrate.ts` spawns the CLI), then a first query. On failure: one warning (password redacted), then a retry every 15 s.
+- `/health` adds `postgres: 'ok'|'down'|'disabled'` but **only Redis decides the 503**.
+- `onReady` (first start or a later retry) kicks the result queue and re-submits finished games.
+- Shutdown: sockets → HTTP → result queue flush (≤ 3 s) → Postgres → Redis.
+
+**Tables:**
+- `profiles`: `id`, `nickname`, `device_key_hash` (unique), `transfer_code_hash`/`transfer_expires_at`, `rating` (1000), and the counters `games`, `rated_games`, `wins`, `duraks`, `forfeits`.
+- `games`: `id` = gameId, `room_id`, `mode`, `player_count`, `end_reason`, `rated`, `bot_assisted`, `durak_profile_id`, `started_at`, `ended_at`.
+- `game_players`: `(game_id, seat)`, `profile_id` (null for bots and unprofiled humans), `nickname`, `is_bot`, `result` (`win|durak|draw|forfeit|unfinished`), `rating_before/after` (null when unrated), `forfeited`, `bot_assisted`.
+- A game is stored only if at least one profiled human played.
+
+**Identity (no email, no password, no personal data):**
+- A profile is a public random `profileId` (16 bytes base64url) plus a secret **device key** (32 bytes). Only the key's SHA-256 is stored.
+- The web keeps `{ v: 1, profileId, deviceKey, nickname }` in `localStorage['durak:profile']`. It goes in localStorage, unlike session tokens, because it is the person, shared by tabs.
+- **Transfer = move:**
+  - `POST /api/profile/transfer-code` issues an 8-symbol Crockford base32 code (`normalizeTransferCode`: case, dashes, O→0, I/L→1). It is valid 10 minutes, single use, stored hashed, and a new one replaces it.
+  - `POST /api/profile/claim` swaps in a new device key in one conditional `UPDATE`, so the old device's key stops working.
+- **Seats:**
+  - `room:create` / `room:join` take an optional `deviceKey`. It is resolved before the room lock and bounded to 500 ms (`profileLookupMs`). An unknown key, or a slow or dead store → an unprofiled seat, never an error.
+  - `RoomMember.profileId` is server-only (never in `room:state`).
+  - **One profile, one seat per room:** a second seat with the same profile (two tabs) is seated unprofiled.
+  - `dealGame` snapshots `StoredGame.profiles` (playerId → profileId, humans only). The history uses this snapshot. Codec defaults `null` / `{}`.
+
+**HTTP API** (`src/http/api.ts`, under `/api`, in `SERVER_PATHS`, so never the SPA):
+- Every body and param is parsed with the shared Zod schemas (`packages/shared/src/profile.ts`). Errors are `{ error: ApiErrorCode }`, with 503 `RATINGS_UNAVAILABLE` while Postgres is down.
+- The key travels only as `Authorization: Bearer`. Keys, codes and driver messages are never logged; logs carry only `errorName` and gameIds.
+- Endpoints:
+  - `POST /profile`
+  - `GET` and `PATCH /profile/me`
+  - `POST /profile/transfer-code`
+  - `POST /profile/claim`
+  - `GET /profile/:id`: public; stats, `rank` (leaderboard order, null before a rated game) and the last 20 games.
+  - `GET /leaderboard`: top 20 by rating, ties by id, only profiles with ≥ 1 rated game.
+- Per client IP (`buildServer({ apiLimits })`): 120 requests per minute, 20 profiles per hour, 10 claims per 10 minutes (every guess counts).
+- CORS: listed `CORS_ORIGINS` only.
+
+**Ratings** (pure: `src/ratings/elo.ts` and `gameResult.ts`):
+- Per seat: `forfeit` if in `forfeits` (even if also the durak), else `durak`, else `unfinished` (abandoned/restarted), else `draw` (no durak), else `win`.
+- Rated iff `endReason` is `normal`/`forfeit` and **≥ 2 profiled humans** played. Bots are never rated. Unprofiled humans are stored without a rating.
+- ELO: start 1000, K = 32. Losers are the durak and the forfeiters. Every (loser, non-loser) pair of rated humans is one match, using **K/(n−1)** for n rated humans and the expected scores from the pre-game ratings. Each player's sum is rounded once. Loser–loser and winner–winner pairs are not matched.
+  - With no human loser (a draw, or a bot was the durak) everyone gets 0, but the game is still rated.
+  - `eloDeltas` throws if a profile appears twice.
+- A seat a bot took over (AFK or leave) stays that human's, rated, with `bot_assisted` set.
+
+**Write path:**
+- `GameResultRecorder` is a `GameChangeListener` (after BotDriver and ReactionService). On the version that turns a game finished (a move, a timeout/abandon, a forfeit, the bots-only fast-forward), it builds `buildResultInput` synchronously inside the lock and enqueues it. A passed restart vote bypasses `commit`, so `RestartVoteService.onRestarted` reports it (stored as `restarted`, unrated). Announcements (`prev === null`) never record.
+- `PrismaResultStore.recordGame` runs as **one interactive transaction**:
+  1. Lock the participants' profiles: `SELECT … ORDER BY id FOR UPDATE`.
+  2. Insert the game `ON CONFLICT DO NOTHING` on its id. If 0 rows were inserted, return `duplicate` and write nothing else. This makes the write idempotent by gameId, so retries never rate twice.
+  3. Insert every seat.
+  4. Update ratings and counters.
+  
+  A profile that no longer exists is stored as an unprofiled seat.
+- `ResultQueue`: one write at a time, at most 1000 pending. Outage errors are retried with backoff (2 s doubling to a 5-minute cap) for up to 1 h. Other errors are dropped after 3 attempts, so they never block the queue.
+- **Known limit:** the queue lives in memory, and a finished game stays in Redis only 30 min (rematch deletes it sooner). Re-submission on startup or when Postgres comes back covers a crash or a short outage, but a long Postgres outage plus a server restart can lose those results. A re-submitted game gets the re-submission time as `ended_at`. `tests/results.recorder.test.ts` pins this.
+
+**Client IPs** (`transport/clientAddress.ts`; one rule for sockets, `/api` and Fastify):
+- Evidence: with only a hop count, any peer that can reach the port can forge `X-Forwarded-For`.
+- `TRUSTED_PROXIES` (CIDRs/IPs): forwarded headers count only when the socket peer is in the list; any other peer is the client. Unset = any peer (the old behaviour, fine on Fly).
+- `TRUST_CF_CONNECTING_IP` (opt-in; `npm run tunnel` sets it) prefers Cloudflare's `CF-Connecting-IP` from a trusted peer. It is never on by default, because behind another proxy a client could forge it.
+- The prod compose uses a fixed subnet `172.30.80.0/24` with `TRUSTED_PROXIES` set to it. Verified with `prod:up`: a local socket's peer is the gateway `172.30.80.1`.
+
+**Web** (`src/profile/`, `src/screens/profile/`):
+- `ProfileStore` (localStorage, parsed field by field), `ProfileApi` (fetch on `serverUrl()`, never throws: `ApiResult` with the API code or `NETWORK`), and `ProfilesProvider` (`App profiles={…}` injects it).
+- Home and the join prompt call `profiles.prepare()` on mount. In the background it creates a profile with the placeholder nickname `t.profile.defaultNickname`, or replaces a key that was revoked by a transfer elsewhere.
+- A click uses `profiles.seatKey(nickname)`: synchronous, so play never waits on the network; it renames in the background. Home pre-fills the nickname.
+- Routes: `/profile` (mine: stats, recent games, transfer code with a clock-skew-free countdown, "I have a code"), `/profile/:id` (public) and `/leaderboard` (my row `aria-current`).
+  - They are full pages like `/rules`, linked from Home (👤 next to the gear, and a leaderboard link). Never from inside a room.
+  - Strings live in `he.ts` (`profile`, `leaderboard`, `apiErrors`).
+- Unit tests block every `/api` fetch in `tests/setup.ts`. Browser tests stub `/api` with `stubProfileApi` and `seedProfile` (`tests/browser/harness.ts`): the hit test plus the phone audits at all 7 sizes.
+
+**Tests:**
+- Postgres suites need a reachable Postgres at `DATABASE_URL` (default `postgresql://durak:durak@127.0.0.1:5432/durak`), probed by `tests/helpers/postgres.ts`; without one they are skipped with a warning. `freshDatabase()` migrates a random schema with the real CLI and drops it afterwards.
+- `results.postgres.test.ts`:
+  - all-or-nothing writes;
+  - a duplicate changes nothing;
+  - an injected mid-transaction failure leaves no rows;
+  - a deterministic overlap proves the row locks: it fails without `FOR UPDATE`.
+- `socket.outage.test.ts`: a full game with Postgres unreachable.
+- `socket.ratings.postgres.test.ts`: end to end over HTTP, socket and Postgres.
+
 ## Production (Phase 6 prep)
 **Image** (`Dockerfile`, node:24-alpine, multi-stage):
 - The build stage builds shared → game-engine → server → web.
@@ -313,12 +407,14 @@ How a run works:
 **One process serves everything** on one origin: Socket.io, `/health` and the web client (`http/webApp.ts`, `@fastify/static`).
 - `WEB_DIST_DIR`, or auto-detected `apps/web/dist`. The client isn't served when it isn't built.
 - `/assets/*` are immutable-cached; `index.html` is `no-cache`.
-- Every other GET falls back to `index.html`, except `/health`, `/socket.io`, missing assets and non-GET requests (JSON 404).
+- Every other GET falls back to `index.html`, except `/health`, `/socket.io`, `/api`, missing assets and non-GET requests (JSON 404).
 
 **Config** (`config.ts`; the effective values are logged at startup as `settings`):
 - `NODE_ENV=production` makes `CORS_ORIGINS` default to none (same-origin only). Otherwise it is `http://localhost:5173`. `*` is refused.
 - The handshake's `allowRequest` accepts: no Origin, the server's own host, or a listed origin.
-- `TRUST_PROXY`: `false` | `true` | a hop count (1 behind Fly/Render/Railway). It is used by Fastify and by `clientIp()` (`transport/clientAddress.ts`). X-Forwarded-For is ignored unless trusted.
+- `TRUST_PROXY`: `false` | `true` | a hop count (1 behind Fly/Render/Railway). It is used by Fastify and by `resolveClientIp()` (`transport/clientAddress.ts`). X-Forwarded-For is ignored unless trusted.
+- `TRUSTED_PROXIES` (CIDRs) limits that trust to proxy peers; `TRUST_CF_CONNECTING_IP` prefers Cloudflare's header (see "Client IPs" under Phase 10).
+- `DATABASE_URL` (optional) and `DB_MIGRATE_ON_START` (default true): Postgres for profiles and ratings.
 
 **Abuse limits** (`transport/rateLimit.ts`, in-process, `DEFAULT_LIMITS`, env in parentheses):
 - Per-socket token bucket on every incoming event: burst 20 (`RATE_LIMIT_BURST`), 10/s (`RATE_LIMIT_PER_SEC`). A dropped event never reaches a handler. The client gets at most one `RATE_LIMITED` per second. 100 drops within 10 s (`RATE_LIMIT_DISCONNECT_AFTER`) disconnects the socket.
@@ -349,7 +445,7 @@ How a run works:
 - **Long synchronous tests (game-engine):** Vitest moves between tests with microtasks only, so a worker running back-to-back synchronous tests never reads the main process's RPC replies; once a file's synchronous work passes 60 s, birpc's timer fires (`Timeout calling "onTaskUpdate"`, exit 1) however idle the machine. `tests/setup/eventLoop.ts` (a `setupFiles` entry) yields one macrotask before every test and fails any single test that blocks for more than 20 s. Keep heavy property tests chunked (e.g. `tests/selfPlay.ts`: 10 games per test, run by `fuzz.podkidnoy.test.ts` / `fuzz.perevodnoy.test.ts`).
 - Run engine tests: `npm test --workspace=packages/game-engine` (includes the bot tests in `tests/bot/`)
 - Run the bot benchmark: `npm run bench --workspace=packages/game-engine` (`-- --full`, `-- --realtime`; see "Bot" above)
-- Run server tests: `npm test --workspace=apps/server` (Redis tests need `docker-compose up -d` or any Redis at `REDIS_URL`; without one they are skipped with a warning)
+- Run server tests: `npm test --workspace=apps/server` (Redis tests need `docker-compose up -d` or any Redis at `REDIS_URL`; Postgres tests need a Postgres at `DATABASE_URL`, default `postgresql://durak:durak@127.0.0.1:5432/durak`; without them those suites are skipped with a warning. The dev compose volume keeps the password it was first created with: if it differs, point `DATABASE_URL` at a throwaway `postgres:16-alpine`.)
 - Run server + web together: `npm run dev` (builds `shared` + `game-engine` for the server's `tsx`, then runs both with `concurrently`; open http://localhost:5173)
 - Run the server in dev mode: `npm run dev --workspace=apps/server` (env: `PORT`, `HOST`, `CORS_ORIGINS`, `TRUST_PROXY`, `BOT_WORKERS`, `BOT_JOB_TIMEOUT_MS`, the limits above, `WEB_DIST_DIR`; see `.env.example`; bot workers need a built `game-engine`)
 - Run the web client alone: `npm run dev --workspace=apps/web`; tests: `npm test --workspace=apps/web` (Vitest + jsdom + Testing Library; `tests/sessions.test.ts` starts a real in-process server)
@@ -371,7 +467,7 @@ How a run works:
     - **Data model:** `StoredGame.turnDeadline` (epoch ms or null), `timeoutStreak`, `endReason` (`'normal' | 'forfeit' | 'abandoned' | 'restarted'`). `RoomMember.afk` (public, in `room:state`), plus server-only `consecutiveTimeouts` and `graceDeadline`. `game:state` carries `turnDeadline` and `serverTime`, so clients show a countdown free of clock skew; `game:over` carries `endReason`. Deadlines are persisted, so they survive restarts. The new codec fields have Zod defaults, so 3b records still decode.
     - **Turn timer** (one per game): armed on start and after every successful change (human move, timeout, or a resume that extends the deadline). On expiry, inside the room lock: a version mismatch → no-op (stale); woken early → re-arm; otherwise apply the timeout step, `version + 1`, save room + game atomically, broadcast, arm the next deadline. Finished or forfeited → cleared.
     - **AFK:** `consecutiveTimeouts` is incremented for each player whose timeout move was applied; at 2 → `afk = true`. A human move or `session:resume` resets both. A resume by an awaited player extends a short AFK deadline to a full turn.
-    - **Abandon guard:** `StoredGame.timeoutStreak` counts consecutive expiries with no human move in between (any human move resets it). When it reaches `3 × players still in` (`services/timeoutPolicy.ts`), the game is abandoned: `durak = null`, `endReason = 'abandoned'`. Abandoned games must be excluded from ELO (3d). A real draw is `durak = null` with `endReason = 'normal'`.
+    - **Abandon guard:** `StoredGame.timeoutStreak` counts consecutive expiries with no human move in between (any human move resets it). When it reaches `3 × players still in` (`services/timeoutPolicy.ts`), the game is abandoned: `durak = null`, `endReason = 'abandoned'`. Abandoned games are excluded from ELO (Phase 10). A real draw is `durak = null` with `endReason = 'normal'`.
     - **Reconnection grace:** a seated player who is still in, in a `playing` room, whose last socket disconnects gets `graceDeadline = now + RECONNECT_GRACE_MS`. Resume cancels it. On expiry (still offline, same deadline) the departure rule applies (`departSeat`, "Leaving a game"): in a 2-player game, or with no other human still in → `resign` → `endReason = 'forfeit'`, durak = the leaver; otherwise a medium bot takes over the seat and the game continues. Either way the player is added to `forfeits`. No grace in the lobby, after the game, or for a player who is already out. Disconnects caused by server shutdown never start a grace.
     - **Startup order:** ghost reset (everyone offline) → `buildServer` → `timers.rearmAll()` (re-arms every persisted deadline; past ones fire immediately; offline players without a grace get one) → `listen`.
     - **Testing:** `Clock` and `Scheduler` are injected (`services/scheduling.ts`). Tests use `tests/helpers/fakeTime.ts` (`advanceBy` / `runDue`), never real sleeps.
@@ -381,6 +477,7 @@ How a run works:
 - **Phase 5: Mobile-First Web Client.** Build `apps/web` with clean card animations, responsive table layout for 2-6 players, and room invite links.
   - **5a (done):** playable client: home, invite links, lobby, table with legal-move highlighting, countdown, game over + rematch, spectators. See "Web Client" above.
   - **5b:** animations and visual polish.
+- **Phase 10 (done): profiles, history and ratings.** Device profiles with a transfer code, Postgres + Prisma match history written in one idempotent transaction, pairwise ELO (K/(n−1)), the profile and leaderboard pages, trusted-proxy client IPs. See "Profiles, history and ratings".
 - **Phase 9 (done): phones.** Phone/short-landscape layouts, 44 px targets, safe areas, the PWA, wake lock, vibration and instant resync on return. See "Phones" under "Web Client".
 - **Phase 7 (done): player-feedback polish.** Leaving mid-game (forfeit or bot takeover), the restart vote, settings with synthesized sound and music, and the rules / interface guide / first-game tips. See "Leaving a game", "Restart vote" and "Web Client".
 - **Phase 6: Deployment.**

@@ -124,11 +124,12 @@ Requirements: Node.js 20+ (24 recommended), Docker (for Redis).
 
 ```bash
 npm install
-docker compose up -d          # Redis (and Postgres) for local development
+docker compose up -d          # Redis and Postgres for local development
 npm run dev                   # server on :3000 + web on http://localhost:5173
 ```
 
 Without Redis the server falls back to in-memory storage (state is lost on restart).
+Without Postgres (`DATABASE_URL`) the game works normally; profiles, match history and the leaderboard are off.
 
 Tests, typecheck and the benchmark:
 

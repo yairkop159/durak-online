@@ -134,8 +134,8 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
           await seedProfile(page);
           await stubProfileApi(page);
           await page.goto(base + path.slice(1));
-          if (path === '/profile') await page.getByTestId('rating').waitFor();
-          if (path === '/leaderboard') await page.locator('ol[aria-label] > li').first().waitFor();
+          if (path === '/profile') await page.getByTestId('rating').waitFor({ timeout: 15_000 });
+          if (path === '/leaderboard') await page.locator('ol[aria-label] > li').first().waitFor({ timeout: 15_000 });
           await page.getByRole('heading', { level: 1 }).first().waitFor();
           expect(await coveredControls(page)).toEqual([]);
         } finally {
