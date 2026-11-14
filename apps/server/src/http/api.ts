@@ -10,7 +10,7 @@ import {
 } from '@durak/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
-import { RatingsUnavailableError, type ProfileStore } from '../ratings/ports.js';
+import { errorName, isUnavailable, type ProfileStore } from '../ratings/ports.js';
 import { SlidingWindowLimiter } from '../transport/rateLimit.js';
 
 // Phase 10: the profile HTTP API under /api (request/response; Socket.io here has no acks).
@@ -71,16 +71,6 @@ export class ApiError extends Error {
 function sendError(reply: FastifyReply, code: ApiErrorCode): FastifyReply {
   const body: ApiErrorBody = { error: code };
   return reply.code(STATUS[code]).header('cache-control', 'no-store').send(body);
-}
-
-/** Errors from the store that mean "the database is not there" rather than a bug. */
-export function isUnavailable(error: unknown): boolean {
-  if (error instanceof RatingsUnavailableError) return true;
-  if (typeof error !== 'object' || error === null) return false;
-  const { name, code, message } = error as { name?: unknown; code?: unknown; message?: unknown };
-  if (typeof name === 'string' && /Initialization|DriverAdapter/.test(name)) return true;
-  if (typeof code === 'string' && /^(P1\d{3}|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|57P01)$/.test(code)) return true;
-  return typeof message === 'string' && /ECONNREFUSED|ETIMEDOUT|Connection terminated|connect/.test(message);
 }
 
 function parse<S extends z.ZodTypeAny>(schema: S, value: unknown): z.output<S> {
@@ -189,10 +179,4 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     },
     { prefix: '/api' },
   );
-}
-
-function errorName(error: unknown): string {
-  if (typeof error !== 'object' || error === null) return typeof error;
-  const { name, code } = error as { name?: unknown; code?: unknown };
-  return [typeof name === 'string' ? name : 'Error', typeof code === 'string' ? code : ''].filter(Boolean).join(' ');
 }

@@ -1,4 +1,5 @@
 import type { MyProfile, ProfileCredentials } from '@durak/shared';
+import type { GameResultInput } from './gameResult.js';
 
 /** Postgres is not configured or not reachable: profiles and ratings are off (games still run). */
 export class RatingsUnavailableError extends Error {
@@ -6,6 +7,36 @@ export class RatingsUnavailableError extends Error {
     super(message);
     this.name = 'RatingsUnavailableError';
   }
+}
+
+/**
+ * Errors that mean "the database is not there" (down, unreachable, not configured) rather than a
+ * bug: retried by the result queue, answered 503 by the API.
+ */
+export function isUnavailable(error: unknown): boolean {
+  if (error instanceof RatingsUnavailableError) return true;
+  if (typeof error !== 'object' || error === null) return false;
+  const { name, code, message } = error as { name?: unknown; code?: unknown; message?: unknown };
+  if (typeof name === 'string' && /Initialization|DriverAdapter/.test(name)) return true;
+  if (typeof code === 'string' && /^(P1\d{3}|P2024|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|57P01)$/.test(code)) return true;
+  return typeof message === 'string' && /ECONNREFUSED|ECONNRESET|ETIMEDOUT|Connection terminated|connect|timed out/i.test(message);
+}
+
+/** A short, value-free description of an error for logs (driver messages can carry query values). */
+export function errorName(error: unknown): string {
+  if (typeof error !== 'object' || error === null) return typeof error;
+  const { name, code } = error as { name?: unknown; code?: unknown };
+  return [typeof name === 'string' ? name : 'Error', typeof code === 'string' ? code : ''].filter(Boolean).join(' ');
+}
+
+export type RecordOutcome = 'recorded' | 'duplicate';
+
+/**
+ * The match history (Phase 10). `recordGame` writes a finished game, its seats and every rating
+ * change in ONE transaction, idempotent by gameId: recording the same game again changes nothing.
+ */
+export interface ResultStore {
+  recordGame(input: GameResultInput): Promise<RecordOutcome>;
 }
 
 export interface IssuedTransferCode {

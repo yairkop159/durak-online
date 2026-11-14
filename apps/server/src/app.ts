@@ -6,8 +6,11 @@ import type { Database, DbStatus } from './db/database.js';
 import { WorkerPoolRunner } from './bot/WorkerPoolRunner.js';
 import { DEFAULT_API_LIMITS, registerApi, type ApiLimits } from './http/api.js';
 import { registerWebApp } from './http/webApp.js';
-import type { ProfileStore } from './ratings/ports.js';
+import { GameResultRecorder } from './ratings/GameResultRecorder.js';
+import type { ProfileStore, ResultStore } from './ratings/ports.js';
 import { PrismaProfileStore } from './ratings/PrismaProfileStore.js';
+import { PrismaResultStore } from './ratings/PrismaResultStore.js';
+import { ResultQueue, type ResultQueueSettings } from './ratings/ResultQueue.js';
 import { DEFAULT_CORS_ORIGINS } from './config.js';
 import type { Repositories } from './repositories/interfaces.js';
 import { createInMemoryRepositories } from './repositories/inMemory/index.js';
@@ -99,6 +102,9 @@ export interface BuildServerOptions {
   readonly apiLimits?: Partial<ApiLimits>;
   /** How long room:create/join waits for a device key lookup before seating unprofiled (default 500 ms). */
   readonly profileLookupMs?: number;
+  /** Match history (default: Postgres through `database`; tests inject their own). */
+  readonly results?: ResultStore;
+  readonly resultQueueSettings?: Partial<ResultQueueSettings>;
 }
 
 export interface DurakServer {
@@ -113,6 +119,8 @@ export interface DurakServer {
   readonly botRunner: BotRunner;
   readonly reactions: ReactionService;
   readonly profiles: ProfileStore;
+  readonly recorder: GameResultRecorder;
+  readonly resultQueue: ResultQueue;
 }
 
 export function buildServer(options: BuildServerOptions = {}): DurakServer {
@@ -176,6 +184,22 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     log: app.log,
   });
 
+  // Match history (Phase 10): queued off the game path, written to Postgres when it is there.
+  const database = options.database ?? null;
+  const results = options.results ?? new PrismaResultStore(() => database?.client() ?? null);
+  const resultQueue = new ResultQueue({
+    store: results,
+    clock,
+    scheduler,
+    log: app.log,
+    ...(options.resultQueueSettings ? { settings: options.resultQueueSettings } : {}),
+  });
+  const recorder = new GameResultRecorder({
+    queue: resultQueue,
+    clock,
+    enabled: () => options.results !== undefined || (database?.configured ?? false),
+  });
+
   // Wiring order: the committer reports to the BotDriver, which applies moves through GameService,
   // which commits through the committer — so the listeners are bound late.
   let bots: BotDriver | null = null;
@@ -187,7 +211,12 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     ...(options.reactionRandom ? { random: options.reactionRandom } : {}),
     ...(options.reactionSettings ? { settings: options.reactionSettings } : {}),
   });
-  const committer = new GameCommitter({ repos, notifier, timers, listeners: () => (bots ? [bots, reactions] : [reactions]) });
+  const committer = new GameCommitter({
+    repos,
+    notifier,
+    timers,
+    listeners: () => (bots ? [bots, reactions, recorder] : [reactions, recorder]),
+  });
   timers.attachCommitter(committer);
 
   const now = () => clock.now();
@@ -202,6 +231,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     committer,
     seedSource,
     log: app.log,
+    onRestarted: (room, game) => recorder.recordEnded(room, game),
   });
   const rooms = new RoomService({ repos, mutex, notifier, seedSource, now, timers, committer, votes, maxRooms: limits.maxRooms });
   const games = new GameService({ repos, mutex, notifier, committer });
@@ -230,7 +260,6 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   });
   bots = driver;
 
-  const database = options.database ?? null;
   const profiles = options.profiles ?? new PrismaProfileStore(() => database?.client() ?? null);
   const profileLookupMs = options.profileLookupMs ?? 500;
   /** Seat → profile, bounded: a slow or dead Postgres only means an unrated seat. */
@@ -300,11 +329,23 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     io.disconnectSockets(true);
     io.engine.close();
   });
+  // Postgres (re)connected: write what waited, and re-submit finished games still in the game
+  // store (a crash between game:over and the write). Idempotent by gameId.
+  database?.onReady(() => {
+    resultQueue.kick();
+    recorder
+      .resubmitFinished(repos)
+      .then((count) => app.log.info({ count }, 'finished games re-submitted to the match history'))
+      .catch((error: unknown) => app.log.warn({ err: error instanceof Error ? error.name : 'Error' }, 're-submission failed'));
+  });
+
   const onClose = options.onClose;
   app.addHook('onClose', async () => {
+    await resultQueue.flush(3_000);
+    resultQueue.dispose();
     if (database) await database.close();
     if (onClose) await onClose();
   });
 
-  return { app, io, repos, rooms, games, timers, votes, bots: driver, botRunner, reactions, profiles };
+  return { app, io, repos, rooms, games, timers, votes, bots: driver, botRunner, reactions, profiles, recorder, resultQueue };
 }

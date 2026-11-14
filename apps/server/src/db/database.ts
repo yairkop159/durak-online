@@ -57,8 +57,17 @@ export function parseDatabaseUrl(url: string): { connectionString: string; schem
 
 export function createPrismaClient(url: string): PrismaClient {
   const { connectionString, schema } = parseDatabaseUrl(url);
+  if (schema !== undefined && !/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(schema)) throw new Error('Invalid ?schema= in DATABASE_URL');
   const adapter = new PrismaPg(
-    { connectionString, connectionTimeoutMillis: 3_000, idleTimeoutMillis: 300_000, max: 5 },
+    {
+      connectionString,
+      connectionTimeoutMillis: 3_000,
+      idleTimeoutMillis: 300_000,
+      max: 5,
+      // The adapter's `schema` option only qualifies generated queries; raw SQL (the row locks in
+      // PrismaResultStore) resolves tables through search_path, so set both.
+      ...(schema !== undefined ? { options: `-c search_path=${schema}` } : {}),
+    },
     schema !== undefined ? { schema } : undefined,
   );
   return new PrismaClient({ adapter });
