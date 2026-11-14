@@ -2,11 +2,12 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
+import { pwaPlugin } from './build/pwa';
 
 const source = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), pwaPlugin()],
   resolve: {
     // Workspace packages from source: no prebuild needed for dev, tests or the production bundle.
     alias: {

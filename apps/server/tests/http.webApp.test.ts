@@ -16,6 +16,12 @@ beforeAll(async () => {
   writeFileSync(join(dir, 'index.html'), INDEX);
   writeFileSync(join(dir, 'assets', 'index-abc123.js'), 'console.log(1)');
   writeFileSync(join(dir, 'favicon.svg'), '<svg/>');
+  // The PWA files the web build emits at the root (apps/web/build/pwa.ts).
+  mkdirSync(join(dir, 'icons'));
+  writeFileSync(join(dir, 'manifest.webmanifest'), '{"name":"durak"}');
+  writeFileSync(join(dir, 'sw.js'), 'self.addEventListener("fetch", () => {});');
+  writeFileSync(join(dir, 'offline.html'), '<!doctype html><title>offline</title>');
+  writeFileSync(join(dir, 'icons', 'icon-192.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   server = buildServer({ webDistDir: dir, botRunner: new InProcessRunner() });
   await server.app.ready();
 });
@@ -50,6 +56,23 @@ describe('serving the web client', () => {
     const icon = await server.app.inject({ method: 'GET', url: '/favicon.svg' });
     expect(icon.statusCode).toBe(200);
     expect(icon.headers['cache-control']).toBe('no-cache');
+  });
+
+  it('serves the PWA files as themselves (right type, revalidated), not the SPA fallback', async () => {
+    const expected: Record<string, RegExp> = {
+      '/manifest.webmanifest': /^application\/manifest\+json/,
+      '/sw.js': /javascript/,
+      '/offline.html': /text\/html/,
+      '/icons/icon-192.png': /^image\/png/,
+    };
+    for (const [url, type] of Object.entries(expected)) {
+      const res = await server.app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.headers['content-type'], url).toMatch(type);
+      // A new deploy's service worker / manifest must be picked up: never long-cached.
+      expect(res.headers['cache-control'], url).toBe('no-cache');
+      expect(res.body, url).not.toBe(INDEX);
+    }
   });
 
   it('a missing asset is a real 404, not index.html', async () => {
