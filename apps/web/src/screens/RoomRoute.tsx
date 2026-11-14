@@ -2,9 +2,16 @@ import { Button, Panel } from '../components/ui';
 import { t } from '../i18n';
 import { useClient, useClientState } from '../net/react';
 import { navigate } from '../routing';
+import type { ClientState } from '../net/store';
 import { JoinPrompt } from './JoinPrompt';
 import { LobbyScreen } from './LobbyScreen';
 import { TableScreen } from './table/TableScreen';
+
+/** True when `/room/:roomId` shows the game table (the same choice RoomRoute makes). */
+export function showsTable(state: ClientState, roomId: string): boolean {
+  const { session, room, game, roomNotFound } = state;
+  return !roomNotFound && session?.roomId === roomId && room?.roomId === roomId && room.status !== 'lobby' && game?.roomId === roomId;
+}
 
 /** `/room/:id`: picks the screen from the session, the resume status and the room status. */
 export function RoomRoute({ roomId }: { roomId: string }) {

@@ -183,7 +183,8 @@ export function TableScreen() {
   return (
     <AnchorProvider registry={registry}>
       <LayoutGroup>
-        <div className="relative mx-auto flex w-full max-w-3xl flex-1 flex-col gap-3 px-2 pt-2 sm:px-4 sm:pt-4">
+        {/* Exactly one screen tall (App sets h-dvh): the table takes what the other rows leave. */}
+        <div className="relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-2 px-2 pt-2 sm:gap-3 sm:px-4 sm:pt-3 [@media(max-height:820px)]:gap-2">
           <TopBar
             view={view}
             members={members}
@@ -196,7 +197,7 @@ export function TableScreen() {
             }
           />
           <RestartVotePanel viewerId={view.viewerId} />
-          <ul className="flex flex-wrap justify-center gap-1.5 sm:gap-2.5" dir="ltr" aria-label="opponents">
+          <ul className="flex shrink-0 flex-wrap justify-center gap-1.5 sm:gap-2.5" dir="ltr" aria-label="opponents">
             {opponentsInOrder(view).map((p) => (
               <OpponentSeat
                 key={p.id}
@@ -213,7 +214,7 @@ export function TableScreen() {
           </ul>
 
           <section
-            className="mx-auto flex w-full items-center gap-2 rounded-table bg-gradient-to-b from-surface-2 to-surface p-3 shadow-table ring-1 ring-line sm:min-h-[clamp(12rem,30vh,30rem)] sm:flex-1 sm:gap-4 sm:p-6"
+            className="mx-auto flex min-h-0 w-full flex-1 items-center gap-2 rounded-table bg-gradient-to-b from-surface-2 to-surface p-2 shadow-table ring-1 ring-line sm:gap-4 sm:p-4"
             dir="ltr"
           >
             <DeckPile view={view} />
@@ -239,26 +240,28 @@ export function TableScreen() {
           )}
 
           <div
-            className={`mt-auto flex flex-col items-center gap-2 pb-[env(safe-area-inset-bottom)] transition duration-500 ${
+            className={`flex shrink-0 flex-col items-center gap-1.5 pb-[env(safe-area-inset-bottom)] sm:gap-2 transition duration-500 ${
               revealing ? 'translate-y-24 opacity-0' : ''
             }`}
           >
-            {/* Its own row ABOVE the hand: the buttons can never cover (or steal clicks from) a card. */}
             {tip && <TipBanner tip={tip} onDismiss={() => settingsStore.markTipSeen(tip)} />}
-            {interactive && <ActionBar moves={moves} onMove={send} />}
             {!spectator && me && (
               <>
-                <MySeat
-                  player={me}
-                  name={nameOf(me.id)}
-                  view={view}
-                  member={myMember}
-                  ring={ringOf(me.id)}
-                  reaction={reactions.byPlayer.get(me.id) ?? null}
-                  effect={effectOf(me.id)}
-                  reduced={reduced}
-                  extra={canReact && <ReactionButton disabled={reconnecting} />}
-                />
+                {/* My seat and Take / Pass share the row ABOVE the hand: the buttons can never cover (or steal clicks from) a card. */}
+                <div className="flex w-full max-w-xl items-center justify-between gap-2 px-1">
+                  <MySeat
+                    player={me}
+                    name={nameOf(me.id)}
+                    view={view}
+                    member={myMember}
+                    ring={ringOf(me.id)}
+                    reaction={reactions.byPlayer.get(me.id) ?? null}
+                    effect={effectOf(me.id)}
+                    reduced={reduced}
+                    extra={canReact && <ReactionButton disabled={reconnecting} />}
+                  />
+                  {interactive && <ActionBar moves={moves} onMove={send} />}
+                </div>
                 <HandFan
                   hand={hand}
                   anim={anim}

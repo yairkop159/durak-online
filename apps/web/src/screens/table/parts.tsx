@@ -27,27 +27,27 @@ export function PlayerBadges({ player, view, member }: { player: PublicPlayer; v
 }
 
 /**
- * Take / Pass: big solid buttons in their own row above the hand (never overlapping it).
- * The row keeps its height when there is nothing to press, so the hand never jumps.
+ * Take / Pass: big solid buttons in the row above the hand, beside my seat (never overlapping a card).
+ * The slot keeps its height when there is nothing to press, so the hand never jumps.
  */
 export function ActionBar({ moves, onMove }: { moves: readonly ClientMove[]; onMove: (move: ClientMove) => void }) {
   const take = moves.find((m) => m.type === 'take');
   const pass = moves.find((m) => m.type === 'pass');
-  if (!take && !pass) return <div aria-hidden="true" data-testid="action-row" className="min-h-12 w-full" />;
+  if (!take && !pass) return <div aria-hidden="true" data-testid="action-row" className="min-h-12" />;
   return (
     <div
       role="toolbar"
       aria-label={t.table.actions}
       data-testid="action-row"
-      className="relative z-20 flex min-h-12 w-full justify-center gap-3 px-4"
+      className="relative z-20 flex min-h-12 shrink-0 justify-center gap-2"
     >
       {take && (
-        <Button variant="danger" size="lg" className="min-w-36 flex-1 sm:flex-none" onClick={() => onMove(take)}>
+        <Button variant="danger" size="lg" className="min-w-32 sm:min-w-36" onClick={() => onMove(take)}>
           {t.table.take}
         </Button>
       )}
       {pass && (
-        <Button variant="primary" size="lg" className="min-w-36 flex-1 sm:flex-none" onClick={() => onMove(pass)}>
+        <Button variant="primary" size="lg" className="min-w-32 sm:min-w-36" onClick={() => onMove(pass)}>
           {t.table.pass}
         </Button>
       )}

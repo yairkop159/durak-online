@@ -1,11 +1,11 @@
 import { cardId, type Card, type ClientMove } from '@durak/shared';
-import { useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { anchorKey, useAnchorRegistry } from '../../anim/anchors';
 import { revealStyle, type BoardAnimation } from '../../anim/useBoardAnimation';
 import { PlayingCard, type CardState } from '../../components/cards/PlayingCard';
 import { isPlayable, type Selection } from '../../game/selection';
 
-/** Fan geometry: rotation and drop per card; flatter (and scrollable) as the hand grows. */
+/** Fan geometry: rotation and drop per card; flatter as the hand grows. */
 export function fanLayout(count: number): { rotate: number[]; drop: number[]; overlap: number } {
   const mid = (count - 1) / 2;
   const spread = count <= 1 ? 0 : count > 10 ? 0 : Math.min(5, 26 / (count - 1));
@@ -16,6 +16,48 @@ export function fanLayout(count: number): { rotate: number[]; drop: number[]; ov
     drop: Array.from({ length: count }, (_, i) => (i - mid) ** 2 * curve),
     overlap,
   };
+}
+
+/** The narrowest slice of a covered card that stays visible (its index and a click target). */
+export const MIN_VISIBLE_SLICE = 16;
+
+/**
+ * The overlap that fits `count` cards of width `cardW` into `availW`: never less than the fan's
+ * own overlap, more when the hand is too wide (the hand compresses instead of growing).
+ */
+export function fitOverlap(count: number, cardW: number, availW: number, base: number): number {
+  if (count <= 1 || cardW <= 0 || availW <= 0) return base;
+  const needed = Math.ceil((count * cardW - availW) / (count - 1));
+  return Math.max(base, Math.min(needed, cardW - MIN_VISIBLE_SLICE));
+}
+
+/** The width the hand may use and the width of one card, kept up to date. */
+function useHandRoom(count: number): [(el: HTMLElement | null) => void, { avail: number; cardW: number } | null] {
+  const [room, setRoom] = useState<{ avail: number; cardW: number } | null>(null);
+  const observer = useRef<ResizeObserver | null>(null);
+  const remeasure = useRef<() => void>(() => {});
+  const ref = useCallback((el: HTMLElement | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
+    remeasure.current = () => {};
+    if (!el) return;
+    const measure = () => {
+      const style = getComputedStyle(el);
+      const avail = el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      // The card size is a CSS token that changes with the breakpoint: measure a card.
+      const cardW = el.querySelector<HTMLElement>('[data-card]')?.offsetWidth ?? 0;
+      setRoom((prev) => (prev && prev.avail === avail && prev.cardW === cardW ? prev : { avail, cardW }));
+    };
+    remeasure.current = measure;
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      observer.current = new ResizeObserver(measure);
+      observer.current.observe(el);
+    }
+  }, []);
+  // A first card to measure may appear later (the width itself is watched by the observer).
+  useLayoutEffect(() => remeasure.current(), [count > 0]);
+  return [ref, room];
 }
 
 /**
@@ -43,11 +85,21 @@ export function HandFan({
 }) {
   const registry = useAnchorRegistry();
   const [shaking, setShaking] = useState<string | null>(null);
-  const { rotate, drop, overlap } = fanLayout(hand.length);
+  const [roomRef, room] = useHandRoom(hand.length);
+  const fan = fanLayout(hand.length);
+  const { rotate, drop } = fan;
+  // Never wider than the screen: a big hand overlaps more instead of scrolling.
+  const overlap = room ? fitOverlap(hand.length, room.cardW, room.avail, fan.overlap) : fan.overlap;
+  // Room below for the fan's lowest corner (drop + rotation), no more.
+  const maxDrop = drop.length > 0 ? Math.max(...drop) : 0;
+  const maxTilt = rotate.length > 0 ? Math.max(...rotate.map(Math.abs)) : 0;
+  const padBottom = Math.ceil(maxDrop + maxTilt * 0.6 + 6);
   return (
-    <div className="w-full overflow-x-auto overflow-y-visible [scrollbar-width:thin]">
+    <div className="w-full">
       <ul
-        className={`mx-auto flex w-max min-w-full justify-center px-6 pt-7 pb-8 ${shakeHand ? 'animate-shake' : ''}`}
+        ref={roomRef}
+        className={`mx-auto flex w-full justify-center px-2 pt-5 ${shakeHand ? 'animate-shake' : ''}`}
+        style={{ paddingBottom: padBottom }}
         dir="ltr"
         data-testid="hand"
         onAnimationEnd={(e) => {

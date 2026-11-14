@@ -4,6 +4,9 @@
  * real animation pipeline shows a moment banner and a seat effect, then reactions arrive (bubbles
  * over my seat, right above the hand). I am the defender: hand cards are playable and "Take" is
  * legal. `window.__fixture.ready` turns true once both states and the reactions were delivered.
+ *
+ * `?scenario=crowded`: the worst case for the layout. Six pairs on the table (three uncovered) and a
+ * 15-card hand; the second state still reads as a transfer (the defender changes), so the banner shows.
  */
 import {
   DEFAULT_GAME_CONFIG,
@@ -51,20 +54,41 @@ class PageTransport implements Transport {
 
 const ROOM = 'room1234';
 const card = (rank: Card['rank'], suit: Card['suit']): Card => ({ rank, suit });
-const hand: Card[] = [card(7, 'H'), card(9, 'H'), card(12, 'H'), card(8, 'S'), card(10, 'C'), card(14, 'D')];
+const crowded = new URLSearchParams(window.location.search).get('scenario') === 'crowded';
+const hand: Card[] = crowded
+  ? [
+      ...([8, 9, 12, 13, 14] as const).map((r) => card(r, 'S')),
+      ...([8, 9, 11, 12] as const).map((r) => card(r, 'C')),
+      ...([8, 9, 10, 11] as const).map((r) => card(r, 'H')),
+      card(8, 'D'),
+      card(9, 'D'),
+    ]
+  : [card(7, 'H'), card(9, 'H'), card(12, 'H'), card(8, 'S'), card(10, 'C'), card(14, 'D')];
+
+const CROWDED_TABLE = [
+  { attack: card(6, 'S'), defense: card(10, 'S') },
+  { attack: card(6, 'C'), defense: card(10, 'C') },
+  { attack: card(7, 'S'), defense: card(11, 'S') },
+  { attack: card(7, 'C'), defense: null },
+  { attack: card(6, 'H'), defense: null },
+  { attack: card(7, 'D'), defense: null },
+];
 
 function view(step: 1 | 2): PlayerView {
-  const table =
-    step === 1 ? [{ attack: card(6, 'S'), defense: null }] : [{ attack: card(6, 'S'), defense: null }, { attack: card(6, 'H'), defense: null }];
+  const table = crowded
+    ? CROWDED_TABLE.slice(0, step === 1 ? 5 : 6)
+    : step === 1
+      ? [{ attack: card(6, 'S'), defense: null }]
+      : [{ attack: card(6, 'S'), defense: null }, { attack: card(6, 'H'), defense: null }];
   return {
     viewerId: 'me',
     hand,
     players: [
-      { id: 'me', handCount: 6, finished: false },
+      { id: 'me', handCount: hand.length, finished: false },
       { id: 'bob', handCount: 5, finished: false },
       { id: 'carl', handCount: step === 1 ? 6 : 5, finished: false },
     ],
-    deckCount: 12,
+    deckCount: crowded ? 0 : 12,
     trumpCard: card(6, 'D'),
     trumpSuit: 'D',
     discardCount: 0,

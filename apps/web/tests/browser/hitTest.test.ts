@@ -33,11 +33,23 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 800 },
 ] as const;
 
-/** Every visible button/link/input whose center point is covered by something that isn't itself or its content. */
-async function coveredControls(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
+/** Screens the crowded table must fit without scrolling (SCREENSHOT_DIR=<dir> saves a screenshot of each). */
+const FIT_VIEWPORTS = [
+  { width: 1280, height: 720 },
+  { width: 1366, height: 768 },
+  { width: 1920, height: 1080 },
+  { width: 360, height: 740 },
+] as const;
+
+/**
+ * Every visible button/link/input whose center point is covered by something that isn't itself or
+ * its content. `skip`: controls checked another way (overlapping hand cards: their visible slice).
+ */
+async function coveredControls(page: Page, skip?: string): Promise<string[]> {
+  return page.evaluate((skip) => {
     const covered: string[] = [];
     for (const el of document.querySelectorAll<HTMLElement>('button, a[href], input, [role="radio"], [role="switch"]')) {
+      if (skip && el.matches(skip)) continue;
       // sr-only inputs (styled switches) are clicked through their label.
       const target = el.matches('input.sr-only') ? (el.closest('label') ?? el) : el;
       const r = target.getBoundingClientRect();
@@ -51,7 +63,7 @@ async function coveredControls(page: Page): Promise<string[]> {
       }
     }
     return covered;
-  });
+  }, skip);
 }
 
 describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
@@ -92,7 +104,7 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
       }
     }, 30_000);
 
-    it(`table (${vp.name}): a moment banner and reaction bubbles never block the hand or Take/Pass`, async () => {
+    it(`table (${vp.name}): a moment banner and reaction bubbles never block the hand, the table or Take/Pass`, async () => {
       const page = await browser.newPage({ viewport: vp });
       try {
         await page.goto(`${base}tests/browser/fixtures/table.html`);
@@ -112,6 +124,8 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
           const targets = [
             ...document.querySelectorAll<HTMLElement>('[data-testid="hand"] [data-card]'),
             ...document.querySelectorAll<HTMLElement>('[data-testid="action-row"] button'),
+            // Attack cards I can defend against are click targets too (the moment banner floats over them).
+            ...document.querySelectorAll<HTMLElement>('[data-testid="table"] button'),
           ];
           const centers: string[] = [];
           const blocked: string[] = [];
@@ -172,5 +186,94 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
         }
       }, 30_000);
     }
+  }
+
+  // The table screen fits one viewport: however full the table and the hand, nothing scrolls.
+  for (const vp of FIT_VIEWPORTS) {
+    it(`table ${vp.width}x${vp.height}: 6 pairs + a 15-card hand fit the screen, every card and Take clickable`, async () => {
+      const page = await browser.newPage({ viewport: vp });
+      try {
+        await page.goto(`${base}tests/browser/fixtures/table.html?scenario=crowded`);
+        await page.waitForFunction(() => (window as unknown as { __fixture?: { ready: boolean } }).__fixture?.ready === true);
+        await page.getByTestId('moment-banner').waitFor({ state: 'visible', timeout: 3000 });
+        await page.getByTestId('reaction-bubble-me').waitFor({ state: 'visible' });
+        await page.getByRole('button', { name: t.table.take }).waitFor();
+        // Let the cards' layout springs settle before measuring.
+        await page.waitForTimeout(700);
+        if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/table-${vp.width}x${vp.height}.png` });
+
+        const result = await page.evaluate(() => {
+          const OVERLAYS = '[data-testid^="reaction-bubble"], [data-testid="moment-banner"], [data-testid="seat-effect"]';
+          const doc = document.scrollingElement!;
+          const W = window.innerWidth;
+          const H = window.innerHeight;
+          const inside = (r: DOMRect) => r.left >= 0 && r.top >= 0 && r.right <= W && r.bottom <= H;
+          const problems: string[] = [];
+          if (doc.scrollHeight > H || doc.scrollWidth > W) problems.push(`document scrolls: ${doc.scrollWidth}x${doc.scrollHeight}`);
+          const label = (el: Element) => el.getAttribute('data-card') ?? el.textContent ?? el.tagName;
+
+          const cards = [...document.querySelectorAll<HTMLElement>('[data-testid="hand"] [data-card]')];
+          const clickAt: Record<string, { x: number; y: number }> = {};
+          for (const el of cards) {
+            const r = el.getBoundingClientRect();
+            if (!inside(r)) problems.push(`hand card ${label(el)} outside the viewport: ${JSON.stringify(r)}`);
+            // Some point of the card (its visible slice: the next card covers the rest) is the card itself.
+            let point: { x: number; y: number } | null = null;
+            for (let i = 1; i < 20 && !point; i += 2) {
+              for (const j of [3, 5, 7]) {
+                const x = r.left + (r.width * i) / 20;
+                const y = r.top + (r.height * j) / 10;
+                const hit = document.elementFromPoint(x, y);
+                if (hit && el.contains(hit) && !hit.closest(OVERLAYS)) {
+                  point = { x, y };
+                  break;
+                }
+              }
+            }
+            if (point) clickAt[el.getAttribute('data-card')!] = point;
+            else problems.push(`hand card ${label(el)} has no clickable point`);
+          }
+          const buttons = [...document.querySelectorAll<HTMLElement>('[data-testid="action-row"] button')];
+          for (const el of buttons) {
+            const r = el.getBoundingClientRect();
+            if (!inside(r)) problems.push(`button ${label(el)} outside the viewport`);
+            const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            if (!hit || !el.contains(hit)) problems.push(`button ${label(el)} covered by ${hit?.outerHTML.slice(0, 80)}`);
+          }
+          for (const el of document.querySelectorAll<HTMLElement>('[data-testid="table"] [data-card]')) {
+            if (!inside(el.getBoundingClientRect())) problems.push(`table card ${label(el)} outside the viewport`);
+          }
+          return {
+            problems,
+            clickAt,
+            handCount: cards.length,
+            pairs: document.querySelectorAll('[data-testid^="pair-"]').length,
+            buttons: buttons.length,
+          };
+        });
+        expect(result.problems).toEqual([]);
+        expect(result.handCount).toBe(15);
+        expect(result.pairs).toBe(6);
+        expect(result.buttons).toBeGreaterThan(0);
+        expect(await coveredControls(page, '[data-testid="hand"] [data-card]')).toEqual([]);
+
+        // Raw mouse clicks on the visible slices: playable cards at both ends of the clubs/hearts run.
+        for (const id of ['8C', 'JH']) {
+          const card = page.locator(`[data-testid="hand"] [data-card="${id}"]`);
+          expect(await card.count(), `hand card ${id}`).toBe(1);
+          const p = result.clickAt[id]!;
+          await page.mouse.click(p.x, p.y);
+          await expect(card.getAttribute('data-state')).resolves.toBe('selected');
+        }
+        const take = (await page.getByRole('button', { name: t.table.take }).boundingBox())!;
+        await page.mouse.click(take.x + take.width / 2, take.y + take.height / 2);
+        const emitted = await page.evaluate(
+          () => (window as unknown as { __fixture: { emitted: { event: string }[] } }).__fixture.emitted.map((e) => e.event),
+        );
+        expect(emitted).toContain('game:move');
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
   }
 });

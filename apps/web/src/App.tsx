@@ -8,7 +8,7 @@ import { useClient, useClientState } from './net/react';
 import { isReconnecting } from './net/store';
 import { useRoute } from './routing';
 import { HomeScreen } from './screens/HomeScreen';
-import { RoomRoute } from './screens/RoomRoute';
+import { RoomRoute, showsTable } from './screens/RoomRoute';
 import { RulesScreen } from './screens/rules/RulesScreen';
 
 /** `settings` / `audio` are injectable for tests (default: localStorage + the browser's Web Audio). */
@@ -25,7 +25,10 @@ function AppShell() {
   const route = useRoute();
   const roomId = route.name === 'room' ? route.roomId : null;
   // While the seat is being re-bound nothing in the room may be clicked (the banner says why).
-  const reconnecting = isReconnecting(useClientState());
+  const state = useClientState();
+  const reconnecting = isReconnecting(state);
+  // The game table always fits one screen (it never scrolls); the other screens scroll normally.
+  const fitScreen = roomId !== null && showsTable(state, roomId);
 
   useEffect(() => {
     client.setRoute(roomId);
@@ -34,9 +37,9 @@ function AppShell() {
   return (
     // reducedMotion="user": with prefers-reduced-motion, Framer skips transform/layout animations.
     <MotionConfig reducedMotion="user">
-      <div dir="rtl" className="flex min-h-dvh flex-col text-text">
+      <div dir="rtl" className={`flex flex-col text-text ${fitScreen ? 'h-dvh overflow-hidden' : 'min-h-dvh'}`} data-fit-screen={fitScreen || undefined}>
         <ConnectionBanner />
-        <main className="flex flex-1 flex-col" inert={reconnecting} aria-busy={reconnecting}>{roomId !== null ? <RoomRoute roomId={roomId} /> : route.name === 'rules' ? <RulesScreen /> : <HomeScreen />}</main>
+        <main className="flex min-h-0 flex-1 flex-col" inert={reconnecting} aria-busy={reconnecting}>{roomId !== null ? <RoomRoute roomId={roomId} /> : route.name === 'rules' ? <RulesScreen /> : <HomeScreen />}</main>
         <ErrorToast />
         <NoticeToast />
       </div>

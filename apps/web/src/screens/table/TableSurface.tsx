@@ -1,5 +1,6 @@
 import { cardId, type BoutSummary, type ClientMove, type PlayerView, type TablePair } from '@durak/shared';
 import { AnimatePresence, motion } from 'motion/react';
+import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import { anchorKey, useAnchorRegistry } from '../../anim/anchors';
 import { revealStyle, type BoardAnimation } from '../../anim/useBoardAnimation';
 import { CardBack } from '../../components/cards/CardBack';
@@ -95,6 +96,56 @@ function LastBoutPeek({ bout }: { bout: BoutSummary }) {
   );
 }
 
+/** At most this many pairs share a row on the table. */
+export const PAIRS_PER_ROW = 3;
+/** A pair's box (attack card + the defense card laid over it), in card widths / heights. */
+const PAIR_W = 1.25;
+const PAIR_H = 1.28;
+/** Gaps between pairs, in card widths (columns) / heights (rows). */
+const GAP_X = 0.3;
+const GAP_Y = 0.12;
+const CARD_ASPECT = 78 / 54;
+const MIN_CARD_W = 28;
+
+/** The table card's natural width (the `--card-table-w(-lg)` tokens) at this viewport width. */
+export function naturalTableCardWidth(viewportW: number): number {
+  return viewportW >= 640 ? Math.min(90, Math.max(64, 0.042 * viewportW + 30)) : 54;
+}
+
+/**
+ * The table card width that fits `items` (pairs + the transfer slot) into a `boxW` × `boxH` area,
+ * at most PAIRS_PER_ROW per row, never larger than `maxW`: the table never grows, its cards shrink.
+ */
+export function fitTableCardWidth(items: number, boxW: number, boxH: number, maxW: number): number {
+  const cols = Math.max(1, Math.min(items, PAIRS_PER_ROW));
+  const rows = Math.max(1, Math.ceil(items / PAIRS_PER_ROW));
+  const byW = boxW / (cols * PAIR_W + (cols - 1) * GAP_X);
+  const byH = boxH / ((rows * PAIR_H + (rows - 1) * GAP_Y) * CARD_ASPECT);
+  return Math.max(MIN_CARD_W, Math.floor(Math.min(maxW, byW, byH)));
+}
+
+/** Tracks an element's content-box size. */
+function useBoxSize<E extends HTMLElement>(): [(el: E | null) => void, { w: number; h: number } | null] {
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: E | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
+    if (!el) return;
+    const measure = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      setSize((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+    };
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      observer.current = new ResizeObserver(measure);
+      observer.current.observe(el);
+    }
+  }, []);
+  return [ref, size];
+}
+
 export function TableArea({
   table,
   anim,
@@ -115,52 +166,85 @@ export function TableArea({
   onTransferClick: () => void;
 }) {
   const registry = useAnchorRegistry();
-  if (table.length === 0) {
-    return <div className="flex min-h-28 flex-1 items-center justify-center self-stretch text-sm text-muted/70 sm:min-h-36">{t.table.emptyTable}</div>;
-  }
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
+  const showTransfer = interactive && transferMove !== null;
+  const items = table.length + (showTransfer ? 1 : 0);
+  // The cards shrink to fit the space the screen leaves for the table (the table never grows).
+  const cardW = box ? fitTableCardWidth(items, box.w, box.h, naturalTableCardWidth(window.innerWidth)) : null;
+  const sizing: CSSProperties | undefined =
+    cardW === null
+      ? undefined
+      : ({
+          '--card-table-w': `${cardW}px`,
+          '--card-table-h': `${Math.round(cardW * CARD_ASPECT)}px`,
+          '--card-table-w-lg': `${cardW}px`,
+          '--card-table-h-lg': `${Math.round(cardW * CARD_ASPECT)}px`,
+          gridTemplateColumns: `repeat(${Math.min(items, PAIRS_PER_ROW)}, auto)`,
+          columnGap: Math.round(cardW * GAP_X),
+          rowGap: Math.round(cardW * CARD_ASPECT * GAP_Y),
+        } as CSSProperties);
   return (
-    <ul className="flex min-h-28 flex-1 flex-wrap content-center items-center justify-center gap-x-4 gap-y-6 self-stretch py-2 sm:min-h-36 sm:gap-x-[clamp(1.75rem,2.5vw,3rem)] sm:gap-y-10" data-testid="table" dir="ltr">
-      {table.map((pair, index) => {
-        const target = interactive && pair.defense === null && isAttackTarget(index, moves, selection);
-        const selected = selection.kind === 'attack' && selection.index === index;
-        const state: CardState = selected ? 'selected' : target ? 'target' : 'plain';
-        const attackId = cardId(pair.attack);
-        return (
-          <li key={attackId} className="relative h-[100px] w-[68px] sm:h-[calc(var(--card-table-h-lg)+28px)] sm:w-[calc(var(--card-table-w-lg)+18px)]" data-testid={`pair-${index}`}>
-            <PlayingCard
-              card={pair.attack}
-              layoutId={attackId}
-              state={state}
-              ref={registry.ref(anchorKey.card(attackId))}
-              style={revealStyle(anim, pair.attack)}
-              {...(target || selected ? { onClick: () => onAttackClick(index) } : {})}
-            />
-            {pair.defense && (
-              <div className="absolute top-5 left-3.5 sm:top-[calc(var(--card-table-h-lg)*0.22)] sm:left-[calc(var(--card-table-w-lg)*0.22)]" style={{ rotate: `${M.defenseRotateDeg}deg` }}>
+    <div ref={boxRef} className="relative min-h-24 min-w-0 flex-1 self-stretch">
+      {table.length === 0 ? (
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-muted/70">{t.table.emptyTable}</div>
+      ) : (
+        <ul
+          className="absolute inset-0 grid content-center items-center justify-center"
+          style={sizing ?? { gridTemplateColumns: `repeat(${Math.min(items, PAIRS_PER_ROW)}, auto)`, gap: 12 }}
+          data-testid="table"
+          data-card-width={cardW ?? undefined}
+          dir="ltr"
+        >
+          {table.map((pair, index) => {
+            const target = interactive && pair.defense === null && isAttackTarget(index, moves, selection);
+            const selected = selection.kind === 'attack' && selection.index === index;
+            const state: CardState = selected ? 'selected' : target ? 'target' : 'plain';
+            const attackId = cardId(pair.attack);
+            return (
+              <li
+                key={attackId}
+                className="relative h-[calc(var(--card-table-h)*1.28)] w-[calc(var(--card-table-w)*1.25)] sm:h-[calc(var(--card-table-h-lg)*1.28)] sm:w-[calc(var(--card-table-w-lg)*1.25)]"
+                data-testid={`pair-${index}`}
+              >
                 <PlayingCard
-                  card={pair.defense}
-                  layoutId={cardId(pair.defense)}
-                  ref={registry.ref(anchorKey.card(cardId(pair.defense)))}
-                  style={revealStyle(anim, pair.defense)}
+                  card={pair.attack}
+                  layoutId={attackId}
+                  state={state}
+                  ref={registry.ref(anchorKey.card(attackId))}
+                  style={revealStyle(anim, pair.attack)}
+                  {...(target || selected ? { onClick: () => onAttackClick(index) } : {})}
                 />
-              </div>
-            )}
-          </li>
-        );
-      })}
-      {interactive && transferMove && (
-        <li>
-          <motion.button
-            type="button"
-            onClick={onTransferClick}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex h-(--card-table-h) w-(--card-table-w) items-center justify-center rounded-card border-2 border-dashed border-select text-xs font-bold text-select shadow-target sm:h-(--card-table-h-lg) sm:w-(--card-table-w-lg)"
-          >
-            {t.table.transferHere}
-          </motion.button>
-        </li>
+                {pair.defense && (
+                  <div
+                    className="absolute top-[calc(var(--card-table-h)*0.22)] left-[calc(var(--card-table-w)*0.22)] sm:top-[calc(var(--card-table-h-lg)*0.22)] sm:left-[calc(var(--card-table-w-lg)*0.22)]"
+                    style={{ rotate: `${M.defenseRotateDeg}deg` }}
+                  >
+                    <PlayingCard
+                      card={pair.defense}
+                      layoutId={cardId(pair.defense)}
+                      ref={registry.ref(anchorKey.card(cardId(pair.defense)))}
+                      style={revealStyle(anim, pair.defense)}
+                    />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+          {showTransfer && (
+            <li>
+              <motion.button
+                type="button"
+                onClick={onTransferClick}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex h-(--card-table-h) w-(--card-table-w) items-center justify-center rounded-card border-2 border-dashed border-select text-xs font-bold text-select shadow-target sm:h-(--card-table-h-lg) sm:w-(--card-table-w-lg)"
+              >
+                {t.table.transferHere}
+              </motion.button>
+            </li>
+          )}
+        </ul>
       )}
-    </ul>
+    </div>
   );
 }

@@ -102,13 +102,13 @@ export function MySeat({
 }) {
   const anchor = useAnchor(anchorKey.seat(player.id));
   return (
-    <div className="flex items-center justify-center gap-2" data-testid={`seat-${player.id}`}>
+    <div className="flex min-w-0 items-center gap-2" data-testid={`seat-${player.id}`}>
       <div ref={anchor} className="relative">
         <Avatar id={player.id} name={name} size={30} progress={ring.progress} urgent={ring.urgent} />
         {effect && <SeatEffect key={effect.id} effect={effect.kind} momentId={effect.id} reduced={reduced} />}
         {reaction && <ReactionBubble key={reaction.id} reaction={reaction} />}
       </div>
-      <span className="text-sm font-semibold">{name}</span>
+      <span className="min-w-0 truncate text-sm font-semibold">{name}</span>
       <PlayerBadges player={player} view={view} member={member} />
       {extra}
     </div>
