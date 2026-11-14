@@ -226,6 +226,7 @@ export interface Strings {
     readonly showTips: string;
     readonly resetTips: string;
     readonly showReactions: string;
+    readonly vibration: string;
   };
   readonly help: {
     readonly title: string;
@@ -448,6 +449,7 @@ export const he: Strings = {
     showTips: 'הצגת טיפים',
     resetTips: 'הצגת הטיפים מההתחלה',
     showReactions: 'הצגת תגובות מהירות',
+    vibration: 'רטט בתורך ובסוף המשחק',
   },
   help: {
     title: 'חוקים ועזרה',

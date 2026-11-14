@@ -4,6 +4,7 @@ import type { AudioEngine } from './audio/engine';
 import { ConnectionBanner, ErrorToast, NoticeToast } from './components/ui';
 import { PrefsProvider } from './settings/react';
 import type { SettingsStore } from './settings/settings';
+import type { Vibrator } from './phone/vibrate';
 import { useClient, useClientState } from './net/react';
 import { isReconnecting } from './net/store';
 import { useRoute } from './routing';
@@ -11,10 +12,10 @@ import { HomeScreen } from './screens/HomeScreen';
 import { RoomRoute, showsTable } from './screens/RoomRoute';
 import { RulesScreen } from './screens/rules/RulesScreen';
 
-/** `settings` / `audio` are injectable for tests (default: localStorage + the browser's Web Audio). */
-export function App({ settings, audio }: { settings?: SettingsStore; audio?: AudioEngine } = {}) {
+/** `settings` / `audio` / `vibrator` are injectable for tests (default: localStorage, Web Audio, navigator.vibrate). */
+export function App({ settings, audio, vibrator }: { settings?: SettingsStore; audio?: AudioEngine; vibrator?: Vibrator } = {}) {
   return (
-    <PrefsProvider {...(settings ? { settings } : {})} {...(audio ? { audio } : {})}>
+    <PrefsProvider {...(settings ? { settings } : {})} {...(audio ? { audio } : {})} {...(vibrator ? { vibrator } : {})}>
       <AppShell />
     </PrefsProvider>
   );

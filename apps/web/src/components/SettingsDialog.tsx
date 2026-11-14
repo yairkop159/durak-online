@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { t } from '../i18n';
-import { useSettings, useSettingsStore } from '../settings/react';
+import { useSettings, useSettingsStore, useVibrator } from '../settings/react';
 import type { AnimationSpeed, Settings } from '../settings/settings';
 import { Modal } from './Modal';
 import { Button } from './ui';
@@ -47,6 +47,7 @@ const SPEEDS: readonly AnimationSpeed[] = ['normal', 'fast'];
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const store = useSettingsStore();
   const s = useSettings();
+  const vibrator = useVibrator();
   const set = (change: (s: Settings) => Settings) => store.update(change);
   const speedLabel = useId();
 
@@ -110,6 +111,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             checked={s.showReactions}
             onChange={(showReactions) => set((p) => ({ ...p, showReactions }))}
           />
+          {/* Only where the phone can vibrate (Android browsers; never iPhone or desktop). */}
+          {vibrator.supported && (
+            <Switch label={t.settings.vibration} checked={s.vibration} onChange={(vibration) => set((p) => ({ ...p, vibration }))} />
+          )}
         </section>
       </div>
     </Modal>

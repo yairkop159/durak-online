@@ -38,6 +38,7 @@ import { useSettings } from '../../settings/react';
 import { ANIMATION_SPEED_FACTOR } from '../../settings/settings';
 import { DeckPile, DiscardPile, TableArea } from './TableSurface';
 import { useLayoutMode } from '../../layout/layoutMode';
+import { useWakeLock } from '../../phone/wakeLock';
 import { useReactions } from '../../reactions/useReactions';
 import { ReactionAnnouncer } from '../../reactions/ReactionBubble';
 import { ReactionButton } from '../../reactions/ReactionPicker';
@@ -140,6 +141,9 @@ export function TableScreen() {
     [game?.gameId, gameFinished, gameOver, reduced],
   );
   const [revealDoneFor, setRevealDoneFor] = useState<string | null>(null);
+
+  // The screen stays on while the game runs (released when it ends, re-taken after the page was hidden).
+  useWakeLock(!!view && !gameFinished && room?.status === 'playing');
 
   const soundTurn = !!view && viewerId !== null && !gameFinished && !reconnecting && moves.length > 0;
   useGameSounds({ anim, myTurn: soundTurn, remaining, gameOver, viewerId, stingerByReveal: revealPlan !== null });

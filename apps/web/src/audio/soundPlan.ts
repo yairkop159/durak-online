@@ -67,7 +67,7 @@ export function tickSecond(remainingMs: number | null, isMyTurn: boolean): numbe
 }
 
 /** The end-of-game stinger from the viewer's point of view (none for spectators or non-results). */
-export function gameOverCue(gameOver: GameOverPayload, viewerId: string | null): SoundName | null {
+export function gameOverCue(gameOver: GameOverPayload, viewerId: string | null): 'win' | 'durak' | null {
   if (viewerId === null || gameOver.endReason === 'abandoned' || gameOver.endReason === 'restarted') return null;
   return gameOver.durakId === viewerId ? 'durak' : 'win';
 }

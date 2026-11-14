@@ -14,6 +14,12 @@ import { SessionTokens, type KeyValueStorage } from './sessionStore';
 import { Store, canAct, type ClientState } from './store';
 import type { Transport } from './transport';
 
+/**
+ * Hidden at least this long (phone locked, app switched): the socket may look connected but be
+ * dead until the server's ping timeout, so coming back opens a fresh one instead of trusting it.
+ */
+export const STALE_SOCKET_AFTER_MS = 15_000;
+
 export interface GameClientOptions {
   readonly transport: Transport;
   readonly storage: KeyValueStorage | null;
@@ -40,6 +46,8 @@ export class GameClient {
   private vsComputer: { readonly difficulty: BotDifficulty; readonly bots: number; requested: number } | null = null;
   /** Mirrors the server's per-player reaction limit, so the picker can grey out instead of sending. */
   private readonly reactionBucket: ReactionBucket;
+  /** A foreground resync (`session:resume` on the bound socket) is waiting for its answer. */
+  private resyncInFlight = false;
 
   constructor(options: GameClientOptions) {
     this.transport = options.transport;
@@ -54,7 +62,11 @@ export class GameClient {
       this.tryResume();
     });
     transport.onDisconnect(() => store.dispatch({ type: 'connection', status: 'disconnected' }));
+    transport.onDisconnect(() => {
+      this.resyncInFlight = false;
+    });
     transport.on('session:issued', (payload) => {
+      this.resyncInFlight = false;
       this.tokens.set(payload.roomId, payload.sessionToken);
       store.dispatch({ type: 'session:issued', payload });
     });
@@ -69,6 +81,7 @@ export class GameClient {
     transport.on('room:restartVoteEnded', (payload) => store.dispatch({ type: 'restart:ended', payload }));
     transport.on('room:reaction', (payload) => store.dispatch({ type: 'reaction', payload, receivedAt: this.now() }));
     transport.on('error', (payload) => {
+      this.resyncInFlight = false;
       if (payload.code !== 'STALE_STATE') this.vsComputer = null;
       const pendingRoom = this.state.resumeStatus === 'pending' ? this.routeRoomId : null;
       store.dispatch({ type: 'error', payload });
@@ -101,6 +114,32 @@ export class GameClient {
       }
       this.tryResume();
     }
+  }
+
+  /**
+   * Back in the foreground (phone unlocked, app switched back, network back) after `hiddenMs`:
+   * get the room in sync right away instead of waiting for socket.io's backoff or ping timeout.
+   * - Disconnected, or hidden long enough that the socket may be a zombie: a fresh socket now
+   *   (its connect resumes the session, which re-sends room:state + game:state).
+   * - Briefly hidden on a live, bound socket: `session:resume` on it (the server re-sends both
+   *   states; the old binding stays, so no "reconnecting" banner). At most one in flight.
+   * The server ignores the old socket's late disconnect while the new one is bound
+   * (apps/server/tests/socket.staleSocket.test.ts).
+   */
+  resyncNow(hiddenMs: number): void {
+    if (this.routeRoomId === null) {
+      if (!this.transport.connected) this.transport.reconnect();
+      return;
+    }
+    if (!this.transport.connected || hiddenMs >= STALE_SOCKET_AFTER_MS) {
+      this.resyncInFlight = false;
+      this.transport.reconnect();
+      return;
+    }
+    const { session, bound, resumeStatus } = this.state;
+    if (!session || session.roomId !== this.routeRoomId || !bound || resumeStatus === 'pending' || this.resyncInFlight) return;
+    this.resyncInFlight = true;
+    this.transport.emit('session:resume', { sessionToken: session.sessionToken });
   }
 
   hasStoredSession(roomId: string): boolean {

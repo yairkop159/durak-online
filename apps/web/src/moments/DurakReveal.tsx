@@ -2,10 +2,9 @@ import { motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 import { anchorKey, useAnchorRegistry, type Rect } from '../anim/anchors';
 import type { RevealPlan } from '../anim/reveal';
-import type { SoundName } from '../audio/sfx';
 import { CardBackFan } from '../components/cards/CardBack';
 import { t } from '../i18n';
-import { useAudio } from '../settings/react';
+import { useAudio, useHaptic } from '../settings/react';
 
 type Stage = 'dim' | 'sweep' | 'stamp';
 
@@ -31,11 +30,12 @@ export function DurakReveal({
   viewerId: string | null;
   nameOf: (id: string) => string;
   /** The win / durak stinger, played when the stamp lands (null for spectators). */
-  stinger: SoundName | null;
+  stinger: 'win' | 'durak' | null;
   onDone: () => void;
 }) {
   const registry = useAnchorRegistry();
   const audio = useAudio();
+  const haptic = useHaptic();
   const [stage, setStage] = useState<Stage>('dim');
   const spots = useMemo(() => plan.sweep.map((id) => center(registry.live(anchorKey.seat(id)))), [plan, registry]);
   const target = plan.durakId !== null && plan.kind !== 'draw' ? center(registry.live(anchorKey.seat(plan.durakId))) : center(null);
@@ -45,7 +45,11 @@ export function DurakReveal({
     if (stinger) audio.play(stinger, plan.stampAtMs);
     const timers = [
       setTimeout(() => setStage(plan.sweepMs > 0 ? 'sweep' : 'stamp'), plan.dimMs),
-      setTimeout(() => setStage('stamp'), plan.stampAtMs),
+      setTimeout(() => {
+        setStage('stamp');
+        // The buzz lands with the stamp and the stinger.
+        if (stinger) haptic(stinger);
+      }, plan.stampAtMs),
       setTimeout(onDone, plan.totalMs),
     ];
     return () => timers.forEach(clearTimeout);

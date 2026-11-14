@@ -7,10 +7,12 @@ import { ClientProvider } from './net/react';
 import { browserSessionStorage } from './net/sessionStore';
 import { serverUrl, socketTransport } from './net/transport';
 import { registerServiceWorker } from './pwa/registerSW';
+import { watchForeground } from './phone/foreground';
 
 const client = new GameClient({ transport: socketTransport(serverUrl()), storage: browserSessionStorage() });
 
 registerServiceWorker();
+watchForeground(client, { doc: document, win: window, now: () => Date.now() });
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root missing');

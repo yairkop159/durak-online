@@ -8,10 +8,11 @@ export type AnimationSpeed = 'normal' | 'fast';
 
 /**
  * Per-device preferences, kept in localStorage (never sent to the server).
- * v2 (Phase 8) added `showReactions`; v1 data is read field by field with the new default.
+ * v2 (Phase 8) added `showReactions`, v3 (Phase 9) `vibration`; older data is read field by field
+ * with the new defaults.
  */
 export interface Settings {
-  readonly v: 2;
+  readonly v: 3;
   readonly sfx: { readonly enabled: boolean; readonly volume: number };
   readonly music: { readonly enabled: boolean; readonly volume: number };
   readonly animationSpeed: AnimationSpeed;
@@ -19,16 +20,19 @@ export interface Settings {
   readonly tipsSeen: readonly TipId[];
   /** Show other players' quick reactions (bubbles + sound) and my reaction button. */
   readonly showReactions: boolean;
+  /** Vibrate on "your turn" and at the game's end (phones that support it). */
+  readonly vibration: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  v: 2,
+  v: 3,
   sfx: { enabled: true, volume: 0.7 },
   music: { enabled: false, volume: 0.35 },
   animationSpeed: 'normal',
   showTips: true,
   tipsSeen: [],
   showReactions: true,
+  vibration: true,
 };
 
 /** Multiplier for every animation duration (reduced motion still wins over it). */
@@ -61,7 +65,7 @@ export function parseSettings(raw: string | null): Settings {
   if (!isRecord(data)) return DEFAULT_SETTINGS;
   const d = DEFAULT_SETTINGS;
   return {
-    v: 2,
+    v: 3,
     sfx: channel(data.sfx, d.sfx),
     music: channel(data.music, d.music),
     animationSpeed: data.animationSpeed === 'fast' || data.animationSpeed === 'normal' ? data.animationSpeed : d.animationSpeed,
@@ -70,6 +74,7 @@ export function parseSettings(raw: string | null): Settings {
       ? TIP_IDS.filter((id) => (data.tipsSeen as unknown[]).includes(id))
       : d.tipsSeen,
     showReactions: bool(data.showReactions, d.showReactions),
+    vibration: bool(data.vibration, d.vibration),
   };
 }
 

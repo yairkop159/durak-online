@@ -43,7 +43,7 @@ describe('reactions in the store', () => {
 describe('settings v2 (show reactions)', () => {
   it('migrates v1 data: everything kept, showReactions defaults to on', () => {
     const v1 = { v: 1, sfx: { enabled: false, volume: 0.2 }, music: { enabled: true, volume: 0.5 }, animationSpeed: 'fast', showTips: false, tipsSeen: ['firstAttack'] };
-    expect(parseSettings(JSON.stringify(v1))).toEqual({ ...v1, v: 2, showReactions: true });
+    expect(parseSettings(JSON.stringify(v1))).toEqual({ ...v1, v: 3, showReactions: true, vibration: true });
     expect(DEFAULT_SETTINGS.showReactions).toBe(true);
     expect(parseSettings(JSON.stringify({ v: 2, showReactions: false })).showReactions).toBe(false);
     expect(parseSettings(JSON.stringify({ v: 2, showReactions: 'yes' })).showReactions).toBe(true);

@@ -1,3 +1,4 @@
+import type { Vibrator } from '../src/phone/vibrate';
 import {
   DEFAULT_GAME_CONFIG,
   type Card,
@@ -151,14 +152,17 @@ export function gameState(view: PlayerView, version = 3, extra: Partial<GameStat
  * Renders the whole app at /room/ROOM_ID with a session for `playerId`, the room playing,
  * and `view` as the current game state.
  */
-export function renderTable(view: PlayerView, options: { version?: number; storage?: KeyValueStorage | null } = {}) {
+export function renderTable(
+  view: PlayerView,
+  options: { version?: number; storage?: KeyValueStorage | null; vibrator?: Vibrator } = {},
+) {
   window.history.replaceState(null, '', `/room/${ROOM_ID}`);
   const transport = new FakeTransport();
   const storage = options.storage === undefined ? new MemoryStorage() : options.storage; // null = no sessionStorage
   const client = new GameClient({ transport, storage, now: () => 1_000 });
   const utils = render(
     <ClientProvider client={client}>
-      <App />
+      <App {...(options.vibrator ? { vibrator: options.vibrator } : {})} />
     </ClientProvider>,
   );
   act(() => {
