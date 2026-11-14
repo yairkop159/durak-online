@@ -24,7 +24,9 @@ import {
   executablePath,
   openFixture,
   phoneContext,
+  seedProfile,
   startBrowserEnv,
+  stubProfileApi,
   stopBrowserEnv,
   withPage,
   type BrowserEnv,
@@ -232,6 +234,41 @@ describe.skipIf(!executablePath)('phones (mobile emulation, touch)', () => {
         await page.waitForFunction(() => document.querySelector('#tab-guide')?.getAttribute('aria-selected') === 'true');
         expect((await audit(page, false)).problems).toEqual([]);
         await shot(page, `rules-guide-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`profile ${size}: stats, 20 recent games, transfer code; no horizontal scroll, controls >= 44 px`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await seedProfile(page);
+        await stubProfileApi(page);
+        await page.goto(`${env!.base}profile`);
+        await page.getByTestId('rating').waitFor();
+        expect(await page.getByTestId('recent-game').count()).toBe(20);
+        const before = await audit(page, false);
+        expect(before.problems).toEqual([]);
+        expect(before.controls).toBeGreaterThan(4);
+        // Below the fold on a phone: scroll it into view, then a real touch tap at its center.
+        const transfer = `button:has-text("${t.profile.transfer.button}")`;
+        await page.locator(transfer).scrollIntoViewIfNeeded();
+        await tapCenter(page, transfer);
+        await page.getByTestId('transfer-code').waitFor();
+        expect((await audit(page, false)).problems).toEqual([]);
+        await shot(page, `profile-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`leaderboard ${size}: 20 rows, mine highlighted; no horizontal scroll, rows >= 44 px`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await seedProfile(page);
+        await stubProfileApi(page);
+        await page.goto(`${env!.base}leaderboard`);
+        await page.getByRole('list', { name: t.leaderboard.title }).waitFor();
+        expect(await page.locator('ol[aria-label] > li').count()).toBe(20);
+        expect(await page.locator('[aria-current="true"]').count()).toBe(1);
+        const board = await audit(page, false);
+        expect(board.problems).toEqual([]);
+        expect(board.controls).toBeGreaterThan(20);
+        await shot(page, `leaderboard-${size}`);
       });
     }, TEST_TIMEOUT_MS);
 

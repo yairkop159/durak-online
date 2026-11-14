@@ -11,7 +11,7 @@
 import { type Browser } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { t } from '../../src/i18n';
-import { LIFECYCLE_TIMEOUT_MS, coveredControls, executablePath, startBrowserEnv, stopBrowserEnv, type BrowserEnv } from './harness';
+import { LIFECYCLE_TIMEOUT_MS, coveredControls, executablePath, seedProfile, startBrowserEnv, stopBrowserEnv, stubProfileApi, type BrowserEnv } from './harness';
 
 const VIEWPORTS = [
   { name: 'phone', width: 390, height: 844 },
@@ -127,11 +127,15 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
       }
     }, 30_000);
 
-    for (const path of ['/', '/rules']) {
+    for (const path of ['/', '/rules', '/profile', '/leaderboard']) {
       it(`${path} (${vp.name}): no visible control is covered by another element`, async () => {
         const page = await browser.newPage({ viewport: vp });
         try {
+          await seedProfile(page);
+          await stubProfileApi(page);
           await page.goto(base + path.slice(1));
+          if (path === '/profile') await page.getByTestId('rating').waitFor();
+          if (path === '/leaderboard') await page.locator('ol[aria-label] > li').first().waitFor();
           await page.getByRole('heading', { level: 1 }).first().waitFor();
           expect(await coveredControls(page)).toEqual([]);
         } finally {

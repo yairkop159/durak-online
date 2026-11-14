@@ -1,12 +1,20 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Button, Panel, inputClass } from '../components/ui';
 import { t } from '../i18n';
 import { useClient } from '../net/react';
+import { useDeviceProfile, useProfiles } from '../profile/react';
 
 /** Opening an invite link without a session: ask for a nickname, then join (as a spectator if the game started). */
 export function JoinPrompt({ roomId }: { roomId: string }) {
   const client = useClient();
-  const [nickname, setNickname] = useState('');
+  const profiles = useProfiles();
+  const device = useDeviceProfile();
+  const [nickname, setNickname] = useState(() =>
+    device && device.nickname !== t.profile.defaultNickname ? device.nickname : '',
+  );
+  useEffect(() => {
+    void profiles.prepare();
+  }, [profiles]);
   const [sent, setSent] = useState(false);
 
   const submit = (event: FormEvent) => {
@@ -14,7 +22,7 @@ export function JoinPrompt({ roomId }: { roomId: string }) {
     const name = nickname.trim();
     if (!name) return;
     setSent(true);
-    client.joinRoom(roomId, name);
+    client.joinRoom(roomId, name, profiles.seatKey(name));
   };
 
   return (

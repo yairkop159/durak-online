@@ -5,7 +5,9 @@ import { SettingsButton } from '../components/SettingsDialog';
 import { Button, Panel, inputClass } from '../components/ui';
 import { t } from '../i18n';
 import { useClient, useClientState } from '../net/react';
-import { navigate, roomPath, RULES_PATH } from '../routing';
+import { useDeviceProfile, useProfiles } from '../profile/react';
+import { LEADERBOARD_PATH, navigate, PROFILE_PATH, roomPath, RULES_PATH } from '../routing';
+import { AppLink } from './profile/PageShell';
 
 const PLAYER_COUNTS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => MIN_PLAYERS + i);
 /** Bot opponents for "play vs computer": 1 .. MAX_PLAYERS - 1. */
@@ -17,7 +19,17 @@ const countButtonClass = (selected: boolean) =>
 export function HomeScreen() {
   const client = useClient();
   const { session } = useClientState();
-  const [nickname, setNickname] = useState('');
+  const profiles = useProfiles();
+  const device = useDeviceProfile();
+  // Pre-filled from this device's profile (not the placeholder it was created with).
+  const [nickname, setNickname] = useState(() =>
+    device && device.nickname !== t.profile.defaultNickname ? device.nickname : '',
+  );
+
+  // In the background: create this device's profile, or check it is still valid (Phase 10).
+  useEffect(() => {
+    void profiles.prepare();
+  }, [profiles]);
   const [players, setPlayers] = useState(2);
   const [mode, setMode] = useState<GameMode>('podkidnoy');
   const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
@@ -43,13 +55,15 @@ export function HomeScreen() {
     event.preventDefault();
     if (needNickname()) return;
     setSubmitted(true);
-    client.createRoom({ nickname: nickname.trim(), maxPlayers: players, mode });
+    const name = nickname.trim();
+    client.createRoom({ nickname: name, maxPlayers: players, mode, deviceKey: profiles.seatKey(name) });
   };
 
   const vsComputer = () => {
     if (needNickname()) return;
     setSubmitted(true);
-    client.playVsComputer({ nickname: nickname.trim(), mode, difficulty, bots });
+    const name = nickname.trim();
+    client.playVsComputer({ nickname: name, mode, difficulty, bots, deviceKey: profiles.seatKey(name) });
   };
 
   return (
@@ -59,6 +73,13 @@ export function HomeScreen() {
             after this corner (tree order) and spanning the full width: without a z-index it covers the gear. */}
         <div className="absolute top-0 left-0 z-10 flex gap-1.5">
           <SettingsButton />
+          <AppLink
+            href={PROFILE_PATH}
+            className="grid size-11 shrink-0 place-items-center rounded-full bg-surface/70 text-lg ring-1 ring-line hover:bg-surface-2"
+          >
+            <span aria-hidden="true">👤</span>
+            <span className="sr-only">{t.profile.title}</span>
+          </AppLink>
         </div>
         <div aria-hidden="true" className="pointer-events-none mb-3 text-3xl tracking-[0.3em] text-accent drop-shadow-[0_0_12px_rgb(45_212_191/0.5)]">♠︎♥︎♣︎♦︎</div>
         <h1 className="text-4xl font-black tracking-tight">{t.appTitle}</h1>
@@ -151,16 +172,20 @@ export function HomeScreen() {
           </Button>
         </form>
       </Panel>
-      <a
-        href={RULES_PATH}
-        onClick={(e) => {
-          e.preventDefault();
-          navigate(RULES_PATH);
-        }}
-        className="inline-flex min-h-11 items-center self-center px-3 text-sm font-semibold text-accent underline-offset-4 hover:underline"
-      >
-        {t.help.title}
-      </a>
+      <nav className="flex flex-wrap items-center justify-center gap-x-2">
+        <AppLink
+          href={RULES_PATH}
+          className="inline-flex min-h-11 items-center px-3 text-sm font-semibold text-accent underline-offset-4 hover:underline"
+        >
+          {t.help.title}
+        </AppLink>
+        <AppLink
+          href={LEADERBOARD_PATH}
+          className="inline-flex min-h-11 items-center px-3 text-sm font-semibold text-accent underline-offset-4 hover:underline"
+        >
+          🏆 {t.profile.leaderboardLink}
+        </AppLink>
+      </nav>
     </div>
   );
 }
