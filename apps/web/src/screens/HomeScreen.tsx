@@ -12,7 +12,7 @@ const PLAYER_COUNTS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, 
 const OPPONENT_COUNTS = Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => i + 1);
 
 const countButtonClass = (selected: boolean) =>
-  `rounded-btn py-2 font-bold ring-1 transition-colors ${selected ? 'bg-accent text-accent-ink ring-accent shadow-[0_0_16px_rgb(45_212_191/0.35)]' : 'bg-surface-2 ring-line hover:bg-surface-3'}`;
+  `min-h-11 rounded-btn py-2 font-bold ring-1 transition-colors ${selected ? 'bg-accent text-accent-ink ring-accent shadow-[0_0_16px_rgb(45_212_191/0.35)]' : 'bg-surface-2 ring-line hover:bg-surface-3'}`;
 
 export function HomeScreen() {
   const client = useClient();
@@ -157,7 +157,7 @@ export function HomeScreen() {
           e.preventDefault();
           navigate(RULES_PATH);
         }}
-        className="self-center text-sm font-semibold text-accent underline-offset-4 hover:underline"
+        className="inline-flex min-h-11 items-center self-center px-3 text-sm font-semibold text-accent underline-offset-4 hover:underline"
       >
         {t.help.title}
       </a>

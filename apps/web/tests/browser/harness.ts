@@ -66,6 +66,8 @@ export async function withPage<T>(env: BrowserEnv, options: BrowserContextOption
     context = await env.browser.newContext(options);
     const page = await context.newPage();
     page.setDefaultTimeout(5000);
+    // A cold dev server transforms the app on the first visit: navigations get longer.
+    page.setDefaultNavigationTimeout(20_000);
     return await fn(page);
   } finally {
     await context?.close().catch(() => {});

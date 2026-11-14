@@ -12,7 +12,7 @@ export function DifficultyPicker({ value, onChange }: { value: BotDifficulty; on
           role="radio"
           aria-checked={value === d}
           onClick={() => onChange(d)}
-          className={`rounded-btn py-1.5 text-sm font-bold ring-1 transition-colors ${
+          className={`min-h-11 rounded-btn py-1.5 text-sm font-bold ring-1 transition-colors ${
             value === d ? 'bg-accent text-accent-ink ring-accent' : 'bg-surface-2 ring-line hover:bg-surface-3'
           }`}
         >

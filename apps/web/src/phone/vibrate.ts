@@ -35,6 +35,8 @@ export function createVibrator(nav: VibrateNavigator | undefined): Vibrator {
   };
 }
 
+/** The browser's vibrator, on touch devices only (desktop Chrome has navigator.vibrate too, doing nothing). */
 export function browserVibrator(): Vibrator {
-  return createVibrator(typeof navigator !== 'undefined' ? (navigator as VibrateNavigator) : undefined);
+  const touch = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  return createVibrator(touch ? (navigator as VibrateNavigator) : undefined);
 }

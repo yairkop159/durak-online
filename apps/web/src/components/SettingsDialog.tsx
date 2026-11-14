@@ -8,7 +8,7 @@ import { Button } from './ui';
 /** A labelled on/off switch (a checkbox with role="switch"). */
 function Switch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (on: boolean) => void }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-3">
+    <label className="flex min-h-11 cursor-pointer items-center justify-between gap-3">
       <span className="font-medium">{label}</span>
       <input
         type="checkbox"
@@ -36,7 +36,7 @@ function Volume({ label, value, disabled, onChange }: { label: string; value: nu
       disabled={disabled}
       value={Math.round(value * 100)}
       onChange={(e) => onChange(Number(e.target.value) / 100)}
-      className="w-full accent-[var(--color-accent)] disabled:opacity-40"
+      className="h-11 w-full cursor-pointer accent-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
     />
   );
 }

@@ -63,7 +63,7 @@ export function GameStatsSection({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="self-center text-xs font-semibold text-muted underline-offset-2 hover:underline"
+        className="min-h-11 self-center px-3 text-xs font-semibold text-muted underline-offset-2 hover:underline"
       >
         {open ? t.stats.hideAll : t.stats.showAll}
       </button>
