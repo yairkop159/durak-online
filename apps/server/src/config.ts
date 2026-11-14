@@ -24,6 +24,10 @@ export interface ServerConfig {
   readonly webDistDir: string | null;
   readonly trustProxy: TrustProxy;
   readonly limits: LimitSettings;
+  /** Postgres for profiles and ratings (Phase 10); null = off (games still run). */
+  readonly databaseUrl: string | null;
+  /** Run `prisma migrate deploy` before connecting (default true). */
+  readonly dbMigrateOnStart: boolean;
 }
 
 function positiveInt(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -80,6 +84,30 @@ export function parseLimits(env: NodeJS.ProcessEnv): LimitSettings {
   };
 }
 
+function parseBool(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
+  const raw = env[name]?.trim().toLowerCase();
+  if (!raw) return fallback;
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  throw new Error(`Invalid ${name}: ${env[name]} (true or false)`);
+}
+
+/** DATABASE_URL must be a postgres:// or postgresql:// URL (never echoed: it holds a password). */
+export function parseDatabaseUrlEnv(raw: string | undefined): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('Invalid DATABASE_URL (expected postgresql://user:password@host:5432/db)');
+  }
+  if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') {
+    throw new Error('Invalid DATABASE_URL (expected postgresql://user:password@host:5432/db)');
+  }
+  return value;
+}
+
 /** REPOSITORY wins if set; otherwise redis when REDIS_URL is present, else memory. */
 export function resolveRepositoryKind(env: NodeJS.ProcessEnv): RepositoryKind {
   const explicit = env.REPOSITORY?.trim();
@@ -119,5 +147,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     webDistDir: env.WEB_DIST_DIR?.trim() || null,
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     limits: parseLimits(env),
+    databaseUrl: parseDatabaseUrlEnv(env.DATABASE_URL),
+    dbMigrateOnStart: parseBool(env, 'DB_MIGRATE_ON_START', true),
   };
 }

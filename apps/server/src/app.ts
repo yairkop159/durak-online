@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import { Server } from 'socket.io';
 import type { HealthReport } from './backend.js';
 import type { BotPolicies, BotRunner } from './bot/job.js';
+import type { Database, DbStatus } from './db/database.js';
 import { WorkerPoolRunner } from './bot/WorkerPoolRunner.js';
 import { registerWebApp } from './http/webApp.js';
 import { DEFAULT_CORS_ORIGINS } from './config.js';
@@ -73,6 +74,11 @@ export interface BuildServerOptions {
   readonly limits?: Partial<LimitSettings>;
   /** Reverse-proxy trust for client IPs (default false). */
   readonly trustProxy?: TrustProxy;
+  /**
+   * Postgres for profiles, history and ratings (Phase 10). Optional: without it (or while it is
+   * down) games run unchanged and /health reports `postgres: 'disabled' | 'down'` with status 200.
+   */
+  readonly database?: Database;
 }
 
 export interface DurakServer {
@@ -198,10 +204,15 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   registerHandlers({ io, rooms, games, votes, reactions, log: app.log, isShuttingDown: () => shuttingDown, limits, now, ipOf });
 
   const health = options.health ?? (async (): Promise<HealthReport> => ({ ok: true, repository: 'memory' }));
+  const database = options.database ?? null;
   // Probed every few seconds by Docker and the hosting platform: keep it out of the info log.
+  // Only the game store (Redis) decides 503; Postgres being down never takes the server out.
   app.get('/health', { logLevel: 'warn' }, async (_request, reply) => {
-    const report = await health();
-    return reply.code(report.ok ? 200 : 503).send(report);
+    const [report, postgres] = await Promise.all([
+      health(),
+      database ? database.health() : Promise.resolve<DbStatus>('disabled'),
+    ]);
+    return reply.code(report.ok ? 200 : 503).send({ ...report, postgres });
   });
   if (options.webDistDir) registerWebApp(app, options.webDistDir);
 
@@ -218,7 +229,10 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     io.engine.close();
   });
   const onClose = options.onClose;
-  if (onClose) app.addHook('onClose', async () => onClose());
+  app.addHook('onClose', async () => {
+    if (database) await database.close();
+    if (onClose) await onClose();
+  });
 
   return { app, io, repos, rooms, games, timers, votes, bots: driver, botRunner, reactions };
 }

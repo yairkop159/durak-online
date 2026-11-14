@@ -13,6 +13,8 @@ export interface HealthReport {
   readonly ok: boolean;
   readonly repository: RepositoryKind;
   readonly redis?: 'PONG' | 'down';
+  /** Added by GET /health (Phase 10); never affects `ok`. */
+  readonly postgres?: 'disabled' | 'down' | 'ok';
 }
 
 /** Storage backend plus its lifecycle hooks. */

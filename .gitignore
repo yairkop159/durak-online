@@ -5,3 +5,4 @@ coverage/
 .env
 .DS_Store
 packages/game-engine/bench/results/
+apps/server/src/generated/

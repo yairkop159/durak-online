@@ -2,6 +2,8 @@ import { buildServer } from './app.js';
 import { defaultPoolSize } from './bot/WorkerPoolRunner.js';
 import { createBackend } from './backend.js';
 import { loadConfig } from './config.js';
+import { createDatabase } from './db/database.js';
+import { createSystemScheduler, systemClock } from './services/scheduling.js';
 import { resolveWebDistDir } from './http/webApp.js';
 
 const config = loadConfig();
@@ -9,6 +11,7 @@ const config = loadConfig();
 // Logger for the bootstrap phase, before Fastify (and its logger) exists.
 const bootLog = {
   info: (obj: object, msg: string) => console.log(JSON.stringify({ level: 'info', msg, ...obj })),
+  warn: (obj: object, msg: string) => console.warn(JSON.stringify({ level: 'warn', msg, ...obj })),
   error: (obj: object, msg: string) => console.error(JSON.stringify({ level: 'error', msg, ...obj })),
 };
 
@@ -16,6 +19,17 @@ const backend = await createBackend(config, bootLog);
 await backend.startup();
 
 const webDistDir = resolveWebDistDir(config.webDistDir);
+
+// Postgres (profiles, history, ratings) is optional and never blocks startup or games: the first
+// attempt runs in the background after listen, and a failure is retried (src/db/database.ts).
+let dbLog: { info(obj: object, msg: string): void; warn(obj: object, msg: string): void } = bootLog;
+const database = createDatabase({
+  url: config.databaseUrl,
+  migrateOnStart: config.dbMigrateOnStart,
+  log: { info: (obj, msg) => dbLog.info(obj, msg), warn: (obj, msg) => dbLog.warn(obj, msg) },
+  clock: systemClock,
+  scheduler: createSystemScheduler(systemClock, (error) => bootLog.error({ err: String(error) }, 'database retry failed')),
+});
 
 const { app, timers, votes } = buildServer({
   repos: backend.repos,
@@ -36,7 +50,9 @@ const { app, timers, votes } = buildServer({
   webDistDir,
   trustProxy: config.trustProxy,
   limits: config.limits,
+  database,
 });
+dbLog = app.log;
 app.log.info({ repository: backend.kind }, 'storage backend ready');
 app.log.info(
   {
@@ -45,6 +61,8 @@ app.log.info(
     trustProxy: config.trustProxy,
     botWorkers: config.botWorkers ?? defaultPoolSize(),
     limits: config.limits,
+    postgres: config.databaseUrl ? 'configured' : 'disabled (no DATABASE_URL)',
+    dbMigrateOnStart: config.dbMigrateOnStart,
   },
   'settings',
 );
@@ -64,7 +82,7 @@ const shutdown = async (signal: string, code = 0) => {
   // Never hang on the way out (the platform would SIGKILL us anyway).
   setTimeout(() => process.exit(code || 1), 10_000).unref();
   try {
-    await app.close(); // closes sockets, HTTP, then the backend (Redis)
+    await app.close(); // closes sockets, HTTP, then Postgres and the backend (Redis)
   } catch (error) {
     app.log.error({ err: error }, 'error during shutdown');
   }
@@ -85,6 +103,8 @@ try {
   await app.listen({ port: config.port, host: config.host });
 } catch (error) {
   app.log.error(error);
+  await database.close();
   await backend.close();
   process.exit(1);
 }
+void database.start();
