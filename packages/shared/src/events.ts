@@ -38,12 +38,18 @@ export type ServerEventName = (typeof ServerEvents)[keyof typeof ServerEvents];
 export const RoomIdSchema = z.string().regex(/^[A-Za-z0-9_-]{4,32}$/, 'Invalid room id');
 export const NicknameSchema = z.string().trim().min(1).max(24);
 export const SessionTokenSchema = z.string().min(16).max(256);
+/**
+ * A profile's secret device key (Phase 10, 32 random bytes base64url). Optional on create/join:
+ * the seat is linked to that profile for ratings; unknown or unresolvable keys seat unprofiled.
+ */
+const SeatDeviceKeySchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'Invalid device key');
 
 export const CreateRoomPayloadSchema = z
   .object({
     nickname: NicknameSchema,
     maxPlayers: z.number().int().min(MIN_PLAYERS).max(MAX_PLAYERS),
     config: GameConfigInputSchema.optional(),
+    deviceKey: SeatDeviceKeySchema.optional(),
   })
   .strict();
 
@@ -51,6 +57,7 @@ export const JoinRoomPayloadSchema = z
   .object({
     roomId: RoomIdSchema,
     nickname: NicknameSchema,
+    deviceKey: SeatDeviceKeySchema.optional(),
   })
   .strict();
 
@@ -218,11 +225,12 @@ export interface GameOverPayload {
   readonly durakId: string | null;
   readonly finishOrder: readonly string[];
   readonly endReason: GameEndReason;
-  /** Human seats a bot ever played for (AFK or leave takeover). For ratings (Phase 3d). */
+  /** Human seats a bot ever played for (AFK or leave takeover). Marked in the match history. */
   readonly botAssisted: readonly string[];
   /**
-   * Humans who left the game (or whose reconnection grace expired). Rating semantics (Phase 3d):
-   * every id here is a loss, `durakId` is a loss, and games ending 'abandoned' are not rated.
+   * Humans who left the game (or whose reconnection grace expired). Rating semantics (Phase 10):
+   * every id here is a loss, `durakId` is a loss, and games ending 'abandoned' or 'restarted' are
+   * not rated.
    */
   readonly forfeits: readonly string[];
   /** Per-player end-of-game statistics (public information only). */
