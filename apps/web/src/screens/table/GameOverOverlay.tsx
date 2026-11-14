@@ -9,6 +9,7 @@ import { navigate } from '../../routing';
 import { motionTokens as M } from '../../theme/motion';
 import { ReactionButton } from '../../reactions/ReactionPicker';
 import type { ReactionsInView } from '../../reactions/useReactions';
+import { GameStatsSection } from './GameStats';
 
 type Mood = 'celebrate' | 'durak' | 'neutral';
 
@@ -62,7 +63,7 @@ export function GameOverOverlay({
         initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.85, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={reduced ? { duration: M.reducedFadeMs / 1000 } : { type: 'spring', stiffness: 260, damping: 20 }}
-        className="w-full max-w-sm"
+        className="max-h-[92dvh] w-full max-w-sm overflow-y-auto"
       >
         <Panel className="flex flex-col items-center gap-4 text-center">
           <h2 id="game-over-title" className="text-sm font-semibold tracking-wide text-muted">
@@ -105,6 +106,9 @@ export function GameOverOverlay({
             <p className="text-sm text-warn" data-testid="game-over-forfeits">
               {t.gameOver.forfeits}: {forfeits.map(nameOf).join(', ')}
             </p>
+          )}
+          {gameOver && reason !== 'abandoned' && Object.keys(gameOver.stats).length > 0 && (
+            <GameStatsSection stats={gameOver.stats} mode={view.config.mode} players={view.players.map((p) => p.id)} nameOf={nameOf} />
           )}
           {reactions && reactions.byPlayer.size > 0 && (
             <ul className="pointer-events-none flex flex-wrap justify-center gap-1.5" data-testid="game-over-reactions" aria-hidden="true">

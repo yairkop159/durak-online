@@ -161,6 +161,50 @@ export interface Strings {
     readonly expired: string;
     readonly cancelled: string;
   };
+  /** Game moments (banners). `you*` variants when the viewer is the one it happened to. */
+  readonly moments: {
+    readonly wentOut: (names: string, count: number) => string;
+    readonly youWentOut: string;
+    readonly bigTake: (name: string, count: number) => string;
+    readonly youTookBig: (count: number) => string;
+    readonly perfectDefense: (name: string) => string;
+    readonly yourPerfectDefense: string;
+    readonly transfer: (from: string, to: string) => string;
+    readonly youTransferred: (to: string) => string;
+    readonly transferredToYou: (from: string) => string;
+    readonly deckOut: string;
+    readonly deckOutTrumpTo: (name: string) => string;
+    readonly deckOutTrumpToYou: string;
+  };
+  /** The durak reveal at the end of a game. */
+  readonly reveal: {
+    readonly stamp: string;
+    readonly draw: string;
+    readonly skip: string;
+  };
+  /** End-of-game statistics on the game-over screen. */
+  readonly stats: {
+    readonly highlights: string;
+    readonly mostTaken: string;
+    readonly mostTakenValue: (count: number) => string;
+    readonly bestDefense: string;
+    readonly bestDefenseValue: (defenses: number, of: number) => string;
+    readonly mostTransfers: string;
+    readonly mostTransfersValue: (count: number) => string;
+    readonly mostThrowIns: string;
+    readonly mostThrowInsValue: (count: number) => string;
+    readonly showAll: string;
+    readonly hideAll: string;
+    readonly columns: {
+      readonly player: string;
+      readonly boutsAttacked: string;
+      readonly defenses: string;
+      readonly cardsTaken: string;
+      readonly throwIns: string;
+      readonly transfers: string;
+      readonly cardsPlayed: string;
+    };
+  };
   readonly reactions: {
     /** The button that opens the picker. */
     readonly button: string;
@@ -334,6 +378,47 @@ export const he: Strings = {
     declined: (name) => `${name} סירב/ה למשחק חדש`,
     expired: 'פג הזמן להצבעה',
     cancelled: 'ההצבעה בוטלה',
+  },
+  moments: {
+    wentOut: (names, count) => (count > 1 ? `${names} יצאו! 🎉` : `${names} יצא/ה! 🎉`),
+    youWentOut: 'יצאת מהמשחק! 🎉',
+    bigTake: (name, count) => `${name} לקח/ה ${count} קלפים`,
+    youTookBig: (count) => `לקחת ${count} קלפים`,
+    perfectDefense: (name) => `הגנה מושלמת של ${name}!`,
+    yourPerfectDefense: 'הגנה מושלמת!',
+    transfer: (from, to) => `${from} העביר/ה את ההתקפה ל־${to}`,
+    youTransferred: (to) => `העברת את ההתקפה ל־${to}`,
+    transferredToYou: (from) => `${from} העביר/ה אליך את ההתקפה`,
+    deckOut: 'החפיסה נגמרה!',
+    deckOutTrumpTo: (name) => `החפיסה נגמרה! השליט אצל ${name}`,
+    deckOutTrumpToYou: 'החפיסה נגמרה! השליט אצלך',
+  },
+  reveal: {
+    stamp: 'דוראק!',
+    draw: 'תיקו!',
+    skip: 'דילוג',
+  },
+  stats: {
+    highlights: 'רגעי שיא',
+    mostTaken: 'הכי הרבה קלפים נלקחו',
+    mostTakenValue: (count) => `${count} קלפים`,
+    bestDefense: 'ההגנה הטובה ביותר',
+    bestDefenseValue: (defenses, of) => `${defenses} מתוך ${of} הגנות הצליחו`,
+    mostTransfers: 'הכי הרבה העברות',
+    mostTransfersValue: (count) => `${count} העברות`,
+    mostThrowIns: 'הכי הרבה הוספות',
+    mostThrowInsValue: (count) => `${count} קלפים נוספו`,
+    showAll: 'כל הנתונים',
+    hideAll: 'הסתרת הנתונים',
+    columns: {
+      player: 'שחקן',
+      boutsAttacked: 'תקיפות',
+      defenses: 'הגנות',
+      cardsTaken: 'נלקחו',
+      throwIns: 'הוספות',
+      transfers: 'העברות',
+      cardsPlayed: 'קלפים ששוחקו',
+    },
   },
   reactions: {
     button: 'תגובה מהירה',

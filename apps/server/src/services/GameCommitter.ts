@@ -10,7 +10,8 @@ import {
   type GameState,
   type PublicKnowledge,
 } from '@durak/game-engine';
-import type { GameEndReason, PlayerId } from '@durak/shared';
+import type { GameEndReason, GameStats, PlayerId } from '@durak/shared';
+import { advanceStats, initialStats } from './gameStats.js';
 import type { Room, StoredGame } from '../domain/types.js';
 import type { Repositories } from '../repositories/interfaces.js';
 import type { GameChangeInfo, GameChangeListener, RoomNotifier } from './ports.js';
@@ -58,7 +59,12 @@ export class GameCommitter {
     const { repos, notifier, timers } = this.deps;
     const knowledge: Record<PlayerId, PublicKnowledge> = {};
     for (const p of game.state.players) knowledge[p.id] = initKnowledge(sanitizeStateForPlayer(game.state, p.id));
-    const started: StoredGame = { ...game, knowledge, turnDeadline: timers.deadlineFor(room, game.state) };
+    const started: StoredGame = {
+      ...game,
+      knowledge,
+      stats: initialStats(game.state),
+      turnDeadline: timers.deadlineFor(room, game.state),
+    };
     await repos.atomic.saveRoomAndGame(room, started);
     timers.armTurn(started);
     notifier.roomState(room);
@@ -72,11 +78,14 @@ export class GameCommitter {
     const { prev } = input;
     let state = input.state;
     let endReason = input.endReason;
+    // Stats from public events of this step (a move or one timeout step: at most one bout resolution).
+    let stats = advanceStats(prev.stats, prev.state, state);
 
-    const forwarded = fastForwardIfBotsOnly(input.room, state);
+    const forwarded = fastForwardIfBotsOnly(input.room, state, stats);
     if (forwarded) {
       state = forwarded.state;
       endReason = forwarded.endReason;
+      stats = forwarded.stats;
     }
 
     const finished = state.phase.kind === 'finished';
@@ -94,6 +103,7 @@ export class GameCommitter {
       knowledge: advanceKnowledge(prev.state, state, prev.knowledge),
       botAssisted: input.botAssisted ?? prev.botAssisted,
       forfeits: input.forfeits ?? prev.forfeits,
+      stats,
     };
 
     if (roomChanged) await repos.atomic.saveRoomAndGame(room, game);
@@ -142,19 +152,22 @@ export function advanceKnowledge(
 /**
  * A game never continues with only bots: once every player still in is a bot, the rest is played
  * out immediately (GreedyBot, each seat deciding from its own view only). Null if not applicable.
+ * `stats` are advanced move by move.
  */
 export function fastForwardIfBotsOnly(
   room: Room,
   state: GameState,
-): { state: GameState; endReason: GameEndReason } | null {
+  stats: GameStats = {},
+): { state: GameState; endReason: GameEndReason; stats: GameStats } | null {
   if (state.phase.kind === 'finished') return null;
   const isBot = (id: string) => room.members.find((m) => m.playerId === id)?.isBot === true;
   const stillIn = state.players.filter((p) => !state.finishOrder.includes(p.id));
   if (stillIn.length === 0 || !stillIn.every((p) => isBot(p.id))) return null;
 
   let current = state;
+  let currentStats = stats;
   for (let i = 0; i < FAST_FORWARD_MAX_MOVES; i++) {
-    if (current.phase.kind === 'finished') return { state: current, endReason: 'normal' };
+    if (current.phase.kind === 'finished') return { state: current, endReason: 'normal', stats: currentStats };
     const actor = canonicalActor(current);
     if (actor < 0) break;
     const id = current.players[actor]!.id;
@@ -163,9 +176,10 @@ export function fastForwardIfBotsOnly(
     if (!move) break;
     const next = applyMove(current, { ...move, playerId: id });
     if (!next.ok) break;
+    currentStats = advanceStats(currentStats, current, next.value);
     current = next.value;
   }
-  if (current.phase.kind === 'finished') return { state: current, endReason: 'normal' };
+  if (current.phase.kind === 'finished') return { state: current, endReason: 'normal', stats: currentStats };
   const abandoned = abandon(current);
-  return abandoned.ok ? { state: abandoned.value, endReason: 'abandoned' } : null;
+  return abandoned.ok ? { state: abandoned.value, endReason: 'abandoned', stats: currentStats } : null;
 }

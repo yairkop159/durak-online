@@ -3,6 +3,7 @@ import { GameConfigInputSchema, MAX_PLAYERS, MIN_PLAYERS } from './config.js';
 import { ClientMoveSchema } from './moves.js';
 import type { GameErrorCode } from './errors.js';
 import { ReactionIdSchema, type ReactionId } from './reactions.js';
+import type { GameStats } from './stats.js';
 import type { PlayerView } from './view.js';
 
 /** Socket.io event names, client -> server. */
@@ -224,6 +225,8 @@ export interface GameOverPayload {
    * every id here is a loss, `durakId` is a loss, and games ending 'abandoned' are not rated.
    */
   readonly forfeits: readonly string[];
+  /** Per-player end-of-game statistics (public information only). */
+  readonly stats: GameStats;
 }
 
 export interface SessionIssuedPayload {

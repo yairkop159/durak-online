@@ -56,7 +56,7 @@ describe('restart vote', () => {
   it('a passed vote: game:over "restarted" shows no overlay, and the new game (version 0) replaces the old one', () => {
     const { transport } = renderTable(makeView({ hand: '6S 7S' }), { version: 9 });
     act(() => {
-      transport.serverSends('game:over', { roomId: ROOM_ID, durakId: null, finishOrder: [], endReason: 'restarted', botAssisted: [], forfeits: [] });
+      transport.serverSends('game:over', { roomId: ROOM_ID, durakId: null, finishOrder: [], endReason: 'restarted', botAssisted: [], forfeits: [], stats: {} });
       transport.serverSends('room:state', roomState('playing'));
       transport.serverSends('game:state', gameState(makeView({ hand: '9H' }), 0, { gameId: 'g2' }));
     });

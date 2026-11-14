@@ -1,4 +1,4 @@
-import type { BotDifficulty, GameConfigInput, GameEndReason, PlayerId } from '@durak/shared';
+import type { BotDifficulty, GameConfigInput, GameEndReason, GameStats, PlayerId } from '@durak/shared';
 import type { GameState, PublicKnowledge } from '@durak/game-engine';
 
 // All domain records are plain JSON so any repository (in-memory, Redis) can store them unchanged.
@@ -99,4 +99,9 @@ export interface StoredGame {
    * for ratings, whether the game then ended (forfeit) or a bot finished it for them.
    */
   readonly forfeits: readonly PlayerId[];
+  /**
+   * Per-player end-of-game statistics (public information only), advanced on every commit
+   * (GameCommitter) and sent in game:over.
+   */
+  readonly stats: GameStats;
 }

@@ -14,12 +14,15 @@ export function useGameSounds({
   remaining,
   gameOver,
   viewerId,
+  stingerByReveal = false,
 }: {
   anim: BoardAnimation;
   myTurn: boolean;
   remaining: number | null;
   gameOver: GameOverPayload | null;
   viewerId: string | null;
+  /** The durak reveal plays the stinger itself, when its stamp lands. */
+  stingerByReveal?: boolean;
 }): void {
   const audio = useAudio();
 
@@ -50,6 +53,6 @@ export function useGameSounds({
     if (!gameOver || gameOver === announced.current) return;
     announced.current = gameOver;
     const cue = gameOverCue(gameOver, viewerId);
-    if (cue) audio.play(cue);
-  }, [gameOver, viewerId, audio]);
+    if (cue && !stingerByReveal) audio.play(cue);
+  }, [gameOver, viewerId, audio, stingerByReveal]);
 }

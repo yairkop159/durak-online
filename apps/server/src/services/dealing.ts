@@ -1,6 +1,7 @@
 import { createGame } from '@durak/game-engine';
 import { fail, ok, type Result } from '../domain/result.js';
 import type { Room, StoredGame } from '../domain/types.js';
+import { initialStats } from './gameStats.js';
 import { newShortId } from './random.js';
 
 /**
@@ -30,6 +31,7 @@ export function dealGame(room: Room, seed: number, now: number): Result<{ room: 
     knowledge: {}, // set by the committer
     botAssisted: [],
     forfeits: [],
+    stats: initialStats(created.value),
   };
   return ok({ room: updated, game });
 }

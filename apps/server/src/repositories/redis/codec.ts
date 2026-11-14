@@ -102,6 +102,19 @@ export const PublicKnowledgeSchema = z
   })
   .strict();
 
+export const PlayerStatsSchema = z
+  .object({
+    boutsAttacked: z.number().int().min(0),
+    boutsDefended: z.number().int().min(0),
+    defenses: z.number().int().min(0),
+    takes: z.number().int().min(0),
+    cardsTaken: z.number().int().min(0),
+    throwIns: z.number().int().min(0),
+    transfers: z.number().int().min(0),
+    cardsPlayed: z.number().int().min(0),
+  })
+  .strict();
+
 export const StoredGameSchema = z
   .object({
     roomId: z.string(),
@@ -117,6 +130,7 @@ export const StoredGameSchema = z
     knowledge: z.record(z.string(), PublicKnowledgeSchema).default({}),
     botAssisted: z.array(z.string()).default([]),
     forfeits: z.array(z.string()).default([]), // Phase 7
+    stats: z.record(z.string(), PlayerStatsSchema).default({}), // Phase 8
   })
   .strict();
 

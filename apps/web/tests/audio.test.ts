@@ -140,6 +140,7 @@ const anim = (events: AnimationEvent[], speed = 1): BoardAnimation => ({
   timeline: scheduleEvents(events, { reduced: false, speed }),
   reduced: false,
   reveal: new Map(),
+  moments: [],
 });
 
 describe('sound plan (driven by the animation events)', () => {
@@ -175,7 +176,7 @@ describe('sound plan (driven by the animation events)', () => {
     expect(tickSecond(3900, true)).toBe(4);
     expect(tickSecond(3900, false)).toBeNull();
 
-    const over = { roomId: 'r', durakId: 'me', finishOrder: [], endReason: 'normal' as const, botAssisted: [], forfeits: [] };
+    const over = { roomId: 'r', durakId: 'me', finishOrder: [], endReason: 'normal' as const, botAssisted: [], forfeits: [], stats: {} };
     expect(gameOverCue(over, 'me')).toBe('durak');
     expect(gameOverCue(over, 'bob')).toBe('win');
     expect(gameOverCue(over, null)).toBeNull();

@@ -2,7 +2,24 @@
  * Every sound effect, synthesized with the Web Audio API (no audio files). Each recipe schedules
  * a few short-lived nodes at `t` (AudioContext time, seconds) into `out`.
  */
-export const SOUND_NAMES = ['cardPlay', 'defend', 'take', 'sweep', 'draw', 'yourTurn', 'tick', 'win', 'durak', 'reaction'] as const;
+export const SOUND_NAMES = [
+  'cardPlay',
+  'defend',
+  'take',
+  'sweep',
+  'draw',
+  'yourTurn',
+  'tick',
+  'win',
+  'durak',
+  'reaction',
+  'wentOut',
+  'bigTake',
+  'perfect',
+  'transfer',
+  'deckOut',
+  'drumroll',
+] as const;
 export type SoundName = (typeof SOUND_NAMES)[number];
 
 type Recipe = (ctx: AudioContext, out: AudioNode, t: number, noise: AudioBuffer) => void;
@@ -106,6 +123,37 @@ export const RECIPES: Record<SoundName, Recipe> = {
   reaction: (ctx, out, t) => {
     tone(ctx, out, t, { freq: 880, freqEnd: 1180, type: 'sine', dur: 0.09, gain: 0.08, attack: 0.004 });
     tone(ctx, out, t + 0.07, { freq: 1320, type: 'sine', dur: 0.12, gain: 0.06, attack: 0.004 });
+  },
+  // A player went out: a short, happy major arpeggio.
+  wentOut: (ctx, out, t) => {
+    notes(ctx, out, t, [587.33, 739.99, 880, 1174.66], 0.07, { type: 'triangle', dur: 0.3, gain: 0.14, attack: 0.008 });
+  },
+  // A big take: a heavy low thud under a long papery slide.
+  bigTake: (ctx, out, t, noise) => {
+    tone(ctx, out, t, { freq: 130, freqEnd: 55, type: 'sine', dur: 0.45, gain: 0.32 });
+    noiseBurst(ctx, out, t + 0.03, noise, { dur: 0.5, gain: 0.3, filter: 'lowpass', freq: 1600, freqEnd: 250 });
+  },
+  // A perfect defense: a bright, ringing two-note shine.
+  perfect: (ctx, out, t) => {
+    notes(ctx, out, t, [1046.5, 1567.98], 0.09, { type: 'sine', dur: 0.55, gain: 0.12, attack: 0.005 });
+    tone(ctx, out, t + 0.18, { freq: 2093, type: 'sine', dur: 0.5, gain: 0.04, attack: 0.01 });
+  },
+  // A transfer: a quick sideways whoosh with a rising blip.
+  transfer: (ctx, out, t, noise) => {
+    noiseBurst(ctx, out, t, noise, { dur: 0.22, gain: 0.3, filter: 'bandpass', freq: 900, freqEnd: 3200, q: 1.4 });
+    tone(ctx, out, t + 0.08, { freq: 440, freqEnd: 880, type: 'triangle', dur: 0.16, gain: 0.08 });
+  },
+  // The deck ran out: a soft descending shimmer.
+  deckOut: (ctx, out, t) => {
+    notes(ctx, out, t, [1318.51, 1174.66, 987.77, 783.99], 0.06, { type: 'sine', dur: 0.35, gain: 0.07, attack: 0.004 });
+  },
+  // The durak reveal: a snare-like roll that swells, about 1.1 s.
+  drumroll: (ctx, out, t, noise) => {
+    for (let i = 0; i < 22; i++) {
+      const at = t + i * 0.05;
+      noiseBurst(ctx, out, at, noise, { dur: 0.045, gain: 0.08 + (i / 22) * 0.22, filter: 'bandpass', freq: 1800, q: 0.9 });
+    }
+    tone(ctx, out, t + 1.1, { freq: 98, freqEnd: 60, type: 'sine', dur: 0.4, gain: 0.3 });
   },
 };
 

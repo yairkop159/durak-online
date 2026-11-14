@@ -4,6 +4,7 @@ import type { ClientGame } from '../net/store';
 import { motionTokens as M } from '../theme/motion';
 import { anchorKey, type AnchorRegistry, type Rect } from './anchors';
 import { diffViews, type AnimationEvent } from './diffViews';
+import { momentsFor, scheduleMoments, type PlannedMoment } from './moments';
 import { EMPTY_TIMELINE, cardStart, scheduleEvents, type Timeline } from './timeline';
 
 /**
@@ -19,9 +20,11 @@ export interface BoardAnimation {
   readonly reduced: boolean;
   /** Cards (by id) that appear only when their flight lands. */
   readonly reveal: ReadonlyMap<string, { readonly delayMs: number; readonly fadeMs: number }>;
+  /** Banner-worthy moments of this step (see moments.ts), each timed after its animation. */
+  readonly moments: readonly PlannedMoment[];
 }
 
-const IDLE: BoardAnimation = { version: -1, events: [], timeline: EMPTY_TIMELINE, reduced: false, reveal: new Map() };
+const IDLE: BoardAnimation = { version: -1, events: [], timeline: EMPTY_TIMELINE, reduced: false, reveal: new Map(), moments: [] };
 
 /** Consecutive versions of the same game are animated; anything else (first state, resync, reconnect) snaps. */
 export function animationFor(prev: ClientGame | null, next: ClientGame | null, reduced: boolean, speed = 1): BoardAnimation {
@@ -30,7 +33,8 @@ export function animationFor(prev: ClientGame | null, next: ClientGame | null, r
     prev !== null && prev.roomId === next.roomId && prev.gameId === next.gameId && next.version === prev.version + 1;
   const events = consecutive ? diffViews(prev.view, next.view) : [];
   const timeline = scheduleEvents(events, { reduced, speed });
-  return { version: next.version, events, timeline, reduced, reveal: revealPlan(timeline, reduced) };
+  const moments = consecutive ? scheduleMoments(momentsFor(prev.view, next.view, events), timeline) : [];
+  return { version: next.version, events, timeline, reduced, reveal: revealPlan(timeline, reduced), moments };
 }
 
 function revealPlan(timeline: Timeline, reduced: boolean): Map<string, { delayMs: number; fadeMs: number }> {

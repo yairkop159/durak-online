@@ -24,7 +24,7 @@ import { isReconnecting } from '../../net/store';
 import { GameOverOverlay } from './GameOverOverlay';
 import { HandFan } from './HandFan';
 import { ActionBar, Countdown, StatusBanner } from './parts';
-import { MySeat, OpponentSeat, type TurnRing } from './Seat';
+import { MySeat, OpponentSeat, type SeatEffectProp, type TurnRing } from './Seat';
 import { statusLine } from './status';
 import { RestartButton, RestartVotePanel, canProposeRestart } from './RestartVote';
 import { TopBar } from './TopBar';
@@ -40,6 +40,12 @@ import { DeckPile, DiscardPile, TableArea } from './TableSurface';
 import { useReactions } from '../../reactions/useReactions';
 import { ReactionAnnouncer } from '../../reactions/ReactionBubble';
 import { ReactionButton } from '../../reactions/ReactionPicker';
+import { seatEffects } from '../../anim/moments';
+import { planReveal } from '../../anim/reveal';
+import { gameOverCue } from '../../audio/soundPlan';
+import { DurakReveal } from '../../moments/DurakReveal';
+import { MomentBanner } from '../../moments/MomentBanner';
+import { useMomentQueue } from '../../moments/useMomentQueue';
 
 const GAME_ERRORS: ReadonlySet<string> = new Set(GAME_ERROR_CODES);
 const LAST_BOUT_PEEK_MS = 2500;
@@ -79,7 +85,8 @@ export function TableScreen() {
   const reduced = useReducedMotion() ?? false;
   const settings = useSettings();
   const settingsStore = useSettingsStore();
-  const anim = useBoardAnimation(game, reduced, ANIMATION_SPEED_FACTOR[settings.animationSpeed]);
+  const speed = ANIMATION_SPEED_FACTOR[settings.animationSpeed];
+  const anim = useBoardAnimation(game, reduced, speed);
 
   const [registry] = useState(() => new AnchorRegistry());
   const [flights, setFlights] = useState<{ version: number; list: readonly Flight[] }>({ version: -1, list: [] });
@@ -114,9 +121,27 @@ export function TableScreen() {
   const fraction = remaining !== null && fullMs !== null ? remaining / fullMs : null;
 
   const viewerId = view?.viewerId ?? null;
-  const soundTurn = !!view && viewerId !== null && view.phase.kind !== 'finished' && !reconnecting && moves.length > 0;
-  useGameSounds({ anim, myTurn: soundTurn, remaining, gameOver, viewerId });
+  const gameFinished = view?.phase.kind === 'finished';
+
+  // The durak reveal runs only for a game we watched finish (not after a reload into a finished game).
+  const sawRunning = useRef<string | null>(null);
+  useEffect(() => {
+    if (game && !gameFinished) sawRunning.current = game.gameId;
+  }, [game, gameFinished]);
+  const revealPlan = useMemo(
+    () =>
+      game && view && gameFinished && gameOver && sawRunning.current === game.gameId
+        ? planReveal(gameOver, view, { reduced, speed })
+        : null,
+    // Planned once per finished game (a later re-render must not restart it).
+    [game?.gameId, gameFinished, gameOver, reduced],
+  );
+  const [revealDoneFor, setRevealDoneFor] = useState<string | null>(null);
+
+  const soundTurn = !!view && viewerId !== null && !gameFinished && !reconnecting && moves.length > 0;
+  useGameSounds({ anim, myTurn: soundTurn, remaining, gameOver, viewerId, stingerByReveal: revealPlan !== null });
   const reactions = useReactions();
+  const moment = useMomentQueue(anim, { speed, enabled: !!view && !gameFinished && !reconnecting });
 
   if (!game || !view) return null;
 
@@ -136,6 +161,9 @@ export function TableScreen() {
     urgent: remaining !== null && remaining <= 5000 && awaited.has(id),
   });
   const myTurn = interactive && moves.length > 0;
+  const effects = moment ? seatEffects(moment.moment) : null;
+  const effectOf = (id: string): SeatEffectProp => (moment && effects?.has(id) ? { kind: effects.get(id)!, id: moment.id } : null);
+  const revealing = finished && overlayReady && revealPlan !== null && revealDoneFor !== game.gameId;
 
   // First-game tips: shown for the current situation until dismissed or acted on once.
   const tip = settings.showTips && interactive ? tipFor(view, moves, settings.tipsSeen) : null;
@@ -178,6 +206,8 @@ export function TableScreen() {
                 member={members?.find((m) => m.playerId === p.id)}
                 ring={ringOf(p.id)}
                 reaction={reactions.byPlayer.get(p.id) ?? null}
+                effect={effectOf(p.id)}
+                reduced={reduced}
               />
             ))}
           </ul>
@@ -208,7 +238,11 @@ export function TableScreen() {
             />
           )}
 
-          <div className="mt-auto flex flex-col items-center gap-2 pb-[env(safe-area-inset-bottom)]">
+          <div
+            className={`mt-auto flex flex-col items-center gap-2 pb-[env(safe-area-inset-bottom)] transition duration-500 ${
+              revealing ? 'translate-y-24 opacity-0' : ''
+            }`}
+          >
             {/* Its own row ABOVE the hand: the buttons can never cover (or steal clicks from) a card. */}
             {tip && <TipBanner tip={tip} onDismiss={() => settingsStore.markTipSeen(tip)} />}
             {interactive && <ActionBar moves={moves} onMove={send} />}
@@ -221,6 +255,8 @@ export function TableScreen() {
                   member={myMember}
                   ring={ringOf(me.id)}
                   reaction={reactions.byPlayer.get(me.id) ?? null}
+                  effect={effectOf(me.id)}
+                  reduced={reduced}
                   extra={canReact && <ReactionButton disabled={reconnecting} />}
                 />
                 <HandFan
@@ -239,8 +275,19 @@ export function TableScreen() {
 
           <FlightLayer key={flights.version} flights={flights.list} />
           <ReactionAnnouncer latest={reactions.latest} nameOf={nameOf} />
+          <MomentBanner active={moment} viewerId={viewerId} nameOf={nameOf} reduced={reduced} />
 
-          {finished && overlayReady && gameOver?.endReason !== 'restarted' && (
+          {revealing && revealPlan && (
+            <DurakReveal
+              plan={revealPlan}
+              viewerId={viewerId}
+              nameOf={nameOf}
+              stinger={gameOver ? gameOverCue(gameOver, viewerId) : null}
+              onDone={() => setRevealDoneFor(game.gameId)}
+            />
+          )}
+
+          {finished && overlayReady && !revealing && gameOver?.endReason !== 'restarted' && (
             <GameOverOverlay
               view={view}
               gameOver={gameOver}

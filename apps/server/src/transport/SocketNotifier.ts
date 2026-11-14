@@ -66,6 +66,7 @@ export class SocketNotifier implements RoomNotifier {
       endReason: game.endReason ?? 'normal',
       botAssisted: [...game.botAssisted],
       forfeits: [...game.forfeits],
+      stats: game.stats,
     });
   }
 

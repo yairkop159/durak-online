@@ -27,6 +27,10 @@ describe('full games over sockets', () => {
     expect(stored?.seed).toBe(seed);
     expect(stored?.state.phase.kind).toBe('finished');
     if (stored?.state.phase.kind === 'finished') expect(overHost.durakId).toBe(stored.state.phase.durak);
+    // End-of-game stats travel in game:over, for every seat, exactly as stored.
+    expect(overHost.stats).toEqual(stored?.stats);
+    expect(Object.keys(overHost.stats).sort()).toEqual(stored!.state.players.map((p) => p.id).sort());
+    expect(Object.values(overHost.stats).reduce((n, s) => n + s.boutsAttacked, 0)).toBeGreaterThan(0);
     expect((await harness.server.repos.rooms.get(roomId))?.status).toBe('finished');
 
     // Only races between the two players may produce errors.

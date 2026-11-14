@@ -493,6 +493,7 @@ function handcraftedBotTurn(): { room: Room; game: StoredGame } {
       knowledge: {},
       botAssisted: [],
       forfeits: [],
+      stats: {},
     };
     return { room: roomWith(['h', 'b'], ['b']), game };
   }

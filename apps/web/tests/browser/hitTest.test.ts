@@ -91,6 +91,74 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
       }
     }, 30_000);
 
+    it(`table (${vp.name}): a moment banner and reaction bubbles never block the hand or Take/Pass`, async () => {
+      const page = await browser.newPage({ viewport: vp });
+      try {
+        await page.goto(`${base}tests/browser/fixtures/table.html`);
+        await page.waitForFunction(() => (window as unknown as { __fixture?: { ready: boolean } }).__fixture?.ready === true);
+        // The overlays are really on screen right now.
+        await page.getByTestId('moment-banner').waitFor({ state: 'visible', timeout: 3000 });
+        await page.getByTestId('reaction-bubble-me').waitFor({ state: 'visible' });
+        await page.getByTestId('reaction-bubble-carl').waitFor({ state: 'visible' });
+        await page.getByTestId('seat-effect').first().waitFor({ state: 'attached' });
+
+        const handCards = page.locator('[data-testid="hand"] [data-card]');
+        expect(await handCards.count()).toBe(6);
+        const take = page.getByRole('button', { name: t.table.take });
+        await take.waitFor();
+        const result = await page.evaluate(() => {
+          const OVERLAYS = '[data-testid^="reaction-bubble"], [data-testid="moment-banner"], [data-testid="seat-effect"]';
+          const targets = [
+            ...document.querySelectorAll<HTMLElement>('[data-testid="hand"] [data-card]'),
+            ...document.querySelectorAll<HTMLElement>('[data-testid="action-row"] button'),
+          ];
+          const centers: string[] = [];
+          const blocked: string[] = [];
+          for (const el of targets) {
+            const r = el.getBoundingClientRect();
+            // The topmost element at the center is the control itself...
+            const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            if (!hit || !(el === hit || el.contains(hit))) centers.push(`${el.outerHTML.slice(0, 60)} under ${hit?.outerHTML.slice(0, 80)}`);
+            // ...and no point of it, anywhere, lands on an overlay (cards may overlap each other).
+            for (let i = 1; i < 10; i += 2) {
+              for (let j = 1; j < 10; j += 2) {
+                const p = document.elementFromPoint(r.left + (r.width * i) / 10, r.top + (r.height * j) / 10);
+                if (p?.closest(OVERLAYS)) blocked.push(`${el.outerHTML.slice(0, 60)} at ${i},${j} under ${p.closest(OVERLAYS)!.outerHTML.slice(0, 60)}`);
+              }
+            }
+          }
+          // The check must not be vacuous: some overlay really overlaps some control.
+          const overlaps = [...document.querySelectorAll(OVERLAYS)].some((o) => {
+            const a = o.getBoundingClientRect();
+            return targets.some((t) => {
+              const b = t.getBoundingClientRect();
+              return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+            });
+          });
+          return { centers, blocked, overlaps };
+        });
+        expect(result.centers).toEqual([]);
+        expect(result.blocked).toEqual([]);
+        expect(result.overlaps).toBe(true);
+        expect(await coveredControls(page)).toEqual([]);
+
+        // A raw mouse click on a hand card registers (it becomes the selected defense card).
+        const first = handCards.first();
+        const box = (await first.boundingBox())!;
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+        await expect(first.getAttribute('data-state')).resolves.toBe('selected');
+        // And Take really sends the move.
+        const takeBox = (await take.boundingBox())!;
+        await page.mouse.click(takeBox.x + takeBox.width / 2, takeBox.y + takeBox.height / 2);
+        const emitted = await page.evaluate(
+          () => (window as unknown as { __fixture: { emitted: { event: string }[] } }).__fixture.emitted.map((e) => e.event),
+        );
+        expect(emitted).toContain('game:move');
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
     for (const path of ['/', '/rules']) {
       it(`${path} (${vp.name}): no visible control is covered by another element`, async () => {
         const page = await browser.newPage({ viewport: vp });

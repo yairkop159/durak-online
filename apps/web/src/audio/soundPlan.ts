@@ -1,5 +1,6 @@
 import type { GameOverPayload } from '@durak/shared';
 import type { BoardAnimation } from '../anim/useBoardAnimation';
+import type { MomentType } from '../anim/moments';
 import { cardStart } from '../anim/timeline';
 import type { SoundName } from './sfx';
 
@@ -12,9 +13,19 @@ export interface PlannedSound {
 /** Most draw ticks played for one refill (more would just be noise). */
 const MAX_DRAW_TICKS = 6;
 
+/** The sound each moment banner opens with. */
+export const MOMENT_SOUNDS: Record<MomentType, SoundName> = {
+  wentOut: 'wentOut',
+  deckOut: 'deckOut',
+  bigTake: 'bigTake',
+  transfer: 'transfer',
+  perfectDefense: 'perfect',
+};
+
 /**
  * The sounds of one board animation, timed with its timeline (pure). Driven only by the
- * `diffViews` events the animations already use: no extra server messages.
+ * `diffViews` events the animations already use: no extra server messages. Moment banners play
+ * their own sound when they actually appear (they can queue), see `MOMENT_SOUNDS`.
  */
 export function soundsFor(anim: BoardAnimation): PlannedSound[] {
   const out: PlannedSound[] = [];

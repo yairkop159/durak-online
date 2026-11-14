@@ -6,6 +6,11 @@ import { Avatar } from '../../components/ui';
 import { t } from '../../i18n';
 import type { ClientReaction } from '../../net/store';
 import { ReactionBubble } from '../../reactions/ReactionBubble';
+import type { SeatEffect as SeatEffectKind } from '../../anim/moments';
+import { SeatEffect } from '../../moments/MomentBanner';
+
+/** The moment effect on a seat right now (the id re-runs it for a new moment), or null. */
+export type SeatEffectProp = { readonly kind: SeatEffectKind; readonly id: number } | null;
 import { PlayerBadges } from './parts';
 
 export interface TurnRing {
@@ -22,6 +27,8 @@ export function OpponentSeat({
   member,
   ring,
   reaction = null,
+  effect = null,
+  reduced = false,
 }: {
   player: PublicPlayer;
   name: string;
@@ -30,6 +37,8 @@ export function OpponentSeat({
   ring: TurnRing;
   /** The player's latest quick reaction, shown as a bubble above the avatar. */
   reaction?: ClientReaction | null;
+  effect?: SeatEffectProp;
+  reduced?: boolean;
 }) {
   const anchor = useAnchor(anchorKey.seat(player.id));
   const awaited = ring.progress !== null;
@@ -50,6 +59,7 @@ export function OpponentSeat({
           urgent={ring.urgent}
           dim={member ? !member.connected : false}
         />
+        {effect && <SeatEffect key={effect.id} effect={effect.kind} momentId={effect.id} reduced={reduced} />}
         {reaction && <ReactionBubble key={reaction.id} reaction={reaction} />}
       </div>
       <span className="max-w-full truncate text-xs font-semibold sm:text-sm">{name}</span>
@@ -75,6 +85,8 @@ export function MySeat({
   member,
   ring,
   reaction = null,
+  effect = null,
+  reduced = false,
   extra,
 }: {
   player: PublicPlayer;
@@ -83,6 +95,8 @@ export function MySeat({
   member: RoomMember | undefined;
   ring: TurnRing;
   reaction?: ClientReaction | null;
+  effect?: SeatEffectProp;
+  reduced?: boolean;
   /** E.g. the quick-reaction button. */
   extra?: ReactNode;
 }) {
@@ -91,6 +105,7 @@ export function MySeat({
     <div className="flex items-center justify-center gap-2" data-testid={`seat-${player.id}`}>
       <div ref={anchor} className="relative">
         <Avatar id={player.id} name={name} size={30} progress={ring.progress} urgent={ring.urgent} />
+        {effect && <SeatEffect key={effect.id} effect={effect.kind} momentId={effect.id} reduced={reduced} />}
         {reaction && <ReactionBubble key={reaction.id} reaction={reaction} />}
       </div>
       <span className="text-sm font-semibold">{name}</span>

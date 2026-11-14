@@ -43,6 +43,9 @@ export function makeGame(roomId: string, finished = false): StoredGame {
     },
     botAssisted: ['p_guest'],
     forfeits: [],
+    stats: {
+      p_host: { boutsAttacked: 2, boutsDefended: 1, defenses: 1, takes: 0, cardsTaken: 0, throwIns: 1, transfers: 0, cardsPlayed: 5 },
+    },
   };
 }
 
