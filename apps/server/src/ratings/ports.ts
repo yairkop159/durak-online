@@ -1,4 +1,4 @@
-import type { MyProfile, ProfileCredentials } from '@durak/shared';
+import type { LeaderboardResponse, MyProfile, ProfileCredentials, PublicProfile } from '@durak/shared';
 import type { GameResultInput } from './gameResult.js';
 
 /** Postgres is not configured or not reachable: profiles and ratings are off (games still run). */
@@ -37,6 +37,12 @@ export type RecordOutcome = 'recorded' | 'duplicate';
  */
 export interface ResultStore {
   recordGame(input: GameResultInput): Promise<RecordOutcome>;
+}
+
+/** Read side: public profiles (rank + recent games) and the top-20 leaderboard. */
+export interface HistoryStore {
+  publicProfile(profileId: string): Promise<PublicProfile | null>;
+  leaderboard(): Promise<LeaderboardResponse>;
 }
 
 export interface IssuedTransferCode {

@@ -2,6 +2,7 @@ import {
   ClaimProfileBodySchema,
   CreateProfileBodySchema,
   DeviceKeySchema,
+  ProfileIdParamsSchema,
   RenameProfileBodySchema,
   TRANSFER_CODE_TTL_MS,
   type ApiErrorBody,
@@ -10,7 +11,7 @@ import {
 } from '@durak/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
-import { errorName, isUnavailable, type ProfileStore } from '../ratings/ports.js';
+import { errorName, isUnavailable, type HistoryStore, type ProfileStore } from '../ratings/ports.js';
 import { SlidingWindowLimiter } from '../transport/rateLimit.js';
 
 // Phase 10: the profile HTTP API under /api (request/response; Socket.io here has no acks).
@@ -42,6 +43,7 @@ export interface ApiLogger {
 
 export interface ApiDeps {
   readonly profiles: ProfileStore;
+  readonly history: HistoryStore;
   readonly clientIpOf: (peer: string, headers: Readonly<Record<string, string | string[] | undefined>>) => string;
   readonly now: () => number;
   readonly corsOrigins: readonly string[];
@@ -88,7 +90,7 @@ function bearerKey(request: FastifyRequest): string {
 }
 
 export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
-  const { profiles, now, limits, log } = deps;
+  const { profiles, history, now, limits, log } = deps;
   const requests = new SlidingWindowLimiter(limits.requestsPerMinute, MINUTE, now);
   const creates = new SlidingWindowLimiter(limits.profileCreatesPerHour, 60 * MINUTE, now);
   const claims = new SlidingWindowLimiter(limits.claimsPerTenMinutes, 10 * MINUTE, now);
@@ -149,6 +151,16 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
         if (!me) throw new ApiError('UNAUTHORIZED');
         return me;
       });
+
+      // Public: a profile's stats, rank and recent games (static /profile/me wins over :id).
+      api.get('/profile/:id', async (request) => {
+        const { id } = parse(ProfileIdParamsSchema, request.params);
+        const profile = await history.publicProfile(id);
+        if (!profile) throw new ApiError('NOT_FOUND');
+        return profile;
+      });
+
+      api.get('/leaderboard', async () => history.leaderboard());
 
       api.patch('/profile/me', { bodyLimit: API_BODY_LIMIT }, async (request) => {
         const key = bearerKey(request);

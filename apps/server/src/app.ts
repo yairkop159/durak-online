@@ -7,7 +7,8 @@ import { WorkerPoolRunner } from './bot/WorkerPoolRunner.js';
 import { DEFAULT_API_LIMITS, registerApi, type ApiLimits } from './http/api.js';
 import { registerWebApp } from './http/webApp.js';
 import { GameResultRecorder } from './ratings/GameResultRecorder.js';
-import type { ProfileStore, ResultStore } from './ratings/ports.js';
+import type { HistoryStore, ProfileStore, ResultStore } from './ratings/ports.js';
+import { PrismaHistoryStore } from './ratings/PrismaHistoryStore.js';
 import { PrismaProfileStore } from './ratings/PrismaProfileStore.js';
 import { PrismaResultStore } from './ratings/PrismaResultStore.js';
 import { ResultQueue, type ResultQueueSettings } from './ratings/ResultQueue.js';
@@ -104,6 +105,8 @@ export interface BuildServerOptions {
   readonly profileLookupMs?: number;
   /** Match history (default: Postgres through `database`; tests inject their own). */
   readonly results?: ResultStore;
+  /** Public profiles and the leaderboard (default: Postgres through `database`). */
+  readonly history?: HistoryStore;
   readonly resultQueueSettings?: Partial<ResultQueueSettings>;
 }
 
@@ -298,6 +301,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
 
   registerApi(app, {
     profiles,
+    history: options.history ?? new PrismaHistoryStore(() => database?.client() ?? null),
     clientIpOf,
     now,
     corsOrigins,
