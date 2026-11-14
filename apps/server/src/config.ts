@@ -1,4 +1,4 @@
-import { parseTrustProxy, type TrustProxy } from './transport/clientAddress.js';
+import { parseTrustedProxies, parseTrustProxy, type TrustProxy } from './transport/clientAddress.js';
 import { DEFAULT_LIMITS, type LimitSettings } from './transport/rateLimit.js';
 
 export type RepositoryKind = 'memory' | 'redis';
@@ -23,6 +23,10 @@ export interface ServerConfig {
   /** Built web client to serve; null = auto-detect apps/web/dist next to the server. */
   readonly webDistDir: string | null;
   readonly trustProxy: TrustProxy;
+  /** TRUSTED_PROXIES: the proxy peers (CIDRs/IPs) forwarded headers are accepted from; null = any. */
+  readonly trustedProxies: readonly string[] | null;
+  /** TRUST_CF_CONNECTING_IP: prefer CF-Connecting-IP from a trusted proxy (Cloudflare in front). */
+  readonly trustCfConnectingIp: boolean;
   readonly limits: LimitSettings;
   /** Postgres for profiles and ratings (Phase 10); null = off (games still run). */
   readonly databaseUrl: string | null;
@@ -146,6 +150,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     botJobTimeoutMs: positiveMs(env, 'BOT_JOB_TIMEOUT_MS', 2_000),
     webDistDir: env.WEB_DIST_DIR?.trim() || null,
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
+    trustedProxies: parseTrustedProxies(env.TRUSTED_PROXIES),
+    trustCfConnectingIp: parseBool(env, 'TRUST_CF_CONNECTING_IP', false),
     limits: parseLimits(env),
     databaseUrl: parseDatabaseUrlEnv(env.DATABASE_URL),
     dbMigrateOnStart: parseBool(env, 'DB_MIGRATE_ON_START', true),

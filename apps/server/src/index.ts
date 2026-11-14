@@ -49,6 +49,8 @@ const { app, timers, votes } = buildServer({
   onClose: () => backend.close(),
   webDistDir,
   trustProxy: config.trustProxy,
+  trustedProxies: config.trustedProxies,
+  trustCfConnectingIp: config.trustCfConnectingIp,
   limits: config.limits,
   database,
 });
@@ -59,6 +61,8 @@ app.log.info(
     production: config.production,
     corsOrigins: config.corsOrigins,
     trustProxy: config.trustProxy,
+    trustedProxies: config.trustedProxies ?? 'any peer',
+    trustCfConnectingIp: config.trustCfConnectingIp,
     botWorkers: config.botWorkers ?? defaultPoolSize(),
     limits: config.limits,
     postgres: config.databaseUrl ? 'configured' : 'disabled (no DATABASE_URL)',

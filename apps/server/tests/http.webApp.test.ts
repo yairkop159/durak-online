@@ -95,6 +95,10 @@ describe('serving the web client', () => {
   it('keeps /health and non-GET requests out of the fallback', async () => {
     expect((await server.app.inject({ method: 'GET', url: '/health' })).json()).toMatchObject({ ok: true });
     expect((await server.app.inject({ method: 'GET', url: '/health/x' })).statusCode).toBe(404);
+    // Phase 10: /api is the server's (JSON errors), never the SPA's index.html.
+    const api = await server.app.inject({ method: 'GET', url: '/api/unknown' });
+    expect(api.statusCode).toBe(404);
+    expect(api.json()).toEqual({ error: 'NOT_FOUND' });
     expect((await server.app.inject({ method: 'POST', url: '/room/abcd1234' })).statusCode).toBe(404);
   });
 

@@ -24,6 +24,12 @@ services:
       # Number of reverse-proxy hops in front of the app: 0 when browsers connect directly,
       # 1 behind a Cloudflare Quick Tunnel (`npm run tunnel` sets it; see DEPLOY.md).
       TRUST_PROXY: ${TRUST_PROXY:-0}
+      # Forwarded headers count only when the peer is in this network (the fixed subnet below):
+      # cloudflared on the host reaches the app through this network's gateway. Any other peer is
+      # taken as the client itself, so it cannot forge X-Forwarded-For / CF-Connecting-IP.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.30.80.0/24}
+      # Prefer Cloudflare's CF-Connecting-IP (only with Cloudflare in front; `npm run tunnel` sets it).
+      TRUST_CF_CONNECTING_IP: ${TRUST_CF_CONNECTING_IP:-false}
       BOT_WORKERS: ${BOT_WORKERS:-}
       # Profiles, match history and ratings (Phase 10). Migrations run at startup. If Postgres is
       # down the app still serves games (ratings off) and reconnects on its own.
@@ -66,3 +72,10 @@ services:
 volumes:
   redis-data:
   postgres-data:
+
+# A fixed subnet, so TRUSTED_PROXIES can name it (the published port's gateway is 172.30.80.1).
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.80.0/24

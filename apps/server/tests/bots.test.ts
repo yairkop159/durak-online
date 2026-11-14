@@ -456,7 +456,7 @@ function roomWith(ids: string[], botIds: string[]): Room {
     members: ids.map((id) =>
       botIds.includes(id)
         ? newBotMember(id, id, 'easy')
-        : { playerId: id, nickname: id, connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false },
+        : { playerId: id, nickname: id, connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
     ),
     spectators: [],
     status: 'playing',
@@ -494,6 +494,7 @@ function handcraftedBotTurn(): { room: Room; game: StoredGame } {
       botAssisted: [],
       forfeits: [],
       stats: {},
+      profiles: {},
     };
     return { room: roomWith(['h', 'b'], ['b']), game };
   }

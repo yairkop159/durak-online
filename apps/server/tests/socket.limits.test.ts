@@ -12,7 +12,10 @@ afterEach(async () => {
 
 const HOUR = 60 * 60 * 1000;
 
-async function start(limits: Partial<LimitSettings>, extra: { trustProxy?: number } = {}): Promise<TestHarness> {
+async function start(
+  limits: Partial<LimitSettings>,
+  extra: { trustProxy?: number; trustedProxies?: string[]; trustCfConnectingIp?: boolean } = {},
+): Promise<TestHarness> {
   harness = await startTestServer({ limits: { ...UNLIMITED, ...limits }, ...extra });
   return harness;
 }
@@ -115,6 +118,21 @@ describe('connections per IP', () => {
     await h.connect({ 'x-forwarded-for': '2.2.2.2' });
     // A spoofed prefix doesn't help: the proxy-appended (rightmost) entry is the client.
     await expect(h.connect({ 'x-forwarded-for': '9.9.9.9, 1.1.1.1' })).rejects.toThrow('TOO_MANY_CONNECTIONS');
+  });
+
+  it('a trusted proxy peer (TRUSTED_PROXIES): clients get separate buckets, by CF-Connecting-IP too', async () => {
+    const h = await start({ socketsPerIp: 1 }, { trustProxy: 1, trustedProxies: ['127.0.0.1/32', '::1/128'], trustCfConnectingIp: true });
+    await h.connect({ 'cf-connecting-ip': '1.1.1.1' });
+    await h.connect({ 'cf-connecting-ip': '2.2.2.2' });
+    await h.connect({ 'x-forwarded-for': '3.3.3.3' });
+    await expect(h.connect({ 'cf-connecting-ip': '1.1.1.1' })).rejects.toThrow('TOO_MANY_CONNECTIONS');
+  });
+
+  it('a peer outside TRUSTED_PROXIES cannot dodge the limit with forged headers', async () => {
+    const h = await start({ socketsPerIp: 1 }, { trustProxy: 1, trustedProxies: ['172.30.80.0/24'], trustCfConnectingIp: true });
+    await h.connect({ 'x-forwarded-for': '1.1.1.1' });
+    await expect(h.connect({ 'x-forwarded-for': '2.2.2.2' })).rejects.toThrow('TOO_MANY_CONNECTIONS');
+    await expect(h.connect({ 'cf-connecting-ip': '3.3.3.3' })).rejects.toThrow('TOO_MANY_CONNECTIONS');
   });
 });
 

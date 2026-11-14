@@ -71,6 +71,12 @@ export interface ProfileCredentials {
   readonly nickname: string;
 }
 
+/** GET /api/profile/me: the key is valid; who it belongs to. */
+export interface MyProfile {
+  readonly profileId: string;
+  readonly nickname: string;
+}
+
 export interface TransferCodeResponse {
   readonly code: string;
   readonly expiresAt: number;

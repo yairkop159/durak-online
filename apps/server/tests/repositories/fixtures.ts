@@ -11,9 +11,9 @@ export function makeRoom(id = uid(), status: Room['status'] = 'lobby'): Room {
     maxPlayers: 4,
     config: { mode: 'perevodnoy' },
     members: [
-      { playerId: 'p_host', nickname: 'Host', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false },
-      { playerId: 'p_guest', nickname: 'Guest', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false },
-      { playerId: 'p_bot', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false },
+      { playerId: 'p_host', nickname: 'Host', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
+      { playerId: 'p_guest', nickname: 'Guest', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
+      { playerId: 'p_bot', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
     ],
     spectators: [{ spectatorId: 's_1', nickname: 'Watcher' }],
     status,
@@ -46,6 +46,7 @@ export function makeGame(roomId: string, finished = false): StoredGame {
     stats: {
       p_host: { boutsAttacked: 2, boutsDefended: 1, defenses: 1, takes: 0, cardsTaken: 0, throwIns: 1, transfers: 0, cardsPlayed: 5 },
     },
+    profiles: { p_host: 'profHostAAAAAAAAAAAAAA' },
   };
 }
 

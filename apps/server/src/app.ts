@@ -4,7 +4,10 @@ import type { HealthReport } from './backend.js';
 import type { BotPolicies, BotRunner } from './bot/job.js';
 import type { Database, DbStatus } from './db/database.js';
 import { WorkerPoolRunner } from './bot/WorkerPoolRunner.js';
+import { DEFAULT_API_LIMITS, registerApi, type ApiLimits } from './http/api.js';
 import { registerWebApp } from './http/webApp.js';
+import type { ProfileStore } from './ratings/ports.js';
+import { PrismaProfileStore } from './ratings/PrismaProfileStore.js';
 import { DEFAULT_CORS_ORIGINS } from './config.js';
 import type { Repositories } from './repositories/interfaces.js';
 import { createInMemoryRepositories } from './repositories/inMemory/index.js';
@@ -18,7 +21,14 @@ import { DEFAULT_RESTART_VOTE_SETTINGS, RestartVoteService, type RestartVoteSett
 import { RoomService } from './services/RoomService.js';
 import { createSystemScheduler, systemClock, type Clock, type Scheduler } from './services/scheduling.js';
 import { DEFAULT_TIMER_SETTINGS, TurnTimerService, type TimerSettings } from './services/TurnTimerService.js';
-import { clientIp, isOriginAllowed, type TrustProxy } from './transport/clientAddress.js';
+import {
+  fastifyTrustProxy,
+  isOriginAllowed,
+  proxyPeerMatcher,
+  resolveClientIp,
+  type ClientIpPolicy,
+  type TrustProxy,
+} from './transport/clientAddress.js';
 import { DEFAULT_LIMITS, type LimitSettings } from './transport/rateLimit.js';
 import { registerHandlers } from './transport/registerHandlers.js';
 import { SocketNotifier } from './transport/SocketNotifier.js';
@@ -74,11 +84,21 @@ export interface BuildServerOptions {
   readonly limits?: Partial<LimitSettings>;
   /** Reverse-proxy trust for client IPs (default false). */
   readonly trustProxy?: TrustProxy;
+  /** Peers allowed to act as that proxy (CIDRs/IPs); null/absent = any peer. */
+  readonly trustedProxies?: readonly string[] | null;
+  /** Prefer CF-Connecting-IP from a trusted proxy peer (Cloudflare in front; default false). */
+  readonly trustCfConnectingIp?: boolean;
   /**
    * Postgres for profiles, history and ratings (Phase 10). Optional: without it (or while it is
    * down) games run unchanged and /health reports `postgres: 'disabled' | 'down'` with status 200.
    */
   readonly database?: Database;
+  /** Profiles (default: Postgres through `database`; tests inject MemoryProfileStore). */
+  readonly profiles?: ProfileStore;
+  /** /api abuse limits (default DEFAULT_API_LIMITS). */
+  readonly apiLimits?: Partial<ApiLimits>;
+  /** How long room:create/join waits for a device key lookup before seating unprofiled (default 500 ms). */
+  readonly profileLookupMs?: number;
 }
 
 export interface DurakServer {
@@ -92,14 +112,20 @@ export interface DurakServer {
   readonly bots: BotDriver;
   readonly botRunner: BotRunner;
   readonly reactions: ReactionService;
+  readonly profiles: ProfileStore;
 }
 
 export function buildServer(options: BuildServerOptions = {}): DurakServer {
-  const trustProxy = options.trustProxy ?? false;
+  const ipPolicy: ClientIpPolicy = {
+    trustProxy: options.trustProxy ?? false,
+    trustedProxies: options.trustedProxies ?? null,
+    cfConnectingIp: options.trustCfConnectingIp ?? false,
+  };
+  const isProxyPeer = proxyPeerMatcher(ipPolicy.trustedProxies);
   const app = Fastify({
     logger: options.logger ?? false,
-    // A hop count becomes proxy-addr's own hop function (Fastify's types only take boolean/fn).
-    trustProxy: typeof trustProxy === 'number' ? (_address: string, hop: number) => hop < trustProxy : trustProxy,
+    // The same policy as clientIpOf below, as proxy-addr's (address, hop) function.
+    trustProxy: fastifyTrustProxy(ipPolicy),
   });
   const repos = options.repos ?? createInMemoryRepositories();
   const limits: LimitSettings = { ...DEFAULT_LIMITS, ...options.limits };
@@ -121,15 +147,19 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
     // WebSockets bypass CORS, so the handshake checks Origin itself.
     allowRequest: (req, callback) => {
-      const forwardedHost = trustProxy !== false ? req.headers['x-forwarded-host'] : undefined;
+      const proxied = ipPolicy.trustProxy !== false && ipPolicy.trustProxy !== 0 && isProxyPeer(req.socket.remoteAddress ?? '');
+      const forwardedHost = proxied ? req.headers['x-forwarded-host'] : undefined;
       const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) ?? req.headers.host;
       const allowed = isOriginAllowed(req.headers.origin, host, corsOrigins);
       if (!allowed) app.log.warn({ origin: req.headers.origin, host }, 'handshake refused: origin not allowed');
       callback(allowed ? null : 'Origin not allowed', allowed);
     },
   });
+  /** The one client-address rule for sockets and HTTP (per-IP limits, logs). */
+  const clientIpOf = (peer: string, headers: Readonly<Record<string, string | string[] | undefined>>) =>
+    resolveClientIp(peer, headers, ipPolicy, isProxyPeer);
   const ipOf = (socket: { handshake: { address: string; headers: Record<string, string | string[] | undefined> } }) =>
-    clientIp(socket.handshake.address, socket.handshake.headers['x-forwarded-for'], trustProxy);
+    clientIpOf(socket.handshake.address, socket.handshake.headers);
 
   const clock = options.clock ?? systemClock;
   const scheduler =
@@ -200,11 +230,53 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   });
   bots = driver;
 
+  const database = options.database ?? null;
+  const profiles = options.profiles ?? new PrismaProfileStore(() => database?.client() ?? null);
+  const profileLookupMs = options.profileLookupMs ?? 500;
+  /** Seat → profile, bounded: a slow or dead Postgres only means an unrated seat. */
+  const resolveProfile = async (deviceKey: string | undefined): Promise<string | null> => {
+    if (deviceKey === undefined) return null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const lookup = profiles.resolveKey(deviceKey).then((p) => p?.profileId ?? null);
+      const timeout = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), profileLookupMs);
+        timer.unref();
+      });
+      return await Promise.race([lookup, timeout]);
+    } catch (error) {
+      app.log.warn({ err: error instanceof Error ? error.name : 'Error' }, 'profile lookup failed: seating unprofiled');
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
   let shuttingDown = false;
-  registerHandlers({ io, rooms, games, votes, reactions, log: app.log, isShuttingDown: () => shuttingDown, limits, now, ipOf });
+  registerHandlers({
+    io,
+    rooms,
+    games,
+    votes,
+    reactions,
+    log: app.log,
+    isShuttingDown: () => shuttingDown,
+    limits,
+    now,
+    ipOf,
+    resolveProfile,
+  });
+
+  registerApi(app, {
+    profiles,
+    clientIpOf,
+    now,
+    corsOrigins,
+    limits: { ...DEFAULT_API_LIMITS, ...options.apiLimits },
+    log: app.log,
+  });
 
   const health = options.health ?? (async (): Promise<HealthReport> => ({ ok: true, repository: 'memory' }));
-  const database = options.database ?? null;
   // Probed every few seconds by Docker and the hosting platform: keep it out of the info log.
   // Only the game store (Redis) decides 503; Postgres being down never takes the server out.
   app.get('/health', { logLevel: 'warn' }, async (_request, reply) => {
@@ -234,5 +306,5 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     if (onClose) await onClose();
   });
 
-  return { app, io, repos, rooms, games, timers, votes, bots: driver, botRunner, reactions };
+  return { app, io, repos, rooms, games, timers, votes, bots: driver, botRunner, reactions, profiles };
 }
