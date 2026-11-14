@@ -34,10 +34,21 @@ textarea,
   user-select: text;
 }
 
+/*
+ * The safe-area insets (notch / Dynamic Island, rounded corners, home bar; needs viewport-fit=cover).
+ * Everything reads them through these variables, never env() directly, so a test can simulate a
+ * notch (browsers report zero insets under emulation). In landscape the notch is on the left or right.
+ */
+:root {
+  --sai-top: env(safe-area-inset-top, 0px);
+  --sai-right: env(safe-area-inset-right, 0px);
+  --sai-bottom: env(safe-area-inset-bottom, 0px);
+  --sai-left: env(safe-area-inset-left, 0px);
+}
+
 /* Full-screen overlays: 1rem from the edges, more where the notch / home bar needs it. */
 @utility p-safe-4 {
-  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom))
-    max(1rem, env(safe-area-inset-left));
+  padding: max(1rem, var(--sai-top)) max(1rem, var(--sai-right)) max(1rem, var(--sai-bottom)) max(1rem, var(--sai-left));
 }
 
 /* The game table: no pull-to-refresh or rubber-band scrolling mid-game. */

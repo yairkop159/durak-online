@@ -38,11 +38,11 @@ function AppShell() {
   return (
     // reducedMotion="user": with prefers-reduced-motion, Framer skips transform/layout animations.
     <MotionConfig reducedMotion="user">
-      {/* Safe areas (notch, rounded corners, home bar; needs viewport-fit=cover): the table's bottom row pads itself. */}
+      {/* Safe areas (--sai-*, index.css). The table pads its own sides and bottom: max(inset, its gap), not inset + gap. */}
       <div
         dir="rtl"
-        className={`flex flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-text ${
-          fitScreen ? 'h-dvh overflow-hidden' : 'min-h-dvh pb-[env(safe-area-inset-bottom)]'
+        className={`flex flex-col pt-[var(--sai-top)] text-text ${
+          fitScreen ? 'h-dvh overflow-hidden' : 'min-h-dvh pr-[var(--sai-right)] pb-[var(--sai-bottom)] pl-[var(--sai-left)]'
         }`}
         data-fit-screen={fitScreen || undefined}
       >

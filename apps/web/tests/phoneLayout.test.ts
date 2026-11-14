@@ -9,6 +9,10 @@ describe('layout mode', () => {
     [390, 844, 'phone'],
     [740, 360, 'short'],
     [844, 390, 'short'],
+    // Bigger phones on their side, installed and in Safari (its toolbars take height).
+    [932, 430, 'short'],
+    [844, 320, 'short'],
+    [932, 360, 'short'],
     [1280, 720, 'regular'],
     [768, 1024, 'regular'],
     // A tiny portrait window is still a phone, not "short".

@@ -8,11 +8,14 @@
  * `?scenario=crowded`: the worst case for the layout. Six pairs on the table (three uncovered) and a
  * 15-card hand; the second state still reads as a transfer (the defender changes), so the banner shows.
  * `?scenario=crowded6`: the same with six players (five opponent seats, long nicknames).
+ * Crowded scenarios: `window.__fixture.advance()` then sends three more states: I cover 7C, then 6H,
+ * then 8D closes the bout (beaten), so the table cards fly to the discard pile (anchors after a resize).
  * `?scenario=lobby`: the host's lobby (two bots, one free seat). `?scenario=gameover`: a finished
  * six-player game (a reload into it: no reveal, the game-over overlay right away).
  */
 import {
   DEFAULT_GAME_CONFIG,
+  cardId,
   type Card,
   type ClientToServerEvents,
   type PlayerView,
@@ -81,7 +84,38 @@ const CROWDED_TABLE = [
   { attack: card(7, 'D'), defense: null },
 ];
 
-function view(step: 1 | 2): PlayerView {
+/** Steps 3-5 (crowded): I cover 7C with 8C, 6H with 8H, then 7D with 8D, which beats the bout. */
+type Step = 1 | 2 | 3 | 4 | 5;
+const DEFENSES = [card(8, 'C'), card(8, 'H'), card(8, 'D')];
+/** The step-2 table with the first `k` uncovered cards covered (in table order). */
+const coveredTable = (k: number) =>
+  CROWDED_TABLE.map((p, i) => (p.defense || i - 3 >= k ? p : { ...p, defense: DEFENSES[i - 3]! }));
+const handWithout = (k: number) => {
+  const gone = new Set(DEFENSES.slice(0, k).map(cardId));
+  return hand.filter((c) => !gone.has(cardId(c)));
+};
+
+function view(step: Step): PlayerView {
+  if (step >= 3) {
+    const v = view(2);
+    const k = step - 2;
+    const myHand = handWithout(k);
+    const players = v.players.map((p) => (p.id === 'me' ? { ...p, handCount: myHand.length } : p));
+    if (step < 5) return { ...v, hand: myHand, players, table: coveredTable(k) };
+    const beaten = coveredTable(3);
+    return {
+      ...v,
+      hand: myHand,
+      players,
+      table: [],
+      discardCount: beaten.length * 2,
+      attackerId: 'me',
+      defenderId: OTHERS[0]!,
+      phase: { kind: 'awaitingAttack' },
+      boutNumber: 3,
+      lastBout: { table: beaten, outcome: 'beaten', defenderId: 'me' },
+    };
+  }
   const table = crowded
     ? CROWDED_TABLE.slice(0, step === 1 ? 5 : 6)
     : step === 1
@@ -115,7 +149,12 @@ const transport = new PageTransport();
 const storage = new MemoryStorage();
 storage.setItem('durak:sessions', JSON.stringify({ [ROOM]: 'x'.repeat(43) }));
 const client = new GameClient({ transport, storage });
-const fixture = { ready: false, emitted: transport.emitted };
+const fixture = {
+  ready: false,
+  emitted: transport.emitted,
+  /** Steps 3-5, 400 ms apart (each one its own animation step). */
+  advance: () => ([3, 4, 5] as const).forEach((step, i) => setTimeout(() => transport.send('game:state', game(step)), i * 400)),
+};
 (window as unknown as { __fixture: typeof fixture }).__fixture = fixture;
 
 createRoot(document.getElementById('root')!).render(
@@ -144,7 +183,7 @@ const member = (id: string, bot = false) => ({
   leftGame: false,
 });
 const members = PLAYERS.map((id) => member(id));
-const game = (step: 1 | 2) => ({ roomId: ROOM, gameId: 'g1', version: step, view: view(step), turnDeadline: Date.now() + 60_000, serverTime: Date.now() });
+const game = (step: Step) => ({ roomId: ROOM, gameId: 'g1', version: step, view: view(step), turnDeadline: Date.now() + 60_000, serverTime: Date.now() });
 const room = (status: 'lobby' | 'playing' | 'finished', list = members) => ({
   roomId: ROOM,
   hostId: 'me',

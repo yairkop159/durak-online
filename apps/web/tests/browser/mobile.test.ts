@@ -1,7 +1,8 @@
 // @vitest-environment node
 /**
- * Phones, emulated in a real Chrome (touch, mobile viewport, 3x density) at 360x740, 390x844 and
- * 740x360 (a phone on its side). For Home, the rules (both tabs), the settings dialog, the lobby,
+ * Phones, emulated in a real Chrome (touch, mobile viewport, 3x density) at 360x740 and 390x844, and
+ * on their side at 740x360, 844x390 and 932x430 (installed, full height) and 844x320 and 932x360
+ * (an iPhone in Safari: the toolbars take height). For Home, the rules (both tabs), the settings dialog, the lobby,
  * a crowded six-player table and the game-over screen:
  * - no horizontal scroll anywhere (the table: no scroll at all);
  * - every control fully visible (scrolled into view where the page scrolls), at least 44x44 px
@@ -29,11 +30,17 @@ import {
   type BrowserEnv,
 } from './harness';
 
-const PHONES = [
-  { width: 360, height: 740 },
-  { width: 390, height: 844 },
+/** Phones on their side: installed / full height, and in Safari with its toolbars (about 844x320, 932x360). */
+const LANDSCAPE = [
   { width: 740, height: 360 },
+  { width: 844, height: 390 },
+  { width: 932, height: 430 },
+  { width: 844, height: 320 },
+  { width: 932, height: 360 },
 ] as const;
+const PHONES = [{ width: 360, height: 740 }, { width: 390, height: 844 }, ...LANDSCAPE] as const;
+/** A notch / Dynamic Island in landscape: the safe-area inset on the left or the right (iPhone: 47-59 px). */
+const NOTCH = 47;
 
 const TEST_TIMEOUT_MS = 45_000;
 const MIN_TARGET = 44;
@@ -136,6 +143,49 @@ async function tapCenter(page: Page, selector: string): Promise<void> {
   if (!box) throw new Error(`no box for ${selector}`);
   await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
 }
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+async function boxOf(page: Page, selector: string): Promise<Box> {
+  const b = await page.locator(selector).first().boundingBox();
+  if (!b) throw new Error(`no box for ${selector}`);
+  return { x: b.x, y: b.y, w: b.width, h: b.height };
+}
+
+/** Simulates a notch: sets the --sai-* variable every layout reads (emulation reports zero insets). */
+async function simulateInset(page: Page, side: 'left' | 'right', px: number): Promise<void> {
+  await page.evaluate(({ side, px }) => document.documentElement.style.setProperty(`--sai-${side}`, `${px}px`), { side, px });
+}
+
+/** Controls, seats and cards that reach into the inset strip on `side`. */
+async function insideInset(page: Page, side: 'left' | 'right', px: number): Promise<string[]> {
+  return page.evaluate(
+    ({ side, px }) => {
+      const W = window.innerWidth;
+      const found: string[] = [];
+      const selector = 'button, a[href], input, [role="switch"], [role="radio"], [data-testid^="seat-"], [data-card]';
+      for (const el of document.querySelectorAll<HTMLElement>(selector)) {
+        if (el.closest('[data-testid="flights"], [aria-hidden="true"]')) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        const inside = side === 'left' ? r.left < px - 0.5 : r.right > W - px + 0.5;
+        if (inside) {
+          const name = el.getAttribute('data-testid') ?? el.getAttribute('data-card') ?? (el.textContent ?? '').trim().slice(0, 20);
+          found.push(`${name} at ${Math.round(r.left)}..${Math.round(r.right)}`);
+        }
+      }
+      return found;
+    },
+    { side, px },
+  );
+}
+
+const OPPONENTS = ['bob', 'carl', 'dana', 'eli', 'fay'];
 
 const shot = async (page: Page, name: string) => {
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/mobile-${name}.png` });
@@ -264,6 +314,136 @@ describe.skipIf(!executablePath)('phones (mobile emulation, touch)', () => {
       });
     }, TEST_TIMEOUT_MS);
   }
+
+  for (const vp of LANDSCAPE) {
+    const size = `${vp.width}x${vp.height}`;
+
+    it(`landscape ${size}: three columns (seats right, my controls left, in RTL); the table and the hand use the space`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base, 'crowded6');
+        await page.getByRole('button', { name: t.table.take }).waitFor();
+        await page.waitForTimeout(700);
+        expect(await page.locator('[data-layout]').getAttribute('data-layout')).toBe('short');
+        expect(await page.locator('[data-layout]').evaluate((el) => getComputedStyle(el).direction)).toBe('rtl');
+
+        // RTL: the seat column is on the right of the table (where reading starts), Take and the piles on its left.
+        const table = await boxOf(page, '[data-testid="table-surface"]');
+        for (const id of OPPONENTS) {
+          const seat = await boxOf(page, `[data-testid="seat-${id}"]`);
+          expect(seat.x, id).toBeGreaterThanOrEqual(table.x + table.w);
+          expect(seat.x + seat.w, id).toBeLessThanOrEqual(vp.width);
+          expect(seat.y + seat.h, id).toBeLessThanOrEqual(vp.height);
+        }
+        const take = await boxOf(page, `button:text-is("${t.table.take}")`);
+        expect(take.x + take.w).toBeLessThanOrEqual(table.x);
+        const piles = await boxOf(page, '[data-testid="piles"]');
+        expect(piles.x + piles.w).toBeLessThanOrEqual(table.x);
+
+        // The space: hand cards about 30% of the height, at most 14vw (they were 86-96 px tall at every size before),
+        // and even six pairs on the table stay at least 50 px wide.
+        const hand = await boxOf(page, `${HAND_CARD}[data-card="8C"]`);
+        expect(hand.h).toBeGreaterThanOrEqual(Math.min(106, 0.29 * vp.height, 0.139 * vp.width));
+        const tableCard = await boxOf(page, '[data-testid="pair-0"] [data-card="6S"]');
+        expect(tableCard.w).toBeGreaterThanOrEqual(50);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`landscape ${size}: a small table gets big cards (they were 51 px wide below 400 px of height)`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base);
+        await page.getByRole('button', { name: t.table.take }).waitFor();
+        await page.waitForTimeout(700);
+        const tableCard = await boxOf(page, '[data-testid="pair-0"] [data-card="6S"]');
+        expect(tableCard.w).toBeGreaterThanOrEqual(62);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    for (const side of ['left', 'right'] as const) {
+      it(`landscape ${size}, notch on the ${side} (${NOTCH} px inset): nothing inside the inset; still fits, every control tappable`, async () => {
+        await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+          await openFixture(page, env!.base, 'crowded6');
+          await page.getByRole('button', { name: t.table.take }).waitFor();
+          await simulateInset(page, side, NOTCH);
+          await page.waitForTimeout(700);
+          await shot(page, `notch-${side}-${size}`);
+          expect(await insideInset(page, side, NOTCH)).toEqual([]);
+          const table = await audit(page, true, HAND_CARD);
+          expect(table.problems).toEqual([]);
+          expect((await handSlices(page)).problems).toEqual([]);
+          for (const id of OPPONENTS) await expect(page.getByTestId(`seat-${id}`).isVisible()).resolves.toBe(true);
+        });
+      }, TEST_TIMEOUT_MS);
+    }
+  }
+
+  it('rotation mid-game: 390x844 -> 844x390 -> 390x844 -> 844x390; fits each time, no errors, flights still find their anchors', async () => {
+    await withPage(env!, phoneContext(390, 844), async (page) => {
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      page.on('console', (m) => {
+        // The fixture page has no icon link: Chrome's automatic /favicon.ico 404 isn't the app's.
+        if (m.type() === 'error' && !m.location().url.endsWith('/favicon.ico')) errors.push(m.text());
+      });
+      await openFixture(page, env!.base, 'crowded6');
+      await page.getByRole('button', { name: t.table.take }).waitFor();
+      const check = async (mode: string, w: number) => {
+        await page.waitForTimeout(700);
+        expect(await page.locator('[data-layout]').getAttribute('data-layout')).toBe(mode);
+        expect((await audit(page, true, HAND_CARD)).problems).toEqual([]);
+        expect(await coveredControls(page, HAND_CARD)).toEqual([]);
+        const hand = await handSlices(page);
+        expect(hand.problems).toEqual([]);
+        expect(hand.count).toBe(15);
+        for (const id of OPPONENTS) {
+          const seat = await boxOf(page, `[data-testid="seat-${id}"]`);
+          expect(seat.x + seat.w, id).toBeLessThanOrEqual(w);
+        }
+      };
+      await check('phone', 390);
+      await page.setViewportSize({ width: 844, height: 390 });
+      await check('short', 844);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await check('phone', 390);
+      await page.setViewportSize({ width: 844, height: 390 });
+      await check('short', 844);
+
+      // The bout ends (beaten): the table cards fly to the discard pile, which moved to the side panel.
+      const piles = await boxOf(page, '[data-testid="piles"]');
+      await page.evaluate(() => (window as unknown as { __fixture: { advance: () => void } }).__fixture.advance());
+      await page.locator('[data-testid="flights"] > div').first().waitFor({ state: 'attached', timeout: 3000 });
+      const flights = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('[data-testid="flights"] > div')].map((el) => {
+          const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+          return [m.a, m.b, m.c, m.d, m.e, m.f].every(Number.isFinite);
+        }),
+      );
+      expect(flights.length).toBeGreaterThan(0);
+      expect(flights.every(Boolean)).toBe(true);
+      // Every flight lands on the discard pile (left, in the side panel): follow them frame by frame
+      // until the layer empties, and keep each card's leftmost x.
+      const leftmost = await page.evaluate(
+        () =>
+          new Promise<number[]>((resolve) => {
+            const min = new Map<Element, number>();
+            const started = performance.now();
+            const tick = () => {
+              const els = [...document.querySelectorAll<HTMLElement>('[data-testid="flights"] > div')];
+              for (const el of els) {
+                const x = new DOMMatrixReadOnly(getComputedStyle(el).transform).e;
+                min.set(el, Math.min(min.get(el) ?? Infinity, x));
+              }
+              if (els.length === 0 || performance.now() - started > 4000) resolve([...min.values()]);
+              else requestAnimationFrame(tick);
+            };
+            tick();
+          }),
+      );
+      expect(leftmost.length).toBeGreaterThan(0);
+      for (const x of leftmost) expect(x).toBeLessThanOrEqual(piles.x + piles.w);
+      await expect(page.locator('[data-testid="flights"]').count()).resolves.toBe(0);
+      expect(errors).toEqual([]);
+    });
+  }, TEST_TIMEOUT_MS);
 
   it('PWA: the manifest and its icons load; viewport-fit=cover; a double tap never zooms', async () => {
     await withPage(env!, phoneContext(390, 844), async (page) => {

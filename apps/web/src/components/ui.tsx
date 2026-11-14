@@ -154,7 +154,7 @@ export function ErrorToast() {
   return (
     <div
       role="alert"
-      className="fixed inset-x-4 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-md rounded-btn bg-surface-2 px-4 py-3 text-center text-text shadow-panel ring-1 ring-danger/60"
+      className="fixed inset-x-4 bottom-[calc(6rem+var(--sai-bottom))] z-50 mx-auto max-w-md rounded-btn bg-surface-2 px-4 py-3 text-center text-text shadow-panel ring-1 ring-danger/60"
     >
       {t.errors[lastError.code]}
     </div>
@@ -184,7 +184,7 @@ export function NoticeToast() {
     <div
       role="status"
       data-testid="notice"
-      className="fixed inset-x-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-50 mx-auto max-w-md rounded-btn bg-surface-2 px-4 py-3 text-center text-text shadow-panel ring-1 ring-accent/50"
+      className="fixed inset-x-4 top-[calc(3.5rem+var(--sai-top))] z-50 mx-auto max-w-md rounded-btn bg-surface-2 px-4 py-3 text-center text-text shadow-panel ring-1 ring-accent/50"
     >
       {text}
     </div>

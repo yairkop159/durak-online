@@ -76,8 +76,8 @@ export function OpponentSeat({
         dim={member ? !member.connected : false}
       />
       {small && count}
-      {effect && <SeatEffect key={effect.id} effect={effect.kind} momentId={effect.id} reduced={reduced} />}
-      {reaction && <ReactionBubble key={reaction.id} reaction={reaction} />}
+      {effect && <SeatEffect key={`effect-${effect.id}`} effect={effect.kind} momentId={effect.id} reduced={reduced} />}
+      {reaction && <ReactionBubble key={`reaction-${reaction.id}`} reaction={reaction} />}
     </div>
   );
   const frame = `${awaited ? 'bg-surface-2/90 ring-1 ring-accent/25' : 'bg-surface/60 ring-1 ring-line'} ${player.finished ? 'opacity-55' : ''}`;
@@ -141,8 +141,8 @@ export function MySeat({
     <div className="flex min-w-0 items-center gap-2" data-testid={`seat-${player.id}`}>
       <div ref={anchor} className="relative">
         <Avatar id={player.id} name={name} size={30} progress={ring.progress} urgent={ring.urgent} />
-        {effect && <SeatEffect key={effect.id} effect={effect.kind} momentId={effect.id} reduced={reduced} />}
-        {reaction && <ReactionBubble key={reaction.id} reaction={reaction} />}
+        {effect && <SeatEffect key={`effect-${effect.id}`} effect={effect.kind} momentId={effect.id} reduced={reduced} />}
+        {reaction && <ReactionBubble key={`reaction-${reaction.id}`} reaction={reaction} />}
       </div>
       <span className="min-w-0 truncate text-sm font-semibold">{name}</span>
       <PlayerBadges player={player} view={view} member={member} />

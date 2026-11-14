@@ -27,7 +27,7 @@ import { ActionBar, Countdown, StatusBanner } from './parts';
 import { MySeat, OpponentSeat, type SeatEffectProp, type TurnRing } from './Seat';
 import { statusLine } from './status';
 import { RestartButton, RestartVotePanel, canProposeRestart } from './RestartVote';
-import { TopBar } from './TopBar';
+import { LeaveButton, TopBar } from './TopBar';
 import { useGameSounds } from '../../audio/useGameSounds';
 import { SettingsButton } from '../../components/SettingsDialog';
 import { HelpButton } from '../rules/HelpButton';
@@ -190,7 +190,7 @@ export function TableScreen() {
 
   const opponents = (
     <ul
-      className={`flex shrink-0 justify-center ${short ? 'min-w-0 flex-nowrap gap-1' : 'flex-wrap gap-1.5 sm:gap-2.5'} ${mode === 'phone' ? 'gap-1' : ''}`}
+      className={`flex shrink-0 flex-wrap justify-center ${mode === 'phone' ? 'gap-1' : 'gap-1.5 sm:gap-2.5'}`}
       dir="ltr"
       aria-label="opponents"
     >
@@ -205,7 +205,7 @@ export function TableScreen() {
           reaction={reactions.byPlayer.get(p.id) ?? null}
           effect={effectOf(p.id)}
           reduced={reduced}
-          variant={short ? 'inline' : mode === 'phone' ? 'compact' : 'regular'}
+          variant={mode === 'phone' ? 'compact' : 'regular'}
         />
       ))}
     </ul>
@@ -257,35 +257,139 @@ export function TableScreen() {
     />
   );
 
+  const tools = (
+    <>
+      {canProposeRestart(view, room) && <RestartButton disabled={!!room?.restartVote || reconnecting} />}
+      <HelpButton />
+      <SettingsButton />
+    </>
+  );
+  const deckPile = <DeckPile view={view} small={short} />;
+  const discardPile = <DiscardPile view={view} showLastBout={peek && view.table.length === 0} small={short} />;
+  const overlays = (
+    <>
+      <FlightLayer key={flights.version} flights={flights.list} />
+      <ReactionAnnouncer latest={reactions.latest} nameOf={nameOf} />
+      <MomentBanner active={moment} viewerId={viewerId} nameOf={nameOf} reduced={reduced} />
+
+      {revealing && revealPlan && (
+        <DurakReveal
+          plan={revealPlan}
+          viewerId={viewerId}
+          nameOf={nameOf}
+          stinger={gameOver ? gameOverCue(gameOver, viewerId) : null}
+          onDone={() => setRevealDoneFor(game.gameId)}
+        />
+      )}
+
+      {finished && overlayReady && !revealing && gameOver?.endReason !== 'restarted' && (
+        <GameOverOverlay
+          view={view}
+          gameOver={gameOver}
+          nameOf={nameOf}
+          canRematch={!spectator}
+          reduced={reduced}
+          reactions={reactions}
+          canReact={canReact}
+        />
+      )}
+    </>
+  );
+  // While the durak reveal runs, my side of the table slides away.
+  const hideOnReveal = `transition duration-500 ${revealing ? 'translate-y-24 opacity-0' : ''}`;
+
+  if (short) {
+    // Short landscape (a phone on its side): height is scarce, width is not. Three columns, each the
+    // full height. In this RTL row the first child is on the right (inline-start), where Hebrew
+    // reading starts: "leave" and who is at the table. The centre: the table, the hand under it. The
+    // left (inline-end): the room tools, the piles, the status, my seat and Take/Pass (where they were).
+    // The outer edges clear the notch / Dynamic Island, which sits on the left or the right in
+    // landscape (--sai-*: the safe-area insets, index.css).
+    return (
+      <AnchorProvider registry={registry}>
+        <LayoutGroup>
+          <div
+            className="relative flex min-h-0 w-full flex-1 flex-row gap-1.5 pt-1.5 pr-[max(var(--sai-right),0.5rem)] pb-[max(var(--sai-bottom),0.375rem)] pl-[max(var(--sai-left),0.5rem)]"
+            data-layout={mode}
+          >
+            <aside className="flex w-28 shrink-0 flex-col gap-1.5" data-testid="seat-column">
+              <div className="flex">
+                <LeaveButton view={view} members={members} />
+              </div>
+              <ul className="flex min-h-0 flex-1 flex-col justify-evenly gap-1" aria-label="opponents">
+                {opponentsInOrder(view).map((p) => (
+                  <OpponentSeat
+                    key={p.id}
+                    player={p}
+                    name={nameOf(p.id)}
+                    view={view}
+                    member={members?.find((m) => m.playerId === p.id)}
+                    ring={ringOf(p.id)}
+                    reaction={reactions.byPlayer.get(p.id) ?? null}
+                    effect={effectOf(p.id)}
+                    reduced={reduced}
+                    variant="inline"
+                  />
+                ))}
+              </ul>
+            </aside>
+
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <RestartVotePanel viewerId={view.viewerId} />
+              <section
+                className="flex min-h-0 w-full flex-1 items-center rounded-table bg-gradient-to-b from-surface-2 to-surface p-1.5 shadow-table ring-1 ring-line"
+                dir="ltr"
+                data-testid="table-surface"
+              >
+                {tableArea}
+              </section>
+              {!spectator && me && <div className={`shrink-0 ${hideOnReveal}`}>{handFan}</div>}
+            </div>
+
+            <div className={`flex w-52 shrink-0 flex-col gap-1.5 ${hideOnReveal}`} data-testid="side-panel">
+              <div className="flex items-center justify-end gap-1.5" data-testid="top-bar">
+                {tools}
+              </div>
+              {/* The stock and the discard pile: the table gets the centre's full width. */}
+              <div className="flex items-center justify-between gap-1 px-1" dir="ltr" data-testid="piles">
+                {deckPile}
+                {discardPile}
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col justify-end gap-1.5">
+                {!finished && status}
+                {!spectator && me && (
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    {mySeat}
+                    {interactive && <ActionBar moves={moves} onMove={send} compact />}
+                  </div>
+                )}
+              </div>
+            </div>
+            {overlays}
+          </div>
+        </LayoutGroup>
+      </AnchorProvider>
+    );
+  }
+
   return (
     <AnchorProvider registry={registry}>
       <LayoutGroup>
         {/* Exactly one screen tall (App sets h-dvh): the table takes what the other rows leave. */}
         <div
-          className={`relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-2 pt-2 sm:px-4 ${
-            short ? 'max-w-none gap-1.5 pt-1.5 sm:pt-1.5' : 'gap-2 sm:gap-3 sm:pt-3 [@media(max-height:820px)]:gap-2'
-          }`}
+          className="relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-2 pt-2 pr-[max(var(--sai-right),0.5rem)] pl-[max(var(--sai-left),0.5rem)] sm:gap-3 sm:pt-3 sm:pr-[max(var(--sai-right),1rem)] sm:pl-[max(var(--sai-left),1rem)] [@media(max-height:820px)]:gap-2"
           data-layout={mode}
         >
-          <TopBar
-            view={view}
-            members={members}
-            extra={
-              <>
-                {canProposeRestart(view, room) && <RestartButton disabled={!!room?.restartVote || reconnecting} />}
-                <HelpButton />
-                <SettingsButton />
-              </>
-            }
-          />
+          <TopBar view={view} members={members} extra={tools} />
           <RestartVotePanel viewerId={view.viewerId} />
           {opponents}
 
           <section
             className={`mx-auto flex min-h-0 w-full flex-1 gap-2 rounded-table bg-gradient-to-b from-surface-2 to-surface p-2 shadow-table ring-1 ring-line sm:gap-4 sm:p-4 ${
               mode === 'phone' ? 'flex-col' : 'items-center'
-            } ${short ? 'sm:gap-2 sm:p-2' : ''}`}
+            }`}
             dir="ltr"
+            data-testid="table-surface"
           >
             {mode === 'phone' ? (
               // Phones: the stock and the discard pile become one small strip, the table gets the full width.
@@ -294,74 +398,28 @@ export function TableScreen() {
                 <DiscardPile view={view} showLastBout={peek && view.table.length === 0} small />
               </div>
             ) : (
-              <DeckPile view={view} small={short} />
+              deckPile
             )}
             {tableArea}
-            {mode !== 'phone' && <DiscardPile view={view} showLastBout={peek && view.table.length === 0} small={short} />}
+            {mode !== 'phone' && discardPile}
           </section>
 
-          {!finished && !short && status}
+          {!finished && status}
 
-          <div
-            className={`flex shrink-0 pb-[env(safe-area-inset-bottom)] transition duration-500 ${
-              short ? 'flex-row-reverse items-end gap-2' : 'flex-col items-center gap-1.5 sm:gap-2'
-            } ${revealing ? 'translate-y-24 opacity-0' : ''}`}
-          >
+          <div className={`flex shrink-0 flex-col items-center gap-1.5 pb-[var(--sai-bottom)] sm:gap-2 ${hideOnReveal}`}>
             {tip && <TipBanner tip={tip} onDismiss={() => settingsStore.markTipSeen(tip)} />}
-            {short ? (
-              // Short landscape: the hand takes the width; my seat, the status and Take/Pass stand beside it.
+            {!spectator && me && (
               <>
-                <div className="flex w-72 shrink-0 flex-col items-stretch gap-1 pb-1" data-testid="side-panel">
-                  {!finished && status}
-                  {!spectator && me && (
-                    <div className="flex items-center justify-between gap-1.5">
-                      {mySeat}
-                      {interactive && <ActionBar moves={moves} onMove={send} compact />}
-                    </div>
-                  )}
+                {/* My seat and Take / Pass share the row ABOVE the hand: the buttons can never cover (or steal clicks from) a card. */}
+                <div className="flex w-full max-w-xl items-center justify-between gap-2 px-1">
+                  {mySeat}
+                  {interactive && <ActionBar moves={moves} onMove={send} />}
                 </div>
-                {!spectator && me && <div className="min-w-0 flex-1">{handFan}</div>}
+                {handFan}
               </>
-            ) : (
-              !spectator &&
-              me && (
-                <>
-                  {/* My seat and Take / Pass share the row ABOVE the hand: the buttons can never cover (or steal clicks from) a card. */}
-                  <div className="flex w-full max-w-xl items-center justify-between gap-2 px-1">
-                    {mySeat}
-                    {interactive && <ActionBar moves={moves} onMove={send} />}
-                  </div>
-                  {handFan}
-                </>
-              )
             )}
           </div>
-
-          <FlightLayer key={flights.version} flights={flights.list} />
-          <ReactionAnnouncer latest={reactions.latest} nameOf={nameOf} />
-          <MomentBanner active={moment} viewerId={viewerId} nameOf={nameOf} reduced={reduced} />
-
-          {revealing && revealPlan && (
-            <DurakReveal
-              plan={revealPlan}
-              viewerId={viewerId}
-              nameOf={nameOf}
-              stinger={gameOver ? gameOverCue(gameOver, viewerId) : null}
-              onDone={() => setRevealDoneFor(game.gameId)}
-            />
-          )}
-
-          {finished && overlayReady && !revealing && gameOver?.endReason !== 'restarted' && (
-            <GameOverOverlay
-              view={view}
-              gameOver={gameOver}
-              nameOf={nameOf}
-              canRematch={!spectator}
-              reduced={reduced}
-              reactions={reactions}
-              canReact={canReact}
-            />
-          )}
+          {overlays}
         </div>
       </LayoutGroup>
     </AnchorProvider>

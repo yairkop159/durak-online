@@ -18,10 +18,14 @@ export function fanLayout(count: number): { rotate: number[]; drop: number[]; ov
   };
 }
 
-/** On a short landscape screen the hand row is the main thing: up to 27% of the height. */
+/**
+ * On a short landscape screen the hand spans the centre column under the table: up to 30% of the
+ * height, and never so big that a 15-card hand would need less than a 16 px slice per card.
+ */
+const SHORT_HAND_H = 'min(108px, 30dvh, 14vw)';
 const SHORT_HAND = {
-  '--card-hand-h-lg': 'min(96px, 27dvh)',
-  '--card-hand-w-lg': 'calc(min(96px, 27dvh) * 0.7)',
+  '--card-hand-h-lg': SHORT_HAND_H,
+  '--card-hand-w-lg': `calc(${SHORT_HAND_H} * 0.7)`,
 } as CSSProperties;
 
 /** The narrowest slice of a covered card that stays visible (its index and a click target). */
