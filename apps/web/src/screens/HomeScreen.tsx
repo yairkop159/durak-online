@@ -49,10 +49,12 @@ export function HomeScreen() {
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 p-4">
       <header className="relative text-center">
-        <div className="absolute top-0 left-0 flex gap-1.5">
+        {/* z-10: the suit row below has a CSS filter, so it is its own stacking context, painted
+            after this corner (tree order) and spanning the full width: without a z-index it covers the gear. */}
+        <div className="absolute top-0 left-0 z-10 flex gap-1.5">
           <SettingsButton />
         </div>
-        <div aria-hidden="true" className="mb-3 text-3xl tracking-[0.3em] text-accent drop-shadow-[0_0_12px_rgb(45_212_191/0.5)]">♠︎♥︎♣︎♦︎</div>
+        <div aria-hidden="true" className="pointer-events-none mb-3 text-3xl tracking-[0.3em] text-accent drop-shadow-[0_0_12px_rgb(45_212_191/0.5)]">♠︎♥︎♣︎♦︎</div>
         <h1 className="text-4xl font-black tracking-tight">{t.appTitle}</h1>
         <p className="mt-2 text-muted">{t.home.subtitle}</p>
       </header>

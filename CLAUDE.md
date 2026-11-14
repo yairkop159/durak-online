@@ -326,6 +326,7 @@ How a run works:
 - Run server + web together: `npm run dev` (builds `shared` + `game-engine` for the server's `tsx`, then runs both with `concurrently`; open http://localhost:5173)
 - Run the server in dev mode: `npm run dev --workspace=apps/server` (env: `PORT`, `HOST`, `CORS_ORIGINS`, `TRUST_PROXY`, `BOT_WORKERS`, `BOT_JOB_TIMEOUT_MS`, the limits above, `WEB_DIST_DIR`; see `.env.example`; bot workers need a built `game-engine`)
 - Run the web client alone: `npm run dev --workspace=apps/web`; tests: `npm test --workspace=apps/web` (Vitest + jsdom + Testing Library; `tests/sessions.test.ts` starts a real in-process server)
+- Web real-browser tests (`apps/web/tests/browser/`): Vite dev server + a locally installed Chrome/Chromium/Edge via `playwright-core` (`CHROME_PATH` overrides the lookup; skipped with a warning when none is found). They check real hit-testing that jsdom can't see: every visible control on Home and `/rules` is the topmost element at its center, and a raw mouse click on Home's gear opens settings. A decorative element with a CSS `filter`/`transform`/`opacity` is its own stacking context and paints over an earlier `absolute` sibling: give overlaid controls a `z-*` and decorations `pointer-events-none`.
 - Start local infrastructure: `docker-compose up -d`
 - Production build locally: `npm run prod:up` → http://localhost:8080; end-to-end check: `npm run smoke -- http://localhost:8080`
 
