@@ -7,6 +7,7 @@ import { WorkerPoolRunner } from './bot/WorkerPoolRunner.js';
 import { DEFAULT_API_LIMITS, registerApi, type ApiLimits } from './http/api.js';
 import { registerWebApp } from './http/webApp.js';
 import { GameResultRecorder } from './ratings/GameResultRecorder.js';
+import { RatingsPublisher } from './ratings/RatingsPublisher.js';
 import type { HistoryStore, ProfileStore, ResultStore } from './ratings/ports.js';
 import { PrismaHistoryStore } from './ratings/PrismaHistoryStore.js';
 import { PrismaProfileStore } from './ratings/PrismaProfileStore.js';
@@ -108,6 +109,8 @@ export interface BuildServerOptions {
   /** Public profiles and the leaderboard (default: Postgres through `database`). */
   readonly history?: HistoryStore;
   readonly resultQueueSettings?: Partial<ResultQueueSettings>;
+  /** Whether Postgres counts as connected for the rating status (default: the database client exists). */
+  readonly ratingsReady?: () => boolean;
 }
 
 export interface DurakServer {
@@ -190,17 +193,26 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   // Match history (Phase 10): queued off the game path, written to Postgres when it is there.
   const database = options.database ?? null;
   const results = options.results ?? new PrismaResultStore(() => database?.client() ?? null);
+  // Rating outcome on the game-over screen: announced (and kept on the finished game) only after
+  // a write this process committed and rated.
+  const ratingsPublisher = new RatingsPublisher({ repos, mutex, notifier });
   const resultQueue = new ResultQueue({
     store: results,
     clock,
     scheduler,
     log: app.log,
     ...(options.resultQueueSettings ? { settings: options.resultQueueSettings } : {}),
+    onRecorded: async (input, ratings) => {
+      await ratingsPublisher.publish(input, ratings);
+    },
   });
   const recorder = new GameResultRecorder({
     queue: resultQueue,
     clock,
     enabled: () => options.results !== undefined || (database?.configured ?? false),
+    // An injected store (tests) counts as connected unless the test says otherwise.
+    ready: options.ratingsReady ?? (() => options.results !== undefined || (database?.client() ?? null) !== null),
+    notifier,
   });
 
   // Wiring order: the committer reports to the BotDriver, which applies moves through GameService,
@@ -236,7 +248,18 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     log: app.log,
     onRestarted: (room, game) => recorder.recordEnded(room, game),
   });
-  const rooms = new RoomService({ repos, mutex, notifier, seedSource, now, timers, committer, votes, maxRooms: limits.maxRooms });
+  const rooms = new RoomService({
+    repos,
+    mutex,
+    notifier,
+    seedSource,
+    now,
+    timers,
+    committer,
+    votes,
+    maxRooms: limits.maxRooms,
+    ratingStatus: (room, game) => recorder.statusFor(room, game),
+  });
   const games = new GameService({ repos, mutex, notifier, committer });
 
   const botSettings = options.botSettings ?? {};

@@ -31,6 +31,14 @@ export class InMemoryStore<T> {
     this.data.set(key, { value: structuredClone(value), expiresAt: this.now() + ttlSeconds * 1000 });
   }
 
+  /** Like Redis SET … XX KEEPTTL: replaces an existing value and keeps its expiry; false (no-op) if missing. */
+  replace(key: string, value: T): boolean {
+    const entry = this.live(key);
+    if (!entry) return false;
+    this.data.set(key, { value: structuredClone(value), expiresAt: entry.expiresAt });
+    return true;
+  }
+
   /** Resets the TTL of an existing key; no-op if missing. */
   touch(key: string, ttlSeconds: number): void {
     const entry = this.live(key);

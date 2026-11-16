@@ -495,6 +495,7 @@ function handcraftedBotTurn(): { room: Room; game: StoredGame } {
       forfeits: [],
       stats: {},
       profiles: {},
+      ratings: null,
     };
     return { room: roomWith(['h', 'b'], ['b']), game };
   }

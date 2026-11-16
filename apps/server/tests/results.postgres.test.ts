@@ -53,7 +53,14 @@ suite('PrismaResultStore (real Postgres): one transaction, idempotent by gameId'
     const a = await newProfile('A');
     const b = await newProfile('B');
     const input = result([human(0, a), human(1, b), bot(2)], { durakId: 'p1' });
-    expect(await store.recordGame(input)).toBe('recorded');
+    // The committed changes come back (for game:ratings), rated humans only, in seat order.
+    expect(await store.recordGame(input)).toEqual({
+      kind: 'recorded',
+      ratings: [
+        { playerId: 'p0', before: 1000, after: 1016, delta: 16 },
+        { playerId: 'p1', before: 1000, after: 984, delta: -16 },
+      ],
+    });
 
     expect(await db.query('SELECT mode, player_count, end_reason, rated, bot_assisted, durak_profile_id FROM games WHERE id = $1', [input.gameId])).toEqual([
       { mode: 'podkidnoy', player_count: 3, end_reason: 'normal', rated: true, bot_assisted: false, durak_profile_id: b },
@@ -73,10 +80,10 @@ suite('PrismaResultStore (real Postgres): one transaction, idempotent by gameId'
     const a = await newProfile('A');
     const b = await newProfile('B');
     const input = result([human(0, a), human(1, b)], { durakId: 'p0' });
-    expect(await store.recordGame(input)).toBe('recorded');
+    expect(await store.recordGame(input)).toMatchObject({ kind: 'recorded' });
     const before = [await profile(a), await profile(b)];
-    expect(await store.recordGame(input)).toBe('duplicate');
-    expect(await store.recordGame({ ...input, durakId: 'p1' })).toBe('duplicate'); // even with different content
+    expect(await store.recordGame(input)).toEqual({ kind: 'duplicate' });
+    expect(await store.recordGame({ ...input, durakId: 'p1' })).toEqual({ kind: 'duplicate' }); // even with different content
     expect([await profile(a), await profile(b)]).toEqual(before);
     expect(await counts(input.gameId)).toEqual({ games: 1, players: 2 });
   });
@@ -94,7 +101,7 @@ suite('PrismaResultStore (real Postgres): one transaction, idempotent by gameId'
     expect(await counts(input.gameId)).toEqual({ games: 0, players: 0 });
     expect(await profile(a)).toMatchObject({ rating: 1000, games: 0 });
 
-    expect(await store.recordGame(input)).toBe('recorded');
+    expect(await store.recordGame(input)).toMatchObject({ kind: 'recorded' });
     expect(await counts(input.gameId)).toEqual({ games: 1, players: 2 });
     expect((await profile(a)).rating).toBe(1016);
   });
@@ -126,7 +133,13 @@ suite('PrismaResultStore (real Postgres): one transaction, idempotent by gameId'
     await new Promise((r) => setTimeout(r, 400));
     expect(secondDone).toBe(false); // blocked on g1's FOR UPDATE locks
     release();
-    expect(await Promise.all([first, second])).toEqual(['recorded', 'recorded']);
+    const [o1, o2] = await Promise.all([first, second]);
+    expect([o1.kind, o2.kind]).toEqual(['recorded', 'recorded']);
+    // The second write's "before" is the first write's "after": read under the lock, after g1 committed.
+    // Seats are reversed in g2 (p0 = B, p1 = A).
+    const entries = (o: typeof o1) => (o.kind === 'recorded' ? (o.ratings ?? []) : []);
+    expect(entries(o1).map((e) => [e.playerId, e.after])).toEqual([['p0', 1016], ['p1', 984]]);
+    expect(entries(o2).map((e) => [e.playerId, e.before])).toEqual([['p0', 984], ['p1', 1016]]);
 
     // Exactly the sequential order g1 → g2: A 1016 → 999, B 984 → 1001 (32 × (1 - E(984 vs 1016)) ≈ 17).
     // Without the locks g2 would have read 1000 / 1000 and both would end at 1000 / 1000.
@@ -174,7 +187,7 @@ suite('PrismaResultStore (real Postgres): one transaction, idempotent by gameId'
   it('a profile in two seats counts once; a vanished profile is stored as an unprofiled seat', async () => {
     const a = await newProfile('A');
     const input = result([human(0, a), human(1, a), human(2, 'gone'.padEnd(22, 'x'))], { durakId: 'p1' });
-    expect(await store.recordGame(input)).toBe('recorded');
+    expect(await store.recordGame(input)).toEqual({ kind: 'recorded', ratings: null }); // one profile left: unrated
     expect(await db.query('SELECT seat, profile_id FROM game_players WHERE game_id = $1 ORDER BY seat', [input.gameId])).toEqual([
       { seat: 0, profile_id: a },
       { seat: 1, profile_id: null },

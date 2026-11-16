@@ -17,6 +17,13 @@ export interface GameRepository {
   get(roomId: string): Promise<StoredGame | null>;
   /** Upsert, keyed by roomId (one active game per room). */
   save(game: StoredGame): Promise<void>;
+  /**
+   * Replaces a stored game WITHOUT touching any TTL (neither the game's nor its room's), unlike
+   * `save`, which slides both. Only for annotating a finished game after the fact (its rating
+   * outcome): the game-over screen must not live longer because of it. Returns false, writing
+   * nothing, when the game key no longer exists (expired or deleted by a rematch).
+   */
+  replaceKeepingTtl(game: StoredGame): Promise<boolean>;
   delete(roomId: string): Promise<void>;
 }
 

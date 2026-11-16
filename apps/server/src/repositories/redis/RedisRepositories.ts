@@ -71,6 +71,12 @@ export class RedisGameRepository implements GameRepository {
     );
   }
 
+  /** SET … XX KEEPTTL: only an existing key, and its remaining TTL is kept; the room key is untouched. */
+  async replaceKeepingTtl(game: StoredGame): Promise<boolean> {
+    const reply = await this.ctx.redis.set(this.ctx.keys.game(game.roomId), encode(game), 'KEEPTTL', 'XX');
+    return reply === 'OK';
+  }
+
   async delete(roomId: string): Promise<void> {
     await this.ctx.redis.del(this.ctx.keys.game(roomId));
   }

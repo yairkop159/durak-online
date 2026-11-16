@@ -1,4 +1,11 @@
-import { BotDifficultySchema, CardSchema, GAME_END_REASONS, GameConfigInputSchema, GameConfigSchema } from '@durak/shared';
+import {
+  BotDifficultySchema,
+  CardSchema,
+  GAME_END_REASONS,
+  GameConfigInputSchema,
+  GameConfigSchema,
+  RatingEntrySchema,
+} from '@durak/shared';
 import { z } from 'zod';
 
 /**
@@ -133,6 +140,7 @@ export const StoredGameSchema = z
     forfeits: z.array(z.string()).default([]), // Phase 7
     stats: z.record(z.string(), PlayerStatsSchema).default({}), // Phase 8
     profiles: z.record(z.string(), z.string()).default({}), // Phase 10
+    ratings: z.array(RatingEntrySchema).nullable().default(null), // rating delta on game over
   })
   .strict();
 

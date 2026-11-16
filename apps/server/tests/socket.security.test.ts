@@ -128,6 +128,7 @@ function recordingRepositories(): { repos: Repositories; snapshots: Map<number, 
       games: {
         get: (roomId) => base.games.get(roomId),
         delete: (roomId) => base.games.delete(roomId),
+        replaceKeepingTtl: (game) => base.games.replaceKeepingTtl(game),
         save: async (game) => {
           record(game);
           await base.games.save(game);

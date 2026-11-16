@@ -1,4 +1,4 @@
-import type { BotDifficulty, GameConfigInput, GameEndReason, GameStats, PlayerId } from '@durak/shared';
+import type { BotDifficulty, GameConfigInput, GameEndReason, GameStats, PlayerId, RatingEntry } from '@durak/shared';
 import type { GameState, PublicKnowledge } from '@durak/game-engine';
 
 // All domain records are plain JSON so any repository (in-memory, Redis) can store them unchanged.
@@ -114,4 +114,11 @@ export interface StoredGame {
    * appear. The match history and ratings use this snapshot, whatever happens to the room later.
    */
   readonly profiles: Readonly<Record<PlayerId, string>>;
+  /**
+   * The committed rating change of a finished, rated game (one entry per rated human), or null
+   * (not rated, not written yet, or ratings off). Written once by RatingsPublisher after the
+   * Postgres transaction commits, with `replaceKeepingTtl`: no version bump, no listeners, and the
+   * finished game's remaining TTL is kept. The only write to a StoredGame outside GameCommitter.
+   */
+  readonly ratings: readonly RatingEntry[] | null;
 }

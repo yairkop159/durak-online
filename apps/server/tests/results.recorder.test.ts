@@ -15,9 +15,9 @@ class CapturingStore implements ResultStore {
   async recordGame(input: GameResultInput): Promise<RecordOutcome> {
     this.calls++;
     if (this.down) throw new RatingsUnavailableError();
-    if (this.recorded.has(input.gameId)) return 'duplicate';
+    if (this.recorded.has(input.gameId)) return { kind: 'duplicate' };
     this.recorded.set(input.gameId, input);
-    return 'recorded';
+    return { kind: 'recorded', ratings: null };
   }
   only(): GameResultInput {
     expect(this.recorded.size).toBe(1);

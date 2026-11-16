@@ -47,6 +47,7 @@ export function makeGame(roomId: string, finished = false): StoredGame {
       p_host: { boutsAttacked: 2, boutsDefended: 1, defenses: 1, takes: 0, cardsTaken: 0, throwIns: 1, transfers: 0, cardsPlayed: 5 },
     },
     profiles: { p_host: 'profHostAAAAAAAAAAAAAA' },
+    ratings: finished ? [{ playerId: 'p_host', before: 1000, after: 1016, delta: 16 }, { playerId: 'p_guest', before: 1000, after: 984, delta: -16 }] : null,
   };
 }
 
