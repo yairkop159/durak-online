@@ -27,6 +27,11 @@ export interface HandlerDeps {
   readonly now: () => number;
   /** The client address of a connection (honors the reverse-proxy settings). */
   readonly ipOf: (socket: IoSocket) => string;
+  /**
+   * The profile behind an optional device key (Phase 10), or null: unknown key, Postgres down or
+   * slow. Never throws and never blocks a seat for long (bounded timeout).
+   */
+  readonly resolveProfile: (deviceKey: string | undefined) => Promise<string | null>;
 }
 
 const KNOWN_EVENTS = new Set<string>(Object.values(ClientEvents));
@@ -147,8 +152,12 @@ function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedL
       sendError({ code: 'TOO_MANY_ROOMS', message: 'Too many rooms created from this address, try again later' });
       return;
     }
+    const profileId = await deps.resolveProfile(payload.deviceKey);
+    // The lookup awaited: another create/join on this socket may have seated it meanwhile.
+    const seated = socket.data.session;
+    if (seated) return reissue(seated);
     const result = await rooms.createRoom(
-      { nickname: payload.nickname, maxPlayers: payload.maxPlayers, config: payload.config },
+      { nickname: payload.nickname, maxPlayers: payload.maxPlayers, config: payload.config, profileId },
       bind,
     );
     if (result.ok) shared.roomCreation.record(ip);
@@ -161,7 +170,13 @@ function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedL
       if (existing.roomId === payload.roomId) return reissue(existing);
       { sendError({ code: 'INVALID_SESSION', message: 'This connection is already in another room' }); return; }
     }
-    const result = await rooms.joinRoom(payload.roomId, payload.nickname, bind);
+    const profileId = await deps.resolveProfile(payload.deviceKey);
+    const seated = socket.data.session;
+    if (seated) {
+      if (seated.roomId === payload.roomId) return reissue(seated);
+      { sendError({ code: 'INVALID_SESSION', message: 'This connection is already in another room' }); return; }
+    }
+    const result = await rooms.joinRoom(payload.roomId, payload.nickname, bind, profileId);
     if (!result.ok) sendError(result.error);
   });
 

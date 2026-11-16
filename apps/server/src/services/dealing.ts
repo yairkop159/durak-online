@@ -32,6 +32,9 @@ export function dealGame(room: Room, seed: number, now: number): Result<{ room: 
     botAssisted: [],
     forfeits: [],
     stats: initialStats(created.value),
+    profiles: Object.fromEntries(
+      room.members.filter((m) => !m.isBot && m.profileId !== null).map((m) => [m.playerId, m.profileId as string]),
+    ),
   };
   return ok({ room: updated, game });
 }

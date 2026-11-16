@@ -113,3 +113,69 @@ export async function coveredControls(page: Page, skip?: string): Promise<string
     return covered;
   }, skip);
 }
+
+/** The device profile the stubbed /api knows (seeded into localStorage by `seedProfile`). */
+export const STUB_PROFILE = { v: 1, profileId: 'p'.repeat(22), deviceKey: 'k'.repeat(43), nickname: 'דנה' } as const;
+
+/** Seeds this device's profile before any page script runs. */
+export async function seedProfile(page: Page): Promise<void> {
+  await page.addInitScript((profile) => {
+    try {
+      window.localStorage.setItem('durak:profile', JSON.stringify(profile));
+    } catch {
+      // storage blocked: the page then shows "no profile"
+    }
+  }, STUB_PROFILE);
+}
+
+/**
+ * Answers every /api call (any host: the dev client talks to localhost:3000) with fixed data, so
+ * the profile and leaderboard pages render full: long nicknames, 20 recent games, 20 rows.
+ */
+export async function stubProfileApi(page: Page): Promise<void> {
+  const me = STUB_PROFILE.profileId;
+  const long = 'שם ארוך מאוד של שחקן';
+  const recent = Array.from({ length: 20 }, (_, i) => ({
+    gameId: `g${i}`,
+    endedAt: Date.UTC(2026, 10, 14) - i * 3_600_000,
+    mode: i % 2 ? 'perevodnoy' : 'podkidnoy',
+    endReason: 'normal',
+    rated: i % 3 !== 0,
+    result: (['win', 'durak', 'draw', 'forfeit', 'unfinished'] as const)[i % 5],
+    ratingBefore: i % 3 !== 0 ? 1000 : null,
+    ratingAfter: i % 3 !== 0 ? (i % 2 ? 984 : 1016) : null,
+    botAssisted: i % 4 === 0,
+    others: [
+      { nickname: long, isBot: false, profileId: 'o'.repeat(22), result: 'durak' },
+      { nickname: 'Bot 1', isBot: true, profileId: null, result: 'win' },
+      { nickname: 'אבי', isBot: false, profileId: null, result: 'win' },
+    ],
+  }));
+  const profile = { profileId: me, nickname: STUB_PROFILE.nickname, rating: 1234, games: 57, ratedGames: 40, wins: 31, duraks: 12, forfeits: 1, rank: 3, recent };
+  const entries = Array.from({ length: 20 }, (_, i) => ({
+    rank: i + 1,
+    profileId: i === 2 ? me : `${String(i).padStart(2, '0')}`.padEnd(22, 'x'),
+    nickname: i === 2 ? STUB_PROFILE.nickname : i % 3 === 0 ? `${long} ${i}` : `שחקן ${i}`,
+    rating: 1400 - i * 9,
+    ratedGames: 120 - i,
+    wins: 80 - i,
+    duraks: 10 + i,
+  }));
+  await page.route('**/api/**', async (route) => {
+    const request = route.request();
+    const cors = {
+      'access-control-allow-origin': '*',
+      'access-control-allow-headers': 'authorization, content-type',
+      'access-control-allow-methods': 'GET, POST, PATCH',
+    };
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    const path = new URL(request.url()).pathname.replace(/^\/api/, '');
+    const json = (status: number, body: unknown) =>
+      route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (path === '/profile/me') return json(200, { profileId: me, nickname: STUB_PROFILE.nickname });
+    if (path === '/leaderboard') return json(200, { entries });
+    if (path === '/profile/transfer-code') return json(200, { code: 'ABCD1234', expiresAt: 1_000 + 600_000, serverTime: 1_000 });
+    if (path.startsWith('/profile/')) return json(200, { ...profile, profileId: path.slice('/profile/'.length) });
+    return json(404, { error: 'NOT_FOUND' });
+  });
+}

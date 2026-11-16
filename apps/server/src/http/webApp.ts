@@ -19,7 +19,7 @@ export function resolveWebDistDir(configured: string | null): string | null {
 }
 
 /** Paths owned by the server itself: never answered with the SPA's index.html. */
-const SERVER_PATHS = ['/socket.io', '/health'];
+const SERVER_PATHS = ['/socket.io', '/health', '/api'];
 
 const SECURITY_HEADERS: Record<string, string> = {
   'x-content-type-options': 'nosniff',

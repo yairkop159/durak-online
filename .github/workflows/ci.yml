@@ -17,7 +17,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
-      # The server's Redis tests run against this (they are skipped when no Redis is reachable).
+      # The server's Redis and Postgres tests run against these (skipped when not reachable).
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: durak
+          POSTGRES_PASSWORD: durak
+          POSTGRES_DB: durak
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U durak -d durak"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
       redis:
         image: redis:7-alpine
         ports:
@@ -29,6 +42,7 @@ jobs:
           --health-retries 10
     env:
       REDIS_URL: redis://127.0.0.1:6379
+      DATABASE_URL: postgresql://durak:durak@127.0.0.1:5432/durak
     steps:
       - uses: actions/checkout@v4
 
@@ -64,15 +78,23 @@ jobs:
       - name: Build the image (not pushed)
         run: docker build -t durak-online:ci .
 
-      - name: Boot it with Redis and run the end-to-end smoke test
+      - name: Boot it with Redis and Postgres and run the end-to-end smoke test
         run: |
           docker network create durak
           docker run -d --name redis --network durak redis:7-alpine
-          docker run -d --name app --network durak -p 8080:8080 -e REDIS_URL=redis://redis:6379 durak-online:ci
+          docker run -d --name postgres --network durak -e POSTGRES_USER=durak -e POSTGRES_PASSWORD=durak -e POSTGRES_DB=durak postgres:16-alpine
           for _ in $(seq 1 30); do
-            curl -fsS http://localhost:8080/health && break
+            docker exec postgres pg_isready -U durak -d durak -h 127.0.0.1 && break
             sleep 1
           done
+          docker run -d --name app --network durak -p 8080:8080 -e REDIS_URL=redis://redis:6379 \
+            -e DATABASE_URL=postgresql://durak:durak@postgres:5432/durak durak-online:ci
+          # Wait until migrations ran and Postgres is connected (the smoke test requires it).
+          for _ in $(seq 1 60); do
+            curl -fsS http://localhost:8080/health | grep -q '"postgres":"ok"' && break
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/health
           npm ci --no-audit --no-fund
           npm run build --workspace=packages/shared --workspace=packages/game-engine
           npm run smoke -- http://localhost:8080 8

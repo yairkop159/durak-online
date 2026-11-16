@@ -4,6 +4,8 @@
 //
 // Requires a built game-engine (npm run build). Acts like a browser on that origin:
 // 1. GET /health and the SPA (/room/<id> must return index.html, its JS/CSS assets must load);
+//    the profiles API (Phase 10): with postgres "ok", GET /api/leaderboard must answer 200 with
+//    entries; otherwise it must answer 503 RATINGS_UNAVAILABLE (games run without Postgres);
 // 2. Socket.io with a same-origin Origin header: create a room, add a medium bot (IS-MCTS on the
 //    server's worker threads), start the game, then play `moves` of our own legal moves (from
 //    getLegalMovesForView, as the web client does) while the bot answers.
@@ -38,6 +40,16 @@ for (const asset of assets) {
   await res.arrayBuffer();
 }
 log(`SPA fallback ok for /room/smoke123; ${assets.length} assets load (${assets.join(', ')})`);
+
+const board = await fetch(`${base}/api/leaderboard`).catch((e) => fail(`GET /api/leaderboard: ${e.message}`));
+const boardBody = await board.json().catch(() => fail('/api/leaderboard did not return JSON'));
+if (healthBody.postgres === 'ok') {
+  if (board.status !== 200 || !Array.isArray(boardBody.entries)) fail(`/api/leaderboard ${board.status} ${JSON.stringify(boardBody)}`);
+  log(`/api/leaderboard -> 200 (${boardBody.entries.length} entries)`);
+} else {
+  if (board.status !== 503 || boardBody.error !== 'RATINGS_UNAVAILABLE') fail(`/api/leaderboard ${board.status} ${JSON.stringify(boardBody)}`);
+  log(`/api/leaderboard -> 503 RATINGS_UNAVAILABLE (postgres: ${healthBody.postgres ?? 'n/a'}; games still run)`);
+}
 
 // ---------------------------------------------------------------- Socket.io
 const socket = io(base, { transports: ['websocket'], extraHeaders: { origin: base }, reconnection: false });

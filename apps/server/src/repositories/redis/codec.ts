@@ -18,6 +18,7 @@ export const RoomMemberSchema = z
     consecutiveTimeouts: z.number().int().min(0).default(0),
     graceDeadline: z.number().nullable().default(null),
     leftGame: z.boolean().default(false), // Phase 7
+    profileId: z.string().nullable().default(null), // Phase 10
   })
   .strict();
 
@@ -131,6 +132,7 @@ export const StoredGameSchema = z
     botAssisted: z.array(z.string()).default([]),
     forfeits: z.array(z.string()).default([]), // Phase 7
     stats: z.record(z.string(), PlayerStatsSchema).default({}), // Phase 8
+    profiles: z.record(z.string(), z.string()).default({}), // Phase 10
   })
   .strict();
 

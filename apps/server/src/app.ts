@@ -2,8 +2,16 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import { Server } from 'socket.io';
 import type { HealthReport } from './backend.js';
 import type { BotPolicies, BotRunner } from './bot/job.js';
+import type { Database, DbStatus } from './db/database.js';
 import { WorkerPoolRunner } from './bot/WorkerPoolRunner.js';
+import { DEFAULT_API_LIMITS, registerApi, type ApiLimits } from './http/api.js';
 import { registerWebApp } from './http/webApp.js';
+import { GameResultRecorder } from './ratings/GameResultRecorder.js';
+import type { HistoryStore, ProfileStore, ResultStore } from './ratings/ports.js';
+import { PrismaHistoryStore } from './ratings/PrismaHistoryStore.js';
+import { PrismaProfileStore } from './ratings/PrismaProfileStore.js';
+import { PrismaResultStore } from './ratings/PrismaResultStore.js';
+import { ResultQueue, type ResultQueueSettings } from './ratings/ResultQueue.js';
 import { DEFAULT_CORS_ORIGINS } from './config.js';
 import type { Repositories } from './repositories/interfaces.js';
 import { createInMemoryRepositories } from './repositories/inMemory/index.js';
@@ -17,7 +25,14 @@ import { DEFAULT_RESTART_VOTE_SETTINGS, RestartVoteService, type RestartVoteSett
 import { RoomService } from './services/RoomService.js';
 import { createSystemScheduler, systemClock, type Clock, type Scheduler } from './services/scheduling.js';
 import { DEFAULT_TIMER_SETTINGS, TurnTimerService, type TimerSettings } from './services/TurnTimerService.js';
-import { clientIp, isOriginAllowed, type TrustProxy } from './transport/clientAddress.js';
+import {
+  fastifyTrustProxy,
+  isOriginAllowed,
+  proxyPeerMatcher,
+  resolveClientIp,
+  type ClientIpPolicy,
+  type TrustProxy,
+} from './transport/clientAddress.js';
 import { DEFAULT_LIMITS, type LimitSettings } from './transport/rateLimit.js';
 import { registerHandlers } from './transport/registerHandlers.js';
 import { SocketNotifier } from './transport/SocketNotifier.js';
@@ -73,6 +88,26 @@ export interface BuildServerOptions {
   readonly limits?: Partial<LimitSettings>;
   /** Reverse-proxy trust for client IPs (default false). */
   readonly trustProxy?: TrustProxy;
+  /** Peers allowed to act as that proxy (CIDRs/IPs); null/absent = any peer. */
+  readonly trustedProxies?: readonly string[] | null;
+  /** Prefer CF-Connecting-IP from a trusted proxy peer (Cloudflare in front; default false). */
+  readonly trustCfConnectingIp?: boolean;
+  /**
+   * Postgres for profiles, history and ratings (Phase 10). Optional: without it (or while it is
+   * down) games run unchanged and /health reports `postgres: 'disabled' | 'down'` with status 200.
+   */
+  readonly database?: Database;
+  /** Profiles (default: Postgres through `database`; tests inject MemoryProfileStore). */
+  readonly profiles?: ProfileStore;
+  /** /api abuse limits (default DEFAULT_API_LIMITS). */
+  readonly apiLimits?: Partial<ApiLimits>;
+  /** How long room:create/join waits for a device key lookup before seating unprofiled (default 500 ms). */
+  readonly profileLookupMs?: number;
+  /** Match history (default: Postgres through `database`; tests inject their own). */
+  readonly results?: ResultStore;
+  /** Public profiles and the leaderboard (default: Postgres through `database`). */
+  readonly history?: HistoryStore;
+  readonly resultQueueSettings?: Partial<ResultQueueSettings>;
 }
 
 export interface DurakServer {
@@ -86,14 +121,22 @@ export interface DurakServer {
   readonly bots: BotDriver;
   readonly botRunner: BotRunner;
   readonly reactions: ReactionService;
+  readonly profiles: ProfileStore;
+  readonly recorder: GameResultRecorder;
+  readonly resultQueue: ResultQueue;
 }
 
 export function buildServer(options: BuildServerOptions = {}): DurakServer {
-  const trustProxy = options.trustProxy ?? false;
+  const ipPolicy: ClientIpPolicy = {
+    trustProxy: options.trustProxy ?? false,
+    trustedProxies: options.trustedProxies ?? null,
+    cfConnectingIp: options.trustCfConnectingIp ?? false,
+  };
+  const isProxyPeer = proxyPeerMatcher(ipPolicy.trustedProxies);
   const app = Fastify({
     logger: options.logger ?? false,
-    // A hop count becomes proxy-addr's own hop function (Fastify's types only take boolean/fn).
-    trustProxy: typeof trustProxy === 'number' ? (_address: string, hop: number) => hop < trustProxy : trustProxy,
+    // The same policy as clientIpOf below, as proxy-addr's (address, hop) function.
+    trustProxy: fastifyTrustProxy(ipPolicy),
   });
   const repos = options.repos ?? createInMemoryRepositories();
   const limits: LimitSettings = { ...DEFAULT_LIMITS, ...options.limits };
@@ -115,15 +158,19 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
     // WebSockets bypass CORS, so the handshake checks Origin itself.
     allowRequest: (req, callback) => {
-      const forwardedHost = trustProxy !== false ? req.headers['x-forwarded-host'] : undefined;
+      const proxied = ipPolicy.trustProxy !== false && ipPolicy.trustProxy !== 0 && isProxyPeer(req.socket.remoteAddress ?? '');
+      const forwardedHost = proxied ? req.headers['x-forwarded-host'] : undefined;
       const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) ?? req.headers.host;
       const allowed = isOriginAllowed(req.headers.origin, host, corsOrigins);
       if (!allowed) app.log.warn({ origin: req.headers.origin, host }, 'handshake refused: origin not allowed');
       callback(allowed ? null : 'Origin not allowed', allowed);
     },
   });
+  /** The one client-address rule for sockets and HTTP (per-IP limits, logs). */
+  const clientIpOf = (peer: string, headers: Readonly<Record<string, string | string[] | undefined>>) =>
+    resolveClientIp(peer, headers, ipPolicy, isProxyPeer);
   const ipOf = (socket: { handshake: { address: string; headers: Record<string, string | string[] | undefined> } }) =>
-    clientIp(socket.handshake.address, socket.handshake.headers['x-forwarded-for'], trustProxy);
+    clientIpOf(socket.handshake.address, socket.handshake.headers);
 
   const clock = options.clock ?? systemClock;
   const scheduler =
@@ -140,6 +187,22 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     log: app.log,
   });
 
+  // Match history (Phase 10): queued off the game path, written to Postgres when it is there.
+  const database = options.database ?? null;
+  const results = options.results ?? new PrismaResultStore(() => database?.client() ?? null);
+  const resultQueue = new ResultQueue({
+    store: results,
+    clock,
+    scheduler,
+    log: app.log,
+    ...(options.resultQueueSettings ? { settings: options.resultQueueSettings } : {}),
+  });
+  const recorder = new GameResultRecorder({
+    queue: resultQueue,
+    clock,
+    enabled: () => options.results !== undefined || (database?.configured ?? false),
+  });
+
   // Wiring order: the committer reports to the BotDriver, which applies moves through GameService,
   // which commits through the committer — so the listeners are bound late.
   let bots: BotDriver | null = null;
@@ -151,7 +214,12 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     ...(options.reactionRandom ? { random: options.reactionRandom } : {}),
     ...(options.reactionSettings ? { settings: options.reactionSettings } : {}),
   });
-  const committer = new GameCommitter({ repos, notifier, timers, listeners: () => (bots ? [bots, reactions] : [reactions]) });
+  const committer = new GameCommitter({
+    repos,
+    notifier,
+    timers,
+    listeners: () => (bots ? [bots, reactions, recorder] : [reactions, recorder]),
+  });
   timers.attachCommitter(committer);
 
   const now = () => clock.now();
@@ -166,6 +234,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     committer,
     seedSource,
     log: app.log,
+    onRestarted: (room, game) => recorder.recordEnded(room, game),
   });
   const rooms = new RoomService({ repos, mutex, notifier, seedSource, now, timers, committer, votes, maxRooms: limits.maxRooms });
   const games = new GameService({ repos, mutex, notifier, committer });
@@ -194,14 +263,61 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
   });
   bots = driver;
 
+  const profiles = options.profiles ?? new PrismaProfileStore(() => database?.client() ?? null);
+  const profileLookupMs = options.profileLookupMs ?? 500;
+  /** Seat → profile, bounded: a slow or dead Postgres only means an unrated seat. */
+  const resolveProfile = async (deviceKey: string | undefined): Promise<string | null> => {
+    if (deviceKey === undefined) return null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const lookup = profiles.resolveKey(deviceKey).then((p) => p?.profileId ?? null);
+      const timeout = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), profileLookupMs);
+        timer.unref();
+      });
+      return await Promise.race([lookup, timeout]);
+    } catch (error) {
+      app.log.warn({ err: error instanceof Error ? error.name : 'Error' }, 'profile lookup failed: seating unprofiled');
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
   let shuttingDown = false;
-  registerHandlers({ io, rooms, games, votes, reactions, log: app.log, isShuttingDown: () => shuttingDown, limits, now, ipOf });
+  registerHandlers({
+    io,
+    rooms,
+    games,
+    votes,
+    reactions,
+    log: app.log,
+    isShuttingDown: () => shuttingDown,
+    limits,
+    now,
+    ipOf,
+    resolveProfile,
+  });
+
+  registerApi(app, {
+    profiles,
+    history: options.history ?? new PrismaHistoryStore(() => database?.client() ?? null),
+    clientIpOf,
+    now,
+    corsOrigins,
+    limits: { ...DEFAULT_API_LIMITS, ...options.apiLimits },
+    log: app.log,
+  });
 
   const health = options.health ?? (async (): Promise<HealthReport> => ({ ok: true, repository: 'memory' }));
   // Probed every few seconds by Docker and the hosting platform: keep it out of the info log.
+  // Only the game store (Redis) decides 503; Postgres being down never takes the server out.
   app.get('/health', { logLevel: 'warn' }, async (_request, reply) => {
-    const report = await health();
-    return reply.code(report.ok ? 200 : 503).send(report);
+    const [report, postgres] = await Promise.all([
+      health(),
+      database ? database.health() : Promise.resolve<DbStatus>('disabled'),
+    ]);
+    return reply.code(report.ok ? 200 : 503).send({ ...report, postgres });
   });
   if (options.webDistDir) registerWebApp(app, options.webDistDir);
 
@@ -217,8 +333,23 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     io.disconnectSockets(true);
     io.engine.close();
   });
-  const onClose = options.onClose;
-  if (onClose) app.addHook('onClose', async () => onClose());
+  // Postgres (re)connected: write what waited, and re-submit finished games still in the game
+  // store (a crash between game:over and the write). Idempotent by gameId.
+  database?.onReady(() => {
+    resultQueue.kick();
+    recorder
+      .resubmitFinished(repos)
+      .then((count) => app.log.info({ count }, 'finished games re-submitted to the match history'))
+      .catch((error: unknown) => app.log.warn({ err: error instanceof Error ? error.name : 'Error' }, 're-submission failed'));
+  });
 
-  return { app, io, repos, rooms, games, timers, votes, bots: driver, botRunner, reactions };
+  const onClose = options.onClose;
+  app.addHook('onClose', async () => {
+    await resultQueue.flush(3_000);
+    resultQueue.dispose();
+    if (database) await database.close();
+    if (onClose) await onClose();
+  });
+
+  return { app, io, repos, rooms, games, timers, votes, bots: driver, botRunner, reactions, profiles, recorder, resultQueue };
 }

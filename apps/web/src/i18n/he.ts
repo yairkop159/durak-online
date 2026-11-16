@@ -1,5 +1,6 @@
 import type { AnimationSpeed, TipId } from '../settings/settings';
-import type { BotDifficulty, GameEndReason, GameErrorCode, GameMode, ReactionId, ServerErrorCode, Suit } from '@durak/shared';
+import type { BotDifficulty, GameEndReason, GameErrorCode, GameMode, PlayerResult, ReactionId, ServerErrorCode, Suit } from '@durak/shared';
+import type { ProfileApiError } from '../profile/api';
 
 export type ErrorCode = ServerErrorCode | GameErrorCode;
 
@@ -244,6 +245,57 @@ export interface Strings {
       readonly dimmed: string;
     };
   };
+  readonly profile: {
+    readonly title: string;
+    /** A public profile (someone else's, from the leaderboard). */
+    readonly publicTitle: string;
+    /** Placeholder until the first game sets the real nickname. */
+    readonly defaultNickname: string;
+    readonly privacy: string;
+    readonly rating: string;
+    readonly rank: (n: number) => string;
+    readonly unranked: string;
+    readonly games: string;
+    readonly wins: string;
+    readonly duraks: string;
+    readonly recent: string;
+    readonly noGames: string;
+    readonly results: Record<PlayerResult, string>;
+    readonly unrated: string;
+    readonly botAssisted: string;
+    readonly vs: (names: string) => string;
+    readonly noProfile: string;
+    readonly unavailable: string;
+    readonly notFound: string;
+    readonly leaderboardLink: string;
+    readonly transfer: {
+      readonly title: string;
+      readonly explain: string;
+      readonly button: string;
+      readonly codeLabel: string;
+      readonly expiresIn: (time: string) => string;
+      readonly expired: string;
+    };
+    readonly claim: {
+      readonly title: string;
+      readonly label: string;
+      readonly submit: string;
+      readonly replaceWarning: string;
+      readonly done: (name: string) => string;
+    };
+  };
+  readonly leaderboard: {
+    readonly title: string;
+    readonly subtitle: string;
+    readonly empty: string;
+    readonly rank: string;
+    readonly player: string;
+    readonly rating: string;
+    readonly games: string;
+    readonly mine: string;
+  };
+  /** Profile / rating API errors (Phase 10), including NETWORK (no server answer). */
+  readonly apiErrors: Record<ProfileApiError, string>;
   readonly tips: Record<TipId, string> & { readonly label: string; readonly dismiss: string };
   readonly suits: Record<Suit, string>;
   readonly errors: Record<ErrorCode, string>;
@@ -604,6 +656,63 @@ export const he: Strings = {
       playable: 'אפשר לשחק',
       dimmed: 'לא עכשיו',
     },
+  },
+  profile: {
+    title: 'הפרופיל שלי',
+    publicTitle: 'פרופיל שחקן',
+    defaultNickname: 'שחקן',
+    privacy: 'בלי אימייל ובלי סיסמה: רק כינוי ומזהה אקראי שנשמרים במכשיר הזה.',
+    rating: 'דירוג',
+    rank: (n) => `מקום ${n} בטבלה`,
+    unranked: 'עוד אין דירוג: משחק מדורג צריך לפחות שני שחקנים אנושיים.',
+    games: 'משחקים',
+    wins: 'ניצחונות',
+    duraks: 'פעמים דוראק',
+    recent: 'משחקים אחרונים',
+    noGames: 'עוד אין משחקים. המשחקים הבאים יופיעו כאן.',
+    results: { win: 'ניצחון', durak: 'דוראק', draw: 'תיקו', forfeit: 'הפסד טכני', unfinished: 'לא הסתיים' },
+    unrated: 'לא מדורג',
+    botAssisted: 'בוט שיחק חלק מהמשחק',
+    vs: (names) => `נגד ${names}`,
+    noProfile: 'הפרופיל נוצר אוטומטית במשחק הראשון. יש לך פרופיל במכשיר אחר? אפשר להעביר אותו לכאן עם קוד.',
+    unavailable: 'הפרופילים והדירוג לא זמינים כרגע. המשחק עצמו עובד כרגיל.',
+    notFound: 'הפרופיל לא נמצא',
+    leaderboardLink: 'טבלת הדירוג',
+    transfer: {
+      title: 'מעבר למכשיר אחר',
+      explain: 'במכשיר החדש: "הפרופיל שלי" ← "יש לי קוד", ומקלידים את הקוד. הקוד תקף ל־10 דקות ולפעם אחת, ואחרי המעבר הפרופיל לא יעבוד יותר במכשיר הזה.',
+      button: 'קבלת קוד מעבר',
+      codeLabel: 'קוד המעבר',
+      expiresIn: (time) => `בתוקף עוד ${time}`,
+      expired: 'הקוד פג. אפשר לבקש קוד חדש.',
+    },
+    claim: {
+      title: 'יש לי קוד',
+      label: 'קוד מעבר',
+      submit: 'העברת הפרופיל למכשיר הזה',
+      replaceWarning: 'הפרופיל שכבר נמצא במכשיר הזה יוחלף.',
+      done: (name) => `הפרופיל של ${name} עבר למכשיר הזה`,
+    },
+  },
+  leaderboard: {
+    title: 'טבלת הדירוג',
+    subtitle: '20 המובילים. מדורגים רק משחקים עם שני שחקנים אנושיים לפחות.',
+    empty: 'עוד אין משחקים מדורגים.',
+    rank: 'מקום',
+    player: 'שחקן',
+    rating: 'דירוג',
+    games: 'משחקים',
+    mine: '(אני)',
+  },
+  apiErrors: {
+    INVALID_PAYLOAD: 'בקשה לא תקינה',
+    UNAUTHORIZED: 'הפרופיל הזה כבר לא פעיל במכשיר הזה',
+    NOT_FOUND: 'לא נמצא',
+    INVALID_CODE: 'הקוד שגוי, פג או שכבר השתמשו בו',
+    RATE_LIMITED: 'יותר מדי ניסיונות. אפשר לנסות שוב בעוד כמה דקות',
+    RATINGS_UNAVAILABLE: 'הפרופילים והדירוג לא זמינים כרגע. המשחק עצמו עובד כרגיל.',
+    INTERNAL: 'שגיאת שרת. אפשר לנסות שוב',
+    NETWORK: 'אין כרגע חיבור לשרת',
   },
   tips: {
     label: 'טיפ',

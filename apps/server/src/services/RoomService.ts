@@ -26,7 +26,7 @@ export interface RoomServiceDeps {
   readonly maxRooms?: number;
 }
 
-function newMember(playerId: string, nickname: string): RoomMember {
+function newMember(playerId: string, nickname: string, profileId: string | null): RoomMember {
   return {
     playerId,
     nickname,
@@ -37,7 +37,17 @@ function newMember(playerId: string, nickname: string): RoomMember {
     consecutiveTimeouts: 0,
     graceDeadline: null,
     leftGame: false,
+    profileId,
   };
+}
+
+/**
+ * One profile, one seat per room: a second seat with the same profile (two tabs share the
+ * device's profile) is seated unprofiled — no error, it just isn't rated.
+ */
+function seatProfile(members: readonly RoomMember[], profileId: string | null): string | null {
+  if (profileId === null) return null;
+  return members.some((m) => m.profileId === profileId) ? null : profileId;
 }
 
 /** The only way to build a bot seat: always connected, never AFK, no grace, no session. */
@@ -52,6 +62,7 @@ export function newBotMember(playerId: string, nickname: string, difficulty: Bot
     consecutiveTimeouts: 0,
     graceDeadline: null,
     leftGame: false,
+    profileId: null,
   };
 }
 
@@ -67,6 +78,8 @@ export interface CreateRoomInput {
   readonly nickname: string;
   readonly maxPlayers: number;
   readonly config?: GameConfigInput | undefined;
+  /** Resolved from the device key before the call (Phase 10); null = unprofiled seat. */
+  readonly profileId?: string | null | undefined;
 }
 
 export class RoomService {
@@ -104,7 +117,7 @@ export class RoomService {
         hostId: playerId,
         maxPlayers: input.maxPlayers,
         config: input.config ?? {},
-        members: [newMember(playerId, input.nickname)],
+        members: [newMember(playerId, input.nickname, input.profileId ?? null)],
         spectators: [],
         status: 'lobby',
         createdAt: this.deps.now(),
@@ -121,7 +134,12 @@ export class RoomService {
   }
 
   /** Seats the caller if the room is an open lobby; otherwise they join as a spectator. */
-  async joinRoom(roomId: string, nickname: string, bind: SessionBinder): Promise<Result<Session>> {
+  async joinRoom(
+    roomId: string,
+    nickname: string,
+    bind: SessionBinder,
+    profileId: string | null = null,
+  ): Promise<Result<Session>> {
     const { repos, mutex, notifier } = this.deps;
     return mutex.runExclusive(roomId, async () => {
       const room = await repos.rooms.get(roomId);
@@ -133,7 +151,7 @@ export class RoomService {
         const playerId = newPlayerId();
         updated = {
           ...room,
-          members: [...room.members, newMember(playerId, nickname)],
+          members: [...room.members, newMember(playerId, nickname, seatProfile(room.members, profileId))],
         };
         session = { token: newSessionToken(), roomId, role: 'player', id: playerId };
       } else {

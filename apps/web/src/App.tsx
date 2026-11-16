@@ -11,14 +11,42 @@ import { useRoute } from './routing';
 import { HomeScreen } from './screens/HomeScreen';
 import { RoomRoute, showsTable } from './screens/RoomRoute';
 import { RulesScreen } from './screens/rules/RulesScreen';
+import { LeaderboardScreen } from './screens/profile/LeaderboardScreen';
+import { ProfileScreen } from './screens/profile/ProfileScreen';
+import { ProfilesProvider, type Profiles } from './profile/react';
 
-/** `settings` / `audio` / `vibrator` are injectable for tests (default: localStorage, Web Audio, navigator.vibrate). */
-export function App({ settings, audio, vibrator }: { settings?: SettingsStore; audio?: AudioEngine; vibrator?: Vibrator } = {}) {
+/**
+ * `settings` / `audio` / `vibrator` / `profiles` are injectable for tests (default: localStorage,
+ * Web Audio, navigator.vibrate, the server's /api).
+ */
+export function App({
+  settings,
+  audio,
+  vibrator,
+  profiles,
+}: { settings?: SettingsStore; audio?: AudioEngine; vibrator?: Vibrator; profiles?: Profiles } = {}) {
   return (
     <PrefsProvider {...(settings ? { settings } : {})} {...(audio ? { audio } : {})} {...(vibrator ? { vibrator } : {})}>
-      <AppShell />
+      <ProfilesProvider {...(profiles ? { profiles } : {})}>
+        <AppShell />
+      </ProfilesProvider>
     </PrefsProvider>
   );
+}
+
+function Screen({ route }: { route: ReturnType<typeof useRoute> }) {
+  switch (route.name) {
+    case 'room':
+      return <RoomRoute roomId={route.roomId} />;
+    case 'rules':
+      return <RulesScreen />;
+    case 'profile':
+      return <ProfileScreen key={route.profileId ?? 'me'} profileId={route.profileId} />;
+    case 'leaderboard':
+      return <LeaderboardScreen />;
+    case 'home':
+      return <HomeScreen />;
+  }
 }
 
 function AppShell() {
@@ -47,7 +75,7 @@ function AppShell() {
         data-fit-screen={fitScreen || undefined}
       >
         <ConnectionBanner />
-        <main className="flex min-h-0 flex-1 flex-col" inert={reconnecting} aria-busy={reconnecting}>{roomId !== null ? <RoomRoute roomId={roomId} /> : route.name === 'rules' ? <RulesScreen /> : <HomeScreen />}</main>
+        <main className="flex min-h-0 flex-1 flex-col" inert={reconnecting} aria-busy={reconnecting}><Screen route={route} /></main>
         <ErrorToast />
         <NoticeToast />
       </div>

@@ -13,6 +13,9 @@ import { ReactionService, type ReactionSettings } from '../../src/services/React
 import { DEFAULT_RESTART_VOTE_SETTINGS, RestartVoteService } from '../../src/services/RestartVoteService.js';
 import { RoomService } from '../../src/services/RoomService.js';
 import { DEFAULT_TIMER_SETTINGS, TurnTimerService, type TimerSettings } from '../../src/services/TurnTimerService.js';
+import { GameResultRecorder } from '../../src/ratings/GameResultRecorder.js';
+import type { ResultStore } from '../../src/ratings/ports.js';
+import { ResultQueue } from '../../src/ratings/ResultQueue.js';
 import { FakeTime } from './fakeTime.js';
 
 export interface NotifierEvent {
@@ -69,6 +72,8 @@ export interface ServiceHarnessOptions {
   bots?: { afkTakeover?: boolean; runner?: BotRunner; random?: () => number; policies?: BotPolicies };
   /** Bot reactions are off by default here (chance 0), so existing tests see no extra timers. */
   reactions?: { random?: () => number; settings?: Partial<ReactionSettings> };
+  /** Match history (Phase 10): when given, finished games are recorded through a ResultQueue. */
+  results?: ResultStore;
 }
 
 /** Services wired exactly like buildServer, on in-memory repos and fake time, without sockets. */
@@ -89,7 +94,17 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     random: options.reactions?.random ?? (() => 0.5),
     settings: { botChance: 0, ...options.reactions?.settings },
   });
-  const committer = new GameCommitter({ repos, notifier, timers, listeners: () => (driver ? [driver, reactions] : [reactions]) });
+  const resultLog = { info: () => undefined, warn: () => undefined, error: () => undefined };
+  const resultQueue = options.results
+    ? new ResultQueue({ store: options.results, clock: time, scheduler: time, log: resultLog })
+    : null;
+  const recorder = resultQueue ? new GameResultRecorder({ queue: resultQueue, clock: time, enabled: () => true }) : null;
+  const committer = new GameCommitter({
+    repos,
+    notifier,
+    timers,
+    listeners: () => [...(driver ? [driver] : []), reactions, ...(recorder ? [recorder] : [])],
+  });
   timers.attachCommitter(committer);
   const seed = options.seed ?? 42;
   const votes = new RestartVoteService({
@@ -102,6 +117,7 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     committer,
     seedSource: () => seed,
     log,
+    ...(recorder ? { onRestarted: (room: Room, game: StoredGame) => recorder.recordEnded(room, game) } : {}),
   });
   const rooms = new RoomService({ repos, mutex, notifier, seedSource: () => seed, now: () => time.now(), timers, committer, votes });
   const games = new GameService({ repos, mutex, notifier, committer });
@@ -119,7 +135,7 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     log,
   });
   driver = bots;
-  return { repos, rooms, games, timers, votes, notifier, time, settings, bots, runner, committer, mutex, reactions };
+  return { repos, rooms, games, timers, votes, notifier, time, settings, bots, runner, committer, mutex, reactions, recorder, resultQueue };
 }
 
 export const noBind = (): void => undefined;

@@ -114,3 +114,21 @@ describe('codec: restart votes (Phase 7)', () => {
     expect(decode(RoomSchema, encode(room), 'k', log())).toEqual(room);
   });
 });
+
+describe('codec: profiles (Phase 10)', () => {
+  it('records stored before Phase 10 decode with profileId = null and profiles = {}', () => {
+    const room = makeRoom('room1');
+    const oldRoom = { ...room, members: room.members.map(({ profileId: _p, ...m }) => m) };
+    expect(decode(RoomSchema, encode(oldRoom), 'k', log())?.members.every((m) => m.profileId === null)).toBe(true);
+    const { profiles: _p, ...oldGame } = makeGame('room1');
+    expect(decode(StoredGameSchema, encode(oldGame), 'k', log())?.profiles).toEqual({});
+  });
+
+  it('round-trips profileId and profiles', () => {
+    const room = makeRoom('room1');
+    const linked = { ...room, members: room.members.map((m) => ({ ...m, profileId: m.isBot ? null : `prof_${m.playerId}` })) };
+    expect(decode(RoomSchema, encode(linked), 'k', log())).toEqual(linked);
+    const game = makeGame('room1');
+    expect(decode(StoredGameSchema, encode(game), 'k', log())?.profiles).toEqual(game.profiles);
+  });
+});

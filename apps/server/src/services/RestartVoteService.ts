@@ -33,6 +33,11 @@ export interface RestartVoteDeps {
   readonly committer: GameCommitter;
   readonly seedSource: SeedSource;
   readonly log: { error(obj: object, msg: string): void };
+  /**
+   * A passed vote ends the old game without a commit, so it is reported here for the match
+   * history (stored as 'restarted', never rated). Phase 10.
+   */
+  readonly onRestarted?: (room: Room, game: StoredGame) => void;
 }
 
 /**
@@ -206,7 +211,9 @@ export class RestartVoteService {
       return;
     }
     this.cancel(room.id);
-    notifier.gameOver(cleared, { ...game, state: abandoned.value, endReason: 'restarted', turnDeadline: null });
+    const ended: StoredGame = { ...game, state: abandoned.value, endReason: 'restarted', turnDeadline: null };
+    notifier.gameOver(cleared, ended);
+    this.deps.onRestarted?.(cleared, ended);
     await committer.start(dealt.value.room, dealt.value.game);
     notifier.restartVoteEnded(dealt.value.room, { voteId: vote.voteId, proposerId: vote.proposerId, outcome: 'passed', by: null });
   }

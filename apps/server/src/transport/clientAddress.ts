@@ -1,3 +1,5 @@
+import { BlockList, isIP } from 'node:net';
+
 /**
  * Reverse-proxy trust, same meaning as Fastify's `trustProxy`:
  * - false: the socket's peer address is the client;
@@ -40,6 +42,103 @@ export function clientIp(
   ].map(normalizeIp);
   if (trust === true) return chain[0] ?? peer;
   return chain[Math.max(0, chain.length - 1 - trust)] ?? peer;
+}
+
+/**
+ * Who may act as our reverse proxy (Phase 10). A hop count alone trusts X-Forwarded-For from ANY
+ * peer, so anyone who can reach the port directly could forge their address. With
+ * `trustedProxies` set, forwarded headers count only when the socket peer itself is in that list
+ * (e.g. the Docker network the tunnel / platform proxy connects from); any other peer is the client.
+ */
+export interface ClientIpPolicy {
+  readonly trustProxy: TrustProxy;
+  /** CIDRs / addresses of the proxy peer; null = any peer (the pre-Phase-10 behaviour). */
+  readonly trustedProxies: readonly string[] | null;
+  /**
+   * Prefer Cloudflare's CF-Connecting-IP from a trusted peer. Opt-in: only safe when Cloudflare is
+   * really in front (its edge overwrites the header); behind another proxy a client could forge it.
+   */
+  readonly cfConnectingIp: boolean;
+}
+
+export const NO_PROXY: ClientIpPolicy = { trustProxy: false, trustedProxies: null, cfConnectingIp: false };
+
+/** "10.0.0.0/8, 127.0.0.1, ::1/128" → validated entries; empty → null (any peer). */
+export function parseTrustedProxies(raw: string | undefined): string[] | null {
+  const entries = (raw ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (entries.length === 0) return null;
+  for (const entry of entries) {
+    if (!addToBlockList(new BlockList(), entry)) throw new Error(`Invalid TRUSTED_PROXIES entry "${entry}" (CIDR or IP)`);
+  }
+  return entries;
+}
+
+function addToBlockList(list: BlockList, entry: string): boolean {
+  const [address = '', prefixRaw] = entry.split('/');
+  const family = isIP(address);
+  if (family === 0) return false;
+  const type = family === 6 ? 'ipv6' : 'ipv4';
+  if (prefixRaw === undefined) {
+    list.addAddress(address, type);
+    return true;
+  }
+  const prefix = Number(prefixRaw);
+  if (!Number.isInteger(prefix) || prefix < 0 || prefix > (family === 6 ? 128 : 32)) return false;
+  list.addSubnet(address, prefix, type);
+  return true;
+}
+
+/** A matcher for the policy's proxy peers (built once per server). */
+export function proxyPeerMatcher(trustedProxies: readonly string[] | null): (peer: string) => boolean {
+  if (trustedProxies === null) return () => true;
+  const list = new BlockList();
+  for (const entry of trustedProxies) addToBlockList(list, entry);
+  return (peer) => {
+    const ip = normalizeIp(peer);
+    const family = isIP(ip);
+    return family !== 0 && list.check(ip, family === 6 ? 'ipv6' : 'ipv4');
+  };
+}
+
+function singleHeader(value: string | string[] | undefined): string | undefined {
+  const first = Array.isArray(value) ? value[0] : value;
+  return first?.trim() || undefined;
+}
+
+/**
+ * The client address of a connection or request under `policy`: the peer itself unless it is a
+ * trusted proxy; from a trusted proxy, CF-Connecting-IP (when enabled and a valid IP), else the
+ * X-Forwarded-For entry `trustProxy` hops back.
+ */
+export function resolveClientIp(
+  peerAddress: string,
+  headers: Readonly<Record<string, string | string[] | undefined>>,
+  policy: ClientIpPolicy,
+  isProxyPeer: (peer: string) => boolean = proxyPeerMatcher(policy.trustedProxies),
+): string {
+  const peer = normalizeIp(peerAddress);
+  if (policy.trustProxy === false || policy.trustProxy === 0 || !isProxyPeer(peer)) return peer;
+  if (policy.cfConnectingIp) {
+    const cf = singleHeader(headers['cf-connecting-ip']);
+    if (cf !== undefined && isIP(cf) !== 0) return normalizeIp(cf);
+  }
+  return clientIp(peer, headers['x-forwarded-for'], policy.trustProxy);
+}
+
+/**
+ * Fastify's `trustProxy` for the same policy: hop 0 (the socket peer) must be a trusted proxy
+ * peer, and at most `trustProxy` hops are trusted.
+ */
+export function fastifyTrustProxy(policy: ClientIpPolicy): boolean | ((address: string, hop: number) => boolean) {
+  const { trustProxy } = policy;
+  if (trustProxy === false || trustProxy === 0) return false;
+  if (trustProxy === true && policy.trustedProxies === null) return true;
+  const isProxyPeer = proxyPeerMatcher(policy.trustedProxies);
+  const hops = trustProxy === true ? Number.POSITIVE_INFINITY : trustProxy;
+  return (address, hop) => hop < hops && (hop > 0 || isProxyPeer(address));
 }
 
 /** "::ffff:1.2.3.4" → "1.2.3.4", so IPv4 clients count once whichever stack accepted them. */

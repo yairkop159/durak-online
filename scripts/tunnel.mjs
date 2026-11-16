@@ -14,6 +14,9 @@
 // "[anything the client sent...], <real client>" from one trusted hop: trusting exactly 1 hop picks
 // the real client, and a forged X-Forwarded-For only lands in the ignored part. Binding to
 // 127.0.0.1 keeps anyone on the LAN from bypassing the tunnel with a forged header.
+// The compose file also limits header trust to its own Docker network (TRUSTED_PROXIES), and
+// TRUST_CF_CONNECTING_IP prefers the CF-Connecting-IP header Cloudflare's edge sets (falling back
+// to the X-Forwarded-For hop rule when it is absent).
 import { spawn, spawnSync } from 'node:child_process';
 
 const port = process.env.APP_PORT ?? '8080';
@@ -43,10 +46,10 @@ if (spawnSync('cloudflared', ['--version'], { stdio: 'ignore' }).status !== 0) {
   fail('cloudflared not found on PATH (Windows: winget install --id Cloudflare.cloudflared)');
 }
 
-log('starting the production stack (TRUST_PROXY=1, bound to 127.0.0.1)...');
+log('starting the production stack (TRUST_PROXY=1, CF-Connecting-IP, bound to 127.0.0.1)...');
 const up = spawnSync('docker', ['compose', '-f', 'docker-compose.prod.yml', 'up', '-d', '--build'], {
   stdio: 'inherit',
-  env: { ...process.env, TRUST_PROXY: '1', APP_BIND: '127.0.0.1' },
+  env: { ...process.env, TRUST_PROXY: '1', TRUST_CF_CONNECTING_IP: 'true', APP_BIND: '127.0.0.1' },
 });
 if (up.status !== 0) fail('docker compose up failed (is Docker running?)');
 if (!(await waitHealthy(local, 90_000))) fail(`${local}/health did not become healthy`);

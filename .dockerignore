@@ -12,3 +12,4 @@ packages/game-engine/bench/results
 *.log
 Dockerfile
 docker-compose*.yml
+apps/server/src/generated

@@ -34,6 +34,18 @@ afterEach(() => {
   if (typeof window !== 'undefined') window.localStorage.clear();
 });
 
+// The profile API (/api, Phase 10) is never reached from unit tests: the app's default profile
+// client would otherwise call a dev server on localhost:3000 if one happens to run. Tests that
+// exercise profiles inject their own ProfileApi with a fake fetch.
+if (typeof globalThis.fetch === 'function') {
+  const realFetch = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (/\/api\//.test(url)) return Promise.reject(new TypeError('network disabled in unit tests'));
+    return realFetch(input, init);
+  }) as typeof fetch;
+}
+
 // Animations complete instantly in tests (state is never gated on them anyway).
 MotionGlobalConfig.skipAnimations = true;
 

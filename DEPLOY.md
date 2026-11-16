@@ -32,6 +32,7 @@ npm run prod:down
 - `APP_BIND=127.0.0.1` מוודא שה-port לא חשוף ל-LAN. אחרת מישהו ברשת המקומית יכול לעקוף את המנהרה ולשלוח `X-Forwarded-For` מזויף.
 - בדיקת ה-Origin של Socket.io עובדת בלי שינוי: `cloudflared` שומר את ה-Host המקורי (`….trycloudflare.com`), אז הדפדפן נחשב same-origin.
 - בלוג של השרת, כל חיבור נרשם כ-`socket connected` עם ה-`ip` שחושב, וכך אפשר לוודא את זה (`docker logs durak-prod-app-1`).
+- **מאז שלב 10:** ה-compose קובע רשת עם subnet קבוע (`172.30.80.0/24`) ו-`TRUSTED_PROXIES` מצביע עליה, כך שמאמינים לכותרות רק כשהחיבור באמת מגיע מה-gateway של Docker (`172.30.80.1`). הסקריפט מגדיר גם `TRUST_CF_CONNECTING_IP=true`: מעדיפים את `CF-Connecting-IP` ש-Cloudflare קובע (ואם הוא חסר, חוזרים לכלל של `X-Forwarded-For`). אל תפעילו את זה מאחורי proxy שאינו Cloudflare: שם לקוח יכול לזייף את הכותרת.
 
 **כדאי לדעת:**
 - Quick Tunnel מיועד לבדיקות ולשימוש קטן: בלי SLA, הכתובת זמנית, ו-Cloudflare עלול להגביל אותו.
@@ -55,7 +56,8 @@ npm run prod:down
 image אחד (`Dockerfile`) שמריץ תהליך Node יחיד:
 - מגיש את אפליקציית הווב הבנויה (קבצים סטטיים + SPA fallback, כך ש-`/room/:id` עובד גם ברענון).
 - Socket.io על אותו origin (הלקוח מתחבר לכתובת שממנה נטען; `VITE_SERVER_URL` רק דורס).
-- `GET /health` → `{ ok, repository, redis }`, ומחזיר 503 כש-Redis לא זמין.
+- `GET /health` → `{ ok, repository, redis, postgres }`, ומחזיר 503 רק כש-Redis לא זמין (Postgres למטה לא מפיל את השרת).
+- Postgres (לא חובה) לפרופילים, היסטוריית משחקים ודירוג ELO. ה-migrations רצים אוטומטית בעליית השרת (`prisma migrate deploy`). בלי `DATABASE_URL`, או כש-Postgres למטה, המשחקים עובדים כרגיל ורק הדירוג כבוי (`/api/*` מחזיר 503).
 - Redis חיצוני לשמירת חדרים, משחקים ו-sessions (חובה בייצור: בלי Redis הכול בזיכרון ונמחק בכל ריסטארט).
 
 הרצה מקומית של build הייצור: `npm run prod:up` ואז http://localhost:8080 (עצירה: `npm run prod:down`).
@@ -125,6 +127,15 @@ fly secrets set REDIS_URL="redis://default:<password>@fly-<name>.upstash.io:6379
 **אפשרות ב': Redis משלך על Fly (תאימות מלאה, ‎~$2.5 לחודש)**
 אפליקציה נפרדת עם volume. ראה https://fly.io/docs/ (חפש "Redis on Fly"). מגדירים `REDIS_URL=redis://<redis-app>.internal:6379` כ-secret.
 
+### 3ב. Postgres (פרופילים ודירוג, לא חובה)
+```bash
+fly postgres create          # או כל Postgres מנוהל (Neon, Supabase…)
+fly postgres attach <pg-app> --app durak-yourname   # מגדיר DATABASE_URL כ-secret
+```
+- השרת מריץ `prisma migrate deploy` בכל עלייה (`DB_MIGRATE_ON_START=true`). אפשר לכבות ולהריץ ידנית מתוך ה-image: `node node_modules/prisma/build/index.js migrate deploy` בתיקייה `apps/server`.
+- אם Postgres נופל: המשחקים ממשיכים. תוצאות שמחכות נשמרות בזיכרון ומנוסות שוב עד שעה; **מגבלה ידועה:** אם גם השרת עושה ריסטארט בזמן נפילה ארוכה, תוצאות של משחקים שהסתיימו לפני יותר מ-30 דקות עלולות לא להיכנס לדירוג.
+- `curl …/health` צריך להראות `"postgres":"ok"`.
+
 ### 4. פריסה, ובדיוק מכונה אחת
 ```bash
 fly deploy --ha=false
@@ -143,6 +154,10 @@ fly status
 | `NODE_ENV` | `production` (ב-`fly.toml`) | מפעיל CORS של same-origin בלבד |
 | `PORT` | `8080` (ב-`fly.toml`) | תואם `internal_port` |
 | `TRUST_PROXY` | `1` (ב-`fly.toml`) | ה-proxy של Fly הוא hop אחד; כך כתובות ה-IP של לקוחות נכונות להגבלות |
+| `TRUSTED_PROXIES` | ריק | רשימת CIDR של ה-proxy; ריק = כל peer (ב-Fly רק ה-proxy של Fly מגיע לאפליקציה) |
+| `TRUST_CF_CONNECTING_IP` | `false` | רק כש-Cloudflare לפני האפליקציה |
+| `DATABASE_URL` | secret (צעד 3ב) | לא חובה: בלעדיו אין פרופילים ודירוג |
+| `DB_MIGRATE_ON_START` | `true` | `prisma migrate deploy` בעליית השרת |
 | `CORS_ORIGINS` | ריק | רק אם דומיין אחר צריך להתחבר |
 | `BOT_WORKERS` | ריק | ברירת מחדל: מעבדים זמינים פחות 1, בין 1 ל-4 (מזהה מגבלת cgroup) |
 | `TURN_TIMEOUT_MS`, ‏`AFK_TIMEOUT_MS`, ‏`RECONNECT_GRACE_MS` | ברירות מחדל | 30000 / 5000 / 60000 |
@@ -155,7 +170,7 @@ fly status
 ### 6. בדיקת /health ובדיקת קצה-לקצה
 ```bash
 curl https://durak-yourname.fly.dev/health
-# צפוי: {"ok":true,"repository":"redis","redis":"PONG"}
+# צפוי: {"ok":true,"repository":"redis","redis":"PONG","postgres":"ok"}
 
 fly checks list        # מצב ה-health check של Fly
 fly logs               # לוגים חיים; בעלייה מודפסת שורת "settings" עם כל ההגדרות בפועל

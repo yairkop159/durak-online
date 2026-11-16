@@ -146,19 +146,27 @@ export class GameClient {
     return this.tokens.get(roomId) !== null;
   }
 
-  createRoom(input: { nickname: string; maxPlayers: number; mode: GameMode }): void {
+  /** `deviceKey` links the seat to this device's profile for ratings (Phase 10); omitted = unrated seat. */
+  createRoom(input: { nickname: string; maxPlayers: number; mode: GameMode; deviceKey?: string | undefined }): void {
     this.leaveBindingIfAny();
     this.transport.emit('room:create', {
       nickname: input.nickname,
       maxPlayers: input.maxPlayers,
       config: { mode: input.mode },
+      ...(input.deviceKey ? { deviceKey: input.deviceKey } : {}),
     });
   }
 
   /** One click to a game against `bots` bots (1-5): room:create -> room:addBot × bots -> game:start. */
-  playVsComputer(input: { nickname: string; mode: GameMode; difficulty: BotDifficulty; bots?: number }): void {
+  playVsComputer(input: {
+    nickname: string;
+    mode: GameMode;
+    difficulty: BotDifficulty;
+    bots?: number;
+    deviceKey?: string | undefined;
+  }): void {
     const bots = Math.min(MAX_PLAYERS - 1, Math.max(1, Math.trunc(input.bots ?? 1)));
-    this.createRoom({ nickname: input.nickname, maxPlayers: bots + 1, mode: input.mode });
+    this.createRoom({ nickname: input.nickname, maxPlayers: bots + 1, mode: input.mode, deviceKey: input.deviceKey });
     this.vsComputer = { difficulty: input.difficulty, bots, requested: 0 };
   }
 
@@ -172,9 +180,9 @@ export class GameClient {
     if (session) this.transport.emit('room:removeBot', { roomId: session.roomId, playerId });
   }
 
-  joinRoom(roomId: string, nickname: string): void {
+  joinRoom(roomId: string, nickname: string, deviceKey?: string): void {
     this.leaveBindingIfAny(roomId);
-    this.transport.emit('room:join', { roomId, nickname });
+    this.transport.emit('room:join', { roomId, nickname, ...(deviceKey ? { deviceKey } : {}) });
   }
 
   leaveRoom(): void {

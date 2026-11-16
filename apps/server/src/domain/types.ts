@@ -26,6 +26,11 @@ export interface RoomMember {
    * A rematch removes these seats.
    */
   readonly leftGame: boolean;
+  /**
+   * The profile this human sat down with (Phase 10, resolved from the device key on create/join),
+   * or null. Server-only (never in room:state). A profile holds at most one seat per room.
+   */
+  readonly profileId: string | null;
 }
 
 export interface Spectator {
@@ -104,4 +109,9 @@ export interface StoredGame {
    * (GameCommitter) and sent in game:over.
    */
   readonly stats: GameStats;
+  /**
+   * Profiled human seats when the game was dealt (playerId → profileId; Phase 10). Bots never
+   * appear. The match history and ratings use this snapshot, whatever happens to the room later.
+   */
+  readonly profiles: Readonly<Record<PlayerId, string>>;
 }

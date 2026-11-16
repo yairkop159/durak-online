@@ -1,0 +1,90 @@
+// Phase 10: device profiles, match history and ELO ratings.
+// The connection URL lives in prisma.config.ts (Prisma 7); the server connects through
+// @prisma/adapter-pg (src/db/database.ts).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// A password-free device profile. Only the SHA-256 of the secret device key is stored.
+model Profile {
+  id                String    @id
+  nickname          String
+  deviceKeyHash     String    @unique @map("device_key_hash")
+  /// SHA-256 of the one-time transfer code (null when none is open).
+  transferCodeHash  String?   @unique @map("transfer_code_hash")
+  transferExpiresAt DateTime? @map("transfer_expires_at")
+  rating            Int       @default(1000)
+  /// Every stored game with this profile, rated or not.
+  games             Int       @default(0)
+  ratedGames        Int       @default(0) @map("rated_games")
+  wins              Int       @default(0)
+  duraks            Int       @default(0)
+  forfeits          Int       @default(0)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  seats GamePlayer[]
+
+  @@index([rating(sort: Desc), id], map: "profiles_leaderboard_idx")
+  @@map("profiles")
+}
+
+/// A finished game with at least one profiled human (id = the server's gameId).
+model Game {
+  id             String   @id
+  roomId         String   @map("room_id")
+  mode           String
+  playerCount    Int      @map("player_count")
+  /// normal | forfeit | abandoned | restarted
+  endReason      String   @map("end_reason")
+  rated          Boolean
+  /// A bot played for at least one human (AFK or leave takeover).
+  botAssisted    Boolean  @map("bot_assisted")
+  durakProfileId String?  @map("durak_profile_id")
+  startedAt      DateTime @map("started_at")
+  endedAt        DateTime @map("ended_at")
+
+  players GamePlayer[]
+
+  @@index([endedAt])
+  @@map("games")
+}
+
+enum PlayerResult {
+  win
+  durak
+  draw
+  forfeit
+  unfinished
+
+  @@map("player_result")
+}
+
+/// One seat of a stored game. Bots and humans without a profile have no profile_id.
+model GamePlayer {
+  gameId       String       @map("game_id")
+  seat         Int
+  profileId    String?      @map("profile_id")
+  nickname     String
+  isBot        Boolean      @map("is_bot")
+  result       PlayerResult
+  ratingBefore Int?         @map("rating_before")
+  ratingAfter  Int?         @map("rating_after")
+  forfeited    Boolean
+  botAssisted  Boolean      @map("bot_assisted")
+
+  game    Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  profile Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  @@id([gameId, seat])
+  @@index([profileId, gameId])
+  @@map("game_players")
+}

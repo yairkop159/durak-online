@@ -69,7 +69,7 @@ async function orphanedSessionScenario(harness: TestHarness): Promise<void> {
 describe('memory backend', () => {
   it('GET /health reports the memory repository', async () => {
     const harness = await serverOn(createMemoryBackend());
-    expect(await getHealth(harness)).toEqual({ status: 200, body: { ok: true, repository: 'memory' } });
+    expect(await getHealth(harness)).toEqual({ status: 200, body: { ok: true, repository: 'memory', postgres: 'disabled' } });
   });
 
   it('an orphaned session is rejected with ROOM_NOT_FOUND and deleted', async () => {
@@ -276,8 +276,8 @@ suite('redis backend', () => {
   it('GET /health pings Redis and returns 503 when it is down', async () => {
     const backend = await createRedisBackend(REDIS_URL, freshPrefix(), spyLogger());
     const harness = await serverOn(backend);
-    expect(await getHealth(harness)).toEqual({ status: 200, body: { ok: true, repository: 'redis', redis: 'PONG' } });
+    expect(await getHealth(harness)).toEqual({ status: 200, body: { ok: true, repository: 'redis', redis: 'PONG', postgres: 'disabled' } });
     backend.redis.disconnect();
-    expect(await getHealth(harness)).toEqual({ status: 503, body: { ok: false, repository: 'redis', redis: 'down' } });
+    expect(await getHealth(harness)).toEqual({ status: 503, body: { ok: false, repository: 'redis', redis: 'down', postgres: 'disabled' } });
   });
 });
