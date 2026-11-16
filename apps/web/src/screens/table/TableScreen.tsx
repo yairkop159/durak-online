@@ -78,7 +78,7 @@ function useDelayed(key: number, delayMs: number): boolean {
 export function TableScreen() {
   const client = useClient();
   const state = useClientState();
-  const { game, room, gameOver, lastError } = state;
+  const { game, room, gameOver, ratings, lastError } = state;
   // Disconnected or re-binding the seat: moves would be dropped, so don't offer any.
   const reconnecting = isReconnecting(state);
   // Selection belongs to one game version: any new state (ours or anyone's move) clears it.
@@ -291,6 +291,7 @@ export function TableScreen() {
           reduced={reduced}
           reactions={reactions}
           canReact={canReact}
+          ratings={ratings}
         />
       )}
     </>

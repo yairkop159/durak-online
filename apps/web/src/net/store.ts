@@ -1,6 +1,7 @@
 import type {
   ErrorPayload,
   GameOverPayload,
+  GameRatingsPayload,
   GameStatePayload,
   PlayerView,
   ReactionId,
@@ -48,6 +49,13 @@ export interface ClientReaction {
   readonly at: number;
 }
 
+/** The rating outcome of the finished game we show (game:ratings), as received. */
+export interface ClientRatings {
+  readonly payload: GameRatingsPayload;
+  /** Local `Date.now()` when it arrived ("calculating..." is shown for a few seconds after it). */
+  readonly receivedAt: number;
+}
+
 /** How long a reaction bubble stays up. */
 export const REACTION_SHOW_MS = 2_500;
 /** At most this many recent reactions are kept. */
@@ -70,6 +78,8 @@ export interface ClientState {
   readonly roomReceivedAt: number;
   readonly game: ClientGame | null;
   readonly gameOver: GameOverPayload | null;
+  /** Only ever for `game` (same gameId) once it is finished; cleared with it. */
+  readonly ratings: ClientRatings | null;
   readonly lastError: ClientError | null;
   readonly notice: ClientNotice | null;
   /** Recent quick reactions in this room (ephemeral, never stored). */
@@ -87,6 +97,7 @@ export type ClientAction =
   | { readonly type: 'reactions:prune'; readonly before: number }
   | { readonly type: 'game:state'; readonly payload: GameStatePayload; readonly receivedAt: number }
   | { readonly type: 'game:over'; readonly payload: GameOverPayload }
+  | { readonly type: 'game:ratings'; readonly payload: GameRatingsPayload; readonly receivedAt: number }
   | { readonly type: 'error'; readonly payload: ErrorPayload }
   | { readonly type: 'resume:start' }
   /** Left the room (or switched rooms): forget everything about it. */
@@ -103,6 +114,7 @@ export const initialState: ClientState = {
   roomReceivedAt: 0,
   game: null,
   gameOver: null,
+  ratings: null,
   lastError: null,
   notice: null,
   reactions: [],
@@ -144,7 +156,7 @@ export function reducer(state: ClientState, action: ClientAction): ClientState {
       const room = action.payload;
       state = { ...state, roomReceivedAt: action.receivedAt ?? state.roomReceivedAt };
       // Back in the lobby (rematch): the old game and its result are gone.
-      if (room.status === 'lobby') return { ...state, room, game: null, gameOver: null };
+      if (room.status === 'lobby') return { ...state, room, game: null, gameOver: null, ratings: null };
       // A new game started: drop the previous result.
       if (room.status === 'playing' && state.gameOver) return { ...state, room, gameOver: null };
       return { ...state, room };
@@ -158,6 +170,8 @@ export function reducer(state: ClientState, action: ClientAction): ClientState {
       if (sameGame && p.version < state.game!.version) return state;
       return {
         ...state,
+        // Ratings belong to one game: a new game (restart) drops them.
+        ratings: state.ratings && state.ratings.payload.gameId === p.gameId ? state.ratings : null,
         game: {
           roomId: p.roomId,
           gameId: p.gameId,
@@ -172,6 +186,17 @@ export function reducer(state: ClientState, action: ClientAction): ClientState {
 
     case 'game:over':
       return { ...state, gameOver: action.payload };
+
+    case 'game:ratings': {
+      const p = action.payload;
+      const g = state.game;
+      // Only for the finished game we are showing: a late one for an older game (a rematch or a
+      // restart already started) is dropped.
+      if (!g || g.roomId !== p.roomId || g.gameId !== p.gameId || g.view.phase.kind !== 'finished') return state;
+      // A committed result is final: a stale "pending" (e.g. a resume racing the commit) can't undo it.
+      if (state.ratings?.payload.gameId === p.gameId && state.ratings.payload.status === 'rated' && p.status !== 'rated') return state;
+      return { ...state, ratings: { payload: p, receivedAt: action.receivedAt } };
+    }
 
     case 'restart:ended':
       return { ...state, notice: { kind: 'restartVoteEnded', payload: action.payload, id: (state.notice?.id ?? 0) + 1 } };

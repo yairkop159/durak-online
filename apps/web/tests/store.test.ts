@@ -82,3 +82,42 @@ describe('store reducer', () => {
     expect(s).toEqual({ ...initialState, connection: 'connected' });
   });
 });
+
+describe('store reducer: game:ratings', () => {
+  const finishedView = makeView({ phase: { kind: 'finished', durak: 'bob' }, finished: ['me'], counts: { me: 0, bob: 3 } });
+  const rated = {
+    roomId: ROOM_ID,
+    gameId: 'g1',
+    status: 'rated' as const,
+    entries: [
+      { playerId: 'me', before: 1000, after: 1016, delta: 16 },
+      { playerId: 'bob', before: 1000, after: 984, delta: -16 },
+    ],
+  };
+  const pending = { roomId: ROOM_ID, gameId: 'g1', status: 'pending' as const };
+  const finished = (): ClientState => reducer(initialState, { type: 'game:state', payload: gameState(finishedView, 9), receivedAt: 1 });
+
+  it('is kept only for the finished game being shown (same room and gameId)', () => {
+    expect(reducer(finished(), { type: 'game:ratings', payload: rated, receivedAt: 5 }).ratings).toEqual({ payload: rated, receivedAt: 5 });
+    expect(reducer(finished(), { type: 'game:ratings', payload: { ...rated, gameId: 'older' }, receivedAt: 5 }).ratings).toBeNull();
+    expect(reducer(finished(), { type: 'game:ratings', payload: { ...rated, roomId: 'otherRoom' }, receivedAt: 5 }).ratings).toBeNull();
+    const running = reducer(initialState, { type: 'game:state', payload: gameState(makeView(), 3), receivedAt: 1 });
+    expect(reducer(running, { type: 'game:ratings', payload: rated, receivedAt: 5 }).ratings).toBeNull();
+    expect(reducer(initialState, { type: 'game:ratings', payload: rated, receivedAt: 5 }).ratings).toBeNull();
+  });
+
+  it('a committed result is never replaced by a later pending; pending can become rated', () => {
+    let s = reducer(finished(), { type: 'game:ratings', payload: pending, receivedAt: 5 });
+    s = reducer(s, { type: 'game:ratings', payload: rated, receivedAt: 6 });
+    expect(s.ratings?.payload).toEqual(rated);
+    expect(reducer(s, { type: 'game:ratings', payload: pending, receivedAt: 7 }).ratings?.payload).toEqual(rated);
+  });
+
+  it('is dropped with its game: back to the lobby, a new game (restart), leaving', () => {
+    const s = reducer(finished(), { type: 'game:ratings', payload: rated, receivedAt: 5 });
+    expect(reducer(s, { type: 'room:state', payload: roomState('lobby') }).ratings).toBeNull();
+    expect(reducer(s, { type: 'game:state', payload: gameState(makeView(), 0, { gameId: 'g2' }), receivedAt: 6 }).ratings).toBeNull();
+    expect(reducer(s, { type: 'game:state', payload: gameState(finishedView, 9), receivedAt: 6 }).ratings).toEqual(s.ratings); // same game re-sent
+    expect(reducer(s, { type: 'left' }).ratings).toBeNull();
+  });
+});

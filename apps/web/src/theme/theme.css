@@ -29,6 +29,8 @@
   --color-warn: #f59e0b; /* countdown running low */
   --color-danger: #ef4444; /* countdown almost out */
   --color-take: #e11d48; /* the Take button */
+  --color-gain: #4ade80; /* a rating going up */
+  --color-loss: #f87171; /* a rating going down */
 
   /* role pills */
   --color-role-attack: #fb7185;
