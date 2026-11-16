@@ -149,7 +149,7 @@ npm run prod:down
 
 To play with friends from your machine, `npm run tunnel` starts the production stack behind a
 Cloudflare Quick Tunnel and prints a public `https://*.trycloudflare.com` URL. Deployment notes
-(Fly.io and others) are in [`DEPLOY.md`](DEPLOY.md) (Hebrew).
+(what a permanent host needs; hosting itself is still TBD) are in [`DEPLOY.md`](DEPLOY.md) (Hebrew).
 
 ## License
 

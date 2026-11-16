@@ -393,7 +393,7 @@ Postgres + Prisma hold device profiles, the match history and ELO ratings. **Pos
 
 **Client IPs** (`transport/clientAddress.ts`; one rule for sockets, `/api` and Fastify):
 - Evidence: with only a hop count, any peer that can reach the port can forge `X-Forwarded-For`.
-- `TRUSTED_PROXIES` (CIDRs/IPs): forwarded headers count only when the socket peer is in the list; any other peer is the client. Unset = any peer (the old behaviour, fine on Fly).
+- `TRUSTED_PROXIES` (CIDRs/IPs): forwarded headers count only when the socket peer is in the list; any other peer is the client. Unset = any peer (the old behaviour; fine when only the platform proxy can reach the app).
 - `TRUST_CF_CONNECTING_IP` (opt-in; `npm run tunnel` sets it) prefers Cloudflare's `CF-Connecting-IP` from a trusted peer. It is never on by default, because behind another proxy a client could forge it.
 - The prod compose uses a fixed subnet `172.30.80.0/24` with `TRUSTED_PROXIES` set to it. Verified with `prod:up`: a local socket's peer is the gateway `172.30.80.1`.
 
@@ -430,7 +430,7 @@ Postgres + Prisma hold device profiles, the match history and ELO ratings. **Pos
 **Config** (`config.ts`; the effective values are logged at startup as `settings`):
 - `NODE_ENV=production` makes `CORS_ORIGINS` default to none (same-origin only). Otherwise it is `http://localhost:5173`. `*` is refused.
 - The handshake's `allowRequest` accepts: no Origin, the server's own host, or a listed origin.
-- `TRUST_PROXY`: `false` | `true` | a hop count (1 behind Fly/Render/Railway). It is used by Fastify and by `resolveClientIp()` (`transport/clientAddress.ts`). X-Forwarded-For is ignored unless trusted.
+- `TRUST_PROXY`: `false` | `true` | a hop count (1 behind a typical platform proxy or the Cloudflare tunnel). It is used by Fastify and by `resolveClientIp()` (`transport/clientAddress.ts`). X-Forwarded-For is ignored unless trusted.
 - `TRUSTED_PROXIES` (CIDRs) limits that trust to proxy peers; `TRUST_CF_CONNECTING_IP` prefers Cloudflare's header (see "Client IPs" under Phase 10).
 - `DATABASE_URL` (optional) and `DB_MIGRATE_ON_START` (default true): Postgres for profiles and ratings.
 
@@ -451,7 +451,7 @@ Postgres + Prisma hold device profiles, the match history and ELO ratings. **Pos
 - `npm run prod:up` / `prod:down` run `docker-compose.prod.yml` (project `durak-prod`, http://localhost:8080).
 - `npm run tunnel` (`scripts/tunnel.mjs`): the prod stack behind a Cloudflare Quick Tunnel; prints the public `https://*.trycloudflare.com` URL; Ctrl+C stops the tunnel only (`prod:down` stops the stack). It sets `TRUST_PROXY=1` and `APP_BIND=127.0.0.1` (the compose port binding). Verified on a real tunnel: Cloudflare's edge appends the client to `X-Forwarded-For`, cloudflared adds nothing, and the Host header is preserved (the Origin check passes as same-origin). Trusting exactly 1 hop yields the real client; without it every player is Docker's gateway. Each socket logs `socket connected { ip, transport }`.
 - `npm run smoke -- <url>` (`scripts/smoke.mjs`, needs a built engine) checks `/health`, the SPA fallback and its assets, then plays a real game against a medium bot over a same-origin socket.
-- Deploy: `DEPLOY.md` (Hebrew) and `fly.toml`: one always-on machine, `fly deploy --ha=false`. **Single instance only** (see above).
+- Deploy: `DEPLOY.md` (Hebrew). Today the Cloudflare tunnel above; permanent hosting is TBD (Azure via the GitHub Student Pack). `DEPLOY.md` lists what any host must provide (one always-on instance, Redis, optional Postgres, HTTPS, the env vars). `fly.toml` is a leftover and unused (Fly.io is paid). **Single instance only** (see above).
 
 **CI** (`.github/workflows/ci.yml`):
 - A typecheck → build → `npm test` job, with a Redis service.
@@ -500,7 +500,7 @@ Postgres + Prisma hold device profiles, the match history and ELO ratings. **Pos
 - **Phase 7 (done): player-feedback polish.** Leaving mid-game (forfeit or bot takeover), the restart vote, settings with synthesized sound and music, and the rules / interface guide / first-game tips. See "Leaving a game", "Restart vote" and "Web Client".
 - **Phase 6: Deployment.**
   - **Prep (done):** production image, same-origin serving, prod compose, hardening (rate/abuse limits, proxy trust, CORS), CI, `DEPLOY.md`. See "Production".
-  - **Next:** deploy to Fly.io (manual, see `DEPLOY.md`).
+  - **Now:** the Cloudflare Quick Tunnel (`npm run tunnel`). **Next:** permanent hosting, TBD (Azure via the GitHub Student Pack).
 
 ## Coding Conventions
 - Prefer explicit union types and discriminated unions for game phases and move actions.
