@@ -1,4 +1,5 @@
 import {
+  GameRatingsPayloadSchema,
   MAX_PLAYERS,
   REACTION_BURST,
   REACTION_REFILL_MS,
@@ -78,6 +79,11 @@ export class GameClient {
       store.dispatch({ type: 'game:state', payload, receivedAt: this.now() }),
     );
     transport.on('game:over', (payload) => store.dispatch({ type: 'game:over', payload }));
+    transport.on('game:ratings', (payload) => {
+      // Shown as numbers on the game-over screen: never trust the shape blindly.
+      const parsed = GameRatingsPayloadSchema.safeParse(payload);
+      if (parsed.success) store.dispatch({ type: 'game:ratings', payload: parsed.data, receivedAt: this.now() });
+    });
     transport.on('room:restartVoteEnded', (payload) => store.dispatch({ type: 'restart:ended', payload }));
     transport.on('room:reaction', (payload) => store.dispatch({ type: 'reaction', payload, receivedAt: this.now() }));
     transport.on('error', (payload) => {

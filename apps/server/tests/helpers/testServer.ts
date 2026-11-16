@@ -9,6 +9,7 @@ import type {
   RoomStatePayload,
   ServerToClientEvents,
   SessionIssuedPayload,
+  GameRatingsPayload,
 } from '@durak/shared';
 import { io as connectClient, type Socket } from 'socket.io-client';
 import { buildServer, type BuildServerOptions, type DurakServer } from '../../src/app.js';
@@ -21,6 +22,7 @@ export interface ReceivedEvents {
   'room:state': RoomStatePayload;
   'game:state': GameStatePayload;
   'game:over': GameOverPayload;
+  'game:ratings': GameRatingsPayload;
   'session:issued': SessionIssuedPayload;
   'room:restartVoteEnded': RestartVoteEndedPayload;
   'room:reaction': ReactionPayload;

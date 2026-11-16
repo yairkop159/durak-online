@@ -1,5 +1,5 @@
 import { sanitizeStateForPlayer } from '@durak/game-engine';
-import type { GameStatePayload, ReactionPayload, RestartVoteEndedPayload, RoomStatePayload } from '@durak/shared';
+import type { GameRatingsPayload, GameStatePayload, ReactionPayload, RestartVoteEndedPayload, RoomStatePayload } from '@durak/shared';
 import type { Room, Session, StoredGame } from '../domain/types.js';
 import type { RoomNotifier } from '../services/ports.js';
 import type { Clock } from '../services/scheduling.js';
@@ -84,6 +84,15 @@ export class SocketNotifier implements RoomNotifier {
     } else {
       this.io.to(channels.spectator(viewer.id)).emit('game:state', this.viewFor(game, null));
     }
+  }
+
+  gameRatings(room: Room, payload: GameRatingsPayload): void {
+    this.io.to(channels.room(room.id)).emit('game:ratings', payload);
+  }
+
+  gameRatingsTo(viewer: Session, payload: GameRatingsPayload): void {
+    const channel = viewer.role === 'player' ? channels.player(viewer.id) : channels.spectator(viewer.id);
+    this.io.to(channel).emit('game:ratings', payload);
   }
 
   private viewFor(game: StoredGame, playerId: string | null): GameStatePayload {

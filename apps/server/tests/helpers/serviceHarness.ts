@@ -1,4 +1,4 @@
-import type { ReactionPayload, RestartVoteEndedPayload } from '@durak/shared';
+import type { GameRatingsPayload, ReactionPayload, RestartVoteEndedPayload } from '@durak/shared';
 import { InProcessRunner } from '../../src/bot/InProcessRunner.js';
 import type { BotPolicies, BotRunner } from '../../src/bot/job.js';
 import type { Room, Session, StoredGame } from '../../src/domain/types.js';
@@ -15,11 +15,13 @@ import { RoomService } from '../../src/services/RoomService.js';
 import { DEFAULT_TIMER_SETTINGS, TurnTimerService, type TimerSettings } from '../../src/services/TurnTimerService.js';
 import { GameResultRecorder } from '../../src/ratings/GameResultRecorder.js';
 import type { ResultStore } from '../../src/ratings/ports.js';
+import { RatingsPublisher } from '../../src/ratings/RatingsPublisher.js';
 import { ResultQueue } from '../../src/ratings/ResultQueue.js';
 import { FakeTime } from './fakeTime.js';
 
 export interface NotifierEvent {
-  readonly kind: 'room' | 'game' | 'over' | 'gameTo' | 'voteEnded' | 'reaction';
+  readonly kind: 'room' | 'game' | 'over' | 'gameTo' | 'voteEnded' | 'reaction' | 'ratings' | 'ratingsTo';
+  readonly ratings?: GameRatingsPayload;
   readonly ended?: Omit<RestartVoteEndedPayload, 'roomId'>;
   readonly reaction?: Omit<ReactionPayload, 'roomId'>;
   readonly version?: number;
@@ -48,6 +50,12 @@ export class RecordingNotifier implements RoomNotifier {
   sendGameStateTo(room: Room, game: StoredGame, viewer: Session): void {
     this.events.push({ kind: 'gameTo', version: game.version, to: viewer.id, room, game });
   }
+  gameRatings(room: Room, payload: GameRatingsPayload): void {
+    this.events.push({ kind: 'ratings', room, ratings: payload });
+  }
+  gameRatingsTo(viewer: Session, payload: GameRatingsPayload): void {
+    this.events.push({ kind: 'ratingsTo', to: viewer.id, room: { id: payload.roomId } as Room, ratings: payload });
+  }
   of(kind: NotifierEvent['kind']): NotifierEvent[] {
     return this.events.filter((e) => e.kind === kind);
   }
@@ -74,6 +82,8 @@ export interface ServiceHarnessOptions {
   reactions?: { random?: () => number; settings?: Partial<ReactionSettings> };
   /** Match history (Phase 10): when given, finished games are recorded through a ResultQueue. */
   results?: ResultStore;
+  /** Whether Postgres counts as connected for the rating status (default: true). */
+  ratingsReady?: () => boolean;
 }
 
 /** Services wired exactly like buildServer, on in-memory repos and fake time, without sockets. */
@@ -95,10 +105,21 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     settings: { botChance: 0, ...options.reactions?.settings },
   });
   const resultLog = { info: () => undefined, warn: () => undefined, error: () => undefined };
+  const publisher = new RatingsPublisher({ repos, mutex, notifier });
   const resultQueue = options.results
-    ? new ResultQueue({ store: options.results, clock: time, scheduler: time, log: resultLog })
+    ? new ResultQueue({
+        store: options.results,
+        clock: time,
+        scheduler: time,
+        log: resultLog,
+        onRecorded: async (input, ratings) => {
+          await publisher.publish(input, ratings);
+        },
+      })
     : null;
-  const recorder = resultQueue ? new GameResultRecorder({ queue: resultQueue, clock: time, enabled: () => true }) : null;
+  const recorder = resultQueue
+    ? new GameResultRecorder({ queue: resultQueue, clock: time, enabled: () => true, ready: options.ratingsReady ?? (() => true), notifier })
+    : null;
   const committer = new GameCommitter({
     repos,
     notifier,
@@ -119,7 +140,17 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     log,
     ...(recorder ? { onRestarted: (room: Room, game: StoredGame) => recorder.recordEnded(room, game) } : {}),
   });
-  const rooms = new RoomService({ repos, mutex, notifier, seedSource: () => seed, now: () => time.now(), timers, committer, votes });
+  const rooms = new RoomService({
+    repos,
+    mutex,
+    notifier,
+    seedSource: () => seed,
+    now: () => time.now(),
+    timers,
+    committer,
+    votes,
+    ...(recorder ? { ratingStatus: (room: Room, game: StoredGame) => recorder.statusFor(room, game) } : {}),
+  });
   const games = new GameService({ repos, mutex, notifier, committer });
   const runner = options.bots?.runner ?? new InProcessRunner({ recordJobs: true });
   let nextSeed = 1;
@@ -135,7 +166,7 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     log,
   });
   driver = bots;
-  return { repos, rooms, games, timers, votes, notifier, time, settings, bots, runner, committer, mutex, reactions, recorder, resultQueue };
+  return { repos, rooms, games, timers, votes, notifier, time, settings, bots, runner, committer, mutex, reactions, recorder, resultQueue, publisher };
 }
 
 export const noBind = (): void => undefined;

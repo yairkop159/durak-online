@@ -1,3 +1,4 @@
+import type { RatingEntry } from '@durak/shared';
 import type { Clock, Scheduler, TimerHandle } from '../services/scheduling.js';
 import { isRated, type GameResultInput } from './gameResult.js';
 import { errorName, isUnavailable, type ResultStore } from './ports.js';
@@ -53,6 +54,11 @@ export class ResultQueue {
       readonly scheduler: Scheduler;
       readonly log: ResultQueueLogger;
       readonly settings?: Partial<ResultQueueSettings>;
+      /**
+       * Called after a write that this queue committed AND rated (never for a duplicate or an
+       * unrated game), outside the drain: it is not awaited, and a failure is only logged.
+       */
+      readonly onRecorded?: (input: GameResultInput, ratings: readonly RatingEntry[]) => Promise<void> | void;
     },
   ) {
     this.settings = { ...DEFAULT_RESULT_QUEUE_SETTINGS, ...deps.settings };
@@ -95,6 +101,17 @@ export class ResultQueue {
     this.timer = null;
   }
 
+  private announce(input: GameResultInput, ratings: readonly RatingEntry[]): void {
+    const { onRecorded, log } = this.deps;
+    if (!onRecorded) return;
+    const fail = (error: unknown) => log.error({ gameId: input.gameId, err: errorName(error) }, 'rating announcement failed');
+    try {
+      void Promise.resolve(onRecorded(input, ratings)).catch(fail);
+    } catch (error) {
+      fail(error);
+    }
+  }
+
   private async drain(): Promise<void> {
     const { store, clock, log } = this.deps;
     while (this.pending.length > 0 && !this.disposed) {
@@ -103,7 +120,8 @@ export class ResultQueue {
       try {
         const outcome = await store.recordGame(item.input);
         this.pending.shift();
-        log.info({ gameId, outcome, rated: isRated(item.input), attempts: item.attempts + 1 }, 'game result stored');
+        log.info({ gameId, outcome: outcome.kind, rated: isRated(item.input), attempts: item.attempts + 1 }, 'game result stored');
+        if (outcome.kind === 'recorded' && outcome.ratings !== null) this.announce(item.input, outcome.ratings);
       } catch (error) {
         item.attempts += 1;
         const unavailable = isUnavailable(error);

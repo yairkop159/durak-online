@@ -113,6 +113,32 @@ async function audit(page: Page, fit: boolean, skip?: string): Promise<Audit> {
   );
 }
 
+/**
+ * Rating parts of the game-over panel: each one, scrolled into view inside the panel, is fully inside
+ * the viewport, not wider than it, and not hidden under the sticky actions (the topmost element at
+ * its centre belongs to it).
+ */
+async function ratingVisibility(page: Page, ...testIds: string[]): Promise<string[]> {
+  return page.evaluate((ids) => {
+    const problems: string[] = [];
+    for (const id of ids) {
+      const el = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+      if (!el) {
+        problems.push(`${id} missing`);
+        continue;
+      }
+      el.scrollIntoView({ block: 'center', behavior: 'instant' });
+      const r = el.getBoundingClientRect();
+      if (r.left < -0.5 || r.right > window.innerWidth + 0.5 || r.top < -0.5 || r.bottom > window.innerHeight + 0.5) {
+        problems.push(`${id} not fully on screen: ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`);
+      }
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!hit || !el.contains(hit)) problems.push(`${id} covered by ${hit?.outerHTML.slice(0, 70) ?? 'nothing'}`);
+    }
+    return problems;
+  }, testIds);
+}
+
 /** Each hand card: inside the viewport, a visible slice >= MIN_SLICE wide, and a tap point on it. */
 async function handSlices(page: Page): Promise<{ problems: string[]; tapAt: Record<string, { x: number; y: number }>; count: number }> {
   return page.evaluate(
@@ -343,13 +369,39 @@ describe.skipIf(!executablePath)('phones (mobile emulation, touch)', () => {
         await showAll.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
         await tapCenter(page, `button:text-is("${t.stats.showAll}")`);
         await page.getByTestId('stats-table').waitFor();
+        // The others' rating changes are a column of the open table (no extra list).
+        expect(await page.getByTestId('stats-rating-bob').textContent()).toBe('+6');
+        expect(await page.getByTestId('rating-others').count()).toBe(0);
         const over = await audit(page, true);
         expect(over.problems).toEqual([]);
         // The main action is on screen without scrolling (the actions stay pinned to the panel's bottom).
         const back = (await page.getByRole('button', { name: t.gameOver.backToLobby }).boundingBox())!;
         expect(back.y + back.height).toBeLessThanOrEqual(vp.height);
         expect(back.y).toBeGreaterThanOrEqual(0);
+        expect(await ratingVisibility(page, 'rating-delta')).toEqual([]);
         await shot(page, `gameover-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`game over after a reload ${size}: my rating change and the others' list fit; nothing scrolls sideways; controls >= 44 px`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base, 'gameover-reload');
+        await page.getByTestId('game-over-headline').waitFor();
+        await page.waitForTimeout(800); // the panel's spring
+        expect(await page.getByTestId('stats-table').count()).toBe(0); // no game:over after a reload
+        expect((await page.getByTestId('rating-delta').textContent())!).toContain('−32');
+        expect(await page.getByTestId('rating-others').locator('li').count()).toBe(5);
+        // My change is on screen as the overlay opens, without scrolling the panel.
+        const mine = (await page.getByTestId('rating-delta').boundingBox())!;
+        expect(mine.y).toBeGreaterThanOrEqual(0);
+        expect(mine.y + mine.height).toBeLessThanOrEqual(vp.height);
+        const over = await audit(page, true);
+        expect(over.problems).toEqual([]);
+        const back = (await page.getByRole('button', { name: t.gameOver.backToLobby }).boundingBox())!;
+        expect(back.y).toBeGreaterThanOrEqual(0);
+        expect(back.y + back.height).toBeLessThanOrEqual(vp.height);
+        expect(await ratingVisibility(page, 'rating-delta', 'rating-others')).toEqual([]);
+        await shot(page, `gameover-reload-${size}`);
       });
     }, TEST_TIMEOUT_MS);
   }

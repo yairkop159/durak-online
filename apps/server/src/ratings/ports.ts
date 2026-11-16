@@ -1,4 +1,4 @@
-import type { LeaderboardResponse, MyProfile, ProfileCredentials, PublicProfile } from '@durak/shared';
+import type { LeaderboardResponse, MyProfile, ProfileCredentials, PublicProfile, RatingEntry } from '@durak/shared';
 import type { GameResultInput } from './gameResult.js';
 
 /** Postgres is not configured or not reachable: profiles and ratings are off (games still run). */
@@ -29,7 +29,14 @@ export function errorName(error: unknown): string {
   return [typeof name === 'string' ? name : 'Error', typeof code === 'string' ? code : ''].filter(Boolean).join(' ');
 }
 
-export type RecordOutcome = 'recorded' | 'duplicate';
+/**
+ * `recorded`: this call wrote the game (the transaction committed); `ratings` holds every rated
+ * human's change, or null when the game is not rated. `duplicate`: it was already stored, nothing
+ * was written (a retry or a startup re-submission).
+ */
+export type RecordOutcome =
+  | { readonly kind: 'recorded'; readonly ratings: readonly RatingEntry[] | null }
+  | { readonly kind: 'duplicate' };
 
 /**
  * The match history (Phase 10). `recordGame` writes a finished game, its seats and every rating

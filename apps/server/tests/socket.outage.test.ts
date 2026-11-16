@@ -44,6 +44,8 @@ describe('Postgres outage: play is unaffected (real sockets, real Prisma stores)
     const health = await fetch(`${harness.url}/health`);
     expect(health.status).toBe(200);
     expect(await health.json()).toMatchObject({ ok: true, postgres: 'down' });
+    // No rating status at all while Postgres is down: the game-over screen shows nothing.
+    expect([...host.all('game:ratings'), ...guest.all('game:ratings')]).toEqual([]);
 
     // A new game in the same room still works.
     host.send('room:rematch', { roomId: hs.roomId });

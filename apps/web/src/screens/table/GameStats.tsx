@@ -1,7 +1,8 @@
-import type { GameMode, GameStats, PlayerStats } from '@durak/shared';
+import type { GameMode, GameStats, PlayerStats, RatingEntry } from '@durak/shared';
 import { useState } from 'react';
 import { highlights, type Highlight } from '../../game/highlights';
 import { t } from '../../i18n';
+import { DeltaText } from './RatingResult';
 
 function highlightText(h: Highlight): { title: string; value: string } {
   const s = t.stats;
@@ -26,12 +27,15 @@ export function GameStatsSection({
   mode,
   players,
   nameOf,
+  ratings = null,
 }: {
   stats: GameStats;
   mode: GameMode;
   /** Seat order. */
   players: readonly string[];
   nameOf: (id: string) => string;
+  /** Committed rating changes (a "rating" column; "—" for a seat that was not rated). */
+  ratings?: ReadonlyMap<string, RatingEntry> | null;
 }) {
   const [open, setOpen] = useState(false);
   const list = highlights(stats, mode);
@@ -78,6 +82,7 @@ export function GameStatsSection({
                     {t.stats.columns[c]}
                   </th>
                 ))}
+                {ratings && <th className="px-1 py-1 font-semibold">{t.rating.column}</th>}
               </tr>
             </thead>
             <tbody>
@@ -89,6 +94,11 @@ export function GameStatsSection({
                       {cell(stats[id]!, c)}
                     </td>
                   ))}
+                  {ratings && (
+                    <td className="px-1 py-1 text-center font-bold" data-testid={`stats-rating-${id}`}>
+                      {ratings.has(id) ? <DeltaText delta={ratings.get(id)!.delta} /> : '—'}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

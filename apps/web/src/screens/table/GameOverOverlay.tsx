@@ -5,11 +5,14 @@ import { SUIT_SYMBOL } from '../../components/cards/PlayingCard';
 import { Avatar, Button, Panel } from '../../components/ui';
 import { t } from '../../i18n';
 import { useClient } from '../../net/react';
+import type { ClientRatings } from '../../net/store';
+import { entriesById } from '../../game/ratingDelta';
 import { navigate } from '../../routing';
 import { motionTokens as M } from '../../theme/motion';
 import { ReactionButton } from '../../reactions/ReactionPicker';
 import type { ReactionsInView } from '../../reactions/useReactions';
 import { GameStatsSection } from './GameStats';
+import { RatingResult } from './RatingResult';
 
 type Mood = 'celebrate' | 'durak' | 'neutral';
 
@@ -25,9 +28,12 @@ export function GameOverOverlay({
   reduced = false,
   reactions = null,
   canReact = false,
+  ratings = null,
 }: {
   view: PlayerView;
   gameOver: GameOverPayload | null;
+  /** The rating outcome (game:ratings) of this game, if any. */
+  ratings?: ClientRatings | null;
   nameOf: (id: string) => string;
   canRematch: boolean;
   reduced?: boolean;
@@ -48,6 +54,10 @@ export function GameOverOverlay({
   else if (durak === null) headline = t.gameOver.draw;
   else if (durak === view.viewerId) headline = t.gameOver.youAreDurak;
   else headline = t.gameOver.durak(nameOf(durak));
+
+  // The stats table carries the others' rating changes; without it (after a reload) they get a list.
+  const statsShown = gameOver !== null && reason !== 'abandoned' && Object.keys(gameOver.stats).length > 0;
+  const seatOrder = view.players.map((p) => p.id);
 
   const mood: Mood = reason === 'abandoned' ? 'neutral' : durak !== null && durak === view.viewerId ? 'durak' : 'celebrate';
 
@@ -89,6 +99,7 @@ export function GameOverOverlay({
             {headline}
           </motion.p>
           <p className="text-xs text-muted">{t.gameOver.reasons[reason]}</p>
+          <RatingResult ratings={ratings} viewerId={view.viewerId} seatOrder={seatOrder} nameOf={nameOf} showOthers={!statsShown} />
           {finishOrder.length > 0 && (
             <div className="w-full">
               <h3 className="mb-1.5 text-sm font-semibold">{t.gameOver.finishOrder}</h3>
@@ -107,8 +118,8 @@ export function GameOverOverlay({
               {t.gameOver.forfeits}: {forfeits.map(nameOf).join(', ')}
             </p>
           )}
-          {gameOver && reason !== 'abandoned' && Object.keys(gameOver.stats).length > 0 && (
-            <GameStatsSection stats={gameOver.stats} mode={view.config.mode} players={view.players.map((p) => p.id)} nameOf={nameOf} />
+          {statsShown && (
+            <GameStatsSection stats={gameOver.stats} mode={view.config.mode} players={seatOrder} nameOf={nameOf} ratings={entriesById(ratings)} />
           )}
           {reactions && reactions.byPlayer.size > 0 && (
             <ul className="pointer-events-none flex flex-wrap justify-center gap-1.5" data-testid="game-over-reactions" aria-hidden="true">

@@ -1,3 +1,4 @@
+import { ratingEntry } from '@durak/shared';
 import type { PrismaClient } from '../db/database.js';
 import { isRated, ratedSeats, ratingsAfter, seatResult, type GameResultInput } from './gameResult.js';
 import { RatingsUnavailableError, type RecordOutcome, type ResultStore } from './ports.js';
@@ -17,6 +18,7 @@ export interface PrismaResultStoreOptions {
  *    nothing else is written (idempotent retries, startup re-submission);
  * 3. insert every seat with its result and rating before/after;
  * 4. update each profile's rating and counters.
+ * Returns the rating changes it wrote, so they can be announced once the transaction committed.
  * Any failure rolls the whole game back.
  */
 export class PrismaResultStore implements ResultStore {
@@ -68,7 +70,7 @@ export class PrismaResultStore implements ResultStore {
       ],
       skipDuplicates: true,
     });
-    if (inserted.count === 0) return 'duplicate';
+    if (inserted.count === 0) return { kind: 'duplicate' };
 
     await tx.gamePlayer.createMany({
       data: effective.seats.map((seat) => {
@@ -107,6 +109,13 @@ export class PrismaResultStore implements ResultStore {
       });
     }
     if (this.options.beforeCommit) await this.options.beforeCommit(tx);
-    return 'recorded';
+    // Seat order; each profile once (its first seat), exactly the players the ELO matched.
+    const ratings = rated
+      ? ratedSeats(effective).map((seat) => {
+          const profileId = seat.profileId as string;
+          return ratingEntry(seat.playerId, current.get(profileId)!, after.get(profileId)!);
+        })
+      : null;
+    return { kind: 'recorded', ratings };
   }
 }

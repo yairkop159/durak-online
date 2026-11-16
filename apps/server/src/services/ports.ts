@@ -1,4 +1,4 @@
-import type { ReactionPayload, RestartVoteEndedPayload } from '@durak/shared';
+import type { GameRatingsPayload, ReactionPayload, RestartVoteEndedPayload } from '@durak/shared';
 import type { Room, Session, StoredGame } from '../domain/types.js';
 
 /**
@@ -17,6 +17,10 @@ export interface RoomNotifier {
   reaction(room: Room, reaction: Omit<ReactionPayload, 'roomId'>): void;
   /** Send the current view to a single participant only (resync / resume). */
   sendGameStateTo(room: Room, game: StoredGame, viewer: Session): void;
+  /** A finished game's rating outcome (pending / rated / unrated); sent to the whole room. */
+  gameRatings(room: Room, payload: GameRatingsPayload): void;
+  /** The same, to a single participant (resume, a spectator joining a finished game). */
+  gameRatingsTo(viewer: Session, payload: GameRatingsPayload): void;
 }
 
 /**

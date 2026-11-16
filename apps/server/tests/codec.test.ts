@@ -132,3 +132,21 @@ describe('codec: profiles (Phase 10)', () => {
     expect(decode(StoredGameSchema, encode(game), 'k', log())?.profiles).toEqual(game.profiles);
   });
 });
+
+describe('codec: rating outcome on a finished game', () => {
+  it('records stored before it decode with ratings = null', () => {
+    const { ratings: _r, ...old } = makeGame('room1', true);
+    const logger = log();
+    expect(decode(StoredGameSchema, encode(old), 'k', logger)?.ratings).toBeNull();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('round-trips the entries, and a delta that contradicts before/after is rejected (null, logged)', () => {
+    const game = makeGame('room1', true);
+    expect(decode(StoredGameSchema, encode(game), 'k', log())).toEqual(game);
+    const bad = { ...game, ratings: [{ playerId: 'p_host', before: 1000, after: 1016, delta: 3 }] };
+    const logger = log();
+    expect(decode(StoredGameSchema, encode(bad), 'k', logger)).toBeNull();
+    expect(logger.error).toHaveBeenCalled();
+  });
+});

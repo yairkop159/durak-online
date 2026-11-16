@@ -89,6 +89,38 @@ export function describeRepositoryContract(name: string, makeHarness: () => Prom
         expectTtl(await h.ttl('game', finished.roomId), FINISHED_TTL_SECONDS);
       });
 
+      it('re-saving a finished game resets its TTL (and its room TTL) to a full 30m instead of keeping what was left', async () => {
+        const room = makeRoom(undefined, 'finished');
+        await h.repos.rooms.save(room);
+        await h.repos.games.save(makeGame(room.id, true));
+        await h.setTtl('game', room.id, 600);
+        await h.setTtl('room', room.id, 600);
+        await h.repos.games.save(makeGame(room.id, true));
+        expectTtl(await h.ttl('game', room.id), FINISHED_TTL_SECONDS);
+        expectTtl(await h.ttl('room', room.id), FINISHED_TTL_SECONDS);
+      });
+
+      it('replaceKeepingTtl replaces a finished game and keeps the remaining TTL of the game and its room', async () => {
+        const room = makeRoom(undefined, 'finished');
+        await h.repos.rooms.save(room);
+        const game = makeGame(room.id, true);
+        await h.repos.games.save(game);
+        await h.setTtl('game', room.id, 600);
+        await h.setTtl('room', room.id, 500);
+        const annotated = { ...game, timeoutStreak: 42 };
+        expect(await h.repos.games.replaceKeepingTtl(annotated)).toBe(true);
+        expect(await h.repos.games.get(room.id)).toEqual(annotated);
+        expectTtl(await h.ttl('game', room.id), 600);
+        expectTtl(await h.ttl('room', room.id), 500);
+      });
+
+      it('replaceKeepingTtl writes nothing when the game is gone', async () => {
+        const game = makeGame(makeRoom().id, true);
+        expect(await h.repos.games.replaceKeepingTtl(game)).toBe(false);
+        expect(await h.repos.games.get(game.roomId)).toBeNull();
+        expect(await h.ttl('game', game.roomId)).toBeNull();
+      });
+
       it('saving a game refreshes its room TTL', async () => {
         const room = makeRoom(undefined, 'playing');
         await h.repos.rooms.save(room);

@@ -1,5 +1,5 @@
 import { getAwaitedPlayers } from '@durak/game-engine';
-import type { BotDifficulty, GameConfigInput } from '@durak/shared';
+import type { BotDifficulty, GameConfigInput, GameRatingsPayload } from '@durak/shared';
 import { fail, ok, type Result } from '../domain/result.js';
 import type { Room, RoomMember, Session, StoredGame } from '../domain/types.js';
 import type { Repositories } from '../repositories/interfaces.js';
@@ -24,6 +24,11 @@ export interface RoomServiceDeps {
   readonly votes?: RestartVoteService;
   /** Rooms stored at once; room:create beyond it fails with SERVER_FULL (default: unlimited). */
   readonly maxRooms?: number;
+  /**
+   * A finished game's rating outcome (GameResultRecorder.statusFor), re-sent after its game:state
+   * on resume and to a spectator joining, so a reload still shows it. None → never sent.
+   */
+  readonly ratingStatus?: (room: Room, game: StoredGame) => GameRatingsPayload | null;
 }
 
 function newMember(playerId: string, nickname: string, profileId: string | null): RoomMember {
@@ -165,7 +170,10 @@ export class RoomService {
       notifier.roomState(updated);
       if (session.role === 'spectator') {
         const game = await repos.games.get(roomId);
-        if (game) notifier.sendGameStateTo(updated, game, session);
+        if (game) {
+          notifier.sendGameStateTo(updated, game, session);
+          this.sendRatingStatus(updated, game, session);
+        }
       }
       return ok(session);
     });
@@ -280,6 +288,7 @@ export class RoomService {
         notifier.gameState(updated, extendedGame); // everyone sees the new deadline
       } else if (game) {
         notifier.sendGameStateTo(updated, game, session);
+        this.sendRatingStatus(updated, game, session);
       }
       // AFK was cleared: the bot stops playing for this player.
       const current = extendedGame ?? game;
@@ -288,6 +297,11 @@ export class RoomService {
       }
       return ok(session);
     });
+  }
+
+  private sendRatingStatus(room: Room, game: StoredGame, viewer: Session): void {
+    const status = this.deps.ratingStatus?.(room, game) ?? null;
+    if (status) this.deps.notifier.gameRatingsTo(viewer, status);
   }
 
   /**

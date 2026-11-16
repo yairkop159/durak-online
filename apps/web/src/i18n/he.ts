@@ -1,5 +1,15 @@
 import type { AnimationSpeed, TipId } from '../settings/settings';
-import type { BotDifficulty, GameEndReason, GameErrorCode, GameMode, PlayerResult, ReactionId, ServerErrorCode, Suit } from '@durak/shared';
+import type {
+  BotDifficulty,
+  GameEndReason,
+  GameErrorCode,
+  GameMode,
+  PlayerResult,
+  ReactionId,
+  ServerErrorCode,
+  Suit,
+  UnratedReason,
+} from '@durak/shared';
 import type { ProfileApiError } from '../profile/api';
 
 export type ErrorCode = ServerErrorCode | GameErrorCode;
@@ -205,6 +215,17 @@ export interface Strings {
       readonly transfers: string;
       readonly cardsPlayed: string;
     };
+  };
+  /** The rating change on the game-over screen (game:ratings). */
+  readonly rating: {
+    readonly calculating: string;
+    readonly newRating: (rating: number) => string;
+    /** Screen-reader text for my change. */
+    readonly changeLabel: (delta: number) => string;
+    readonly unrated: Record<UnratedReason, string>;
+    /** The column in the stats table, and the heading of the list shown when there is no table. */
+    readonly column: string;
+    readonly others: string;
   };
   readonly reactions: {
     /** The button that opens the picker. */
@@ -472,6 +493,18 @@ export const he: Strings = {
       transfers: 'העברות',
       cardsPlayed: 'קלפים ששוחקו',
     },
+  },
+  rating: {
+    calculating: 'מחשב דירוג...',
+    newRating: (rating) => `דירוג חדש: ${rating}`,
+    changeLabel: (delta) =>
+      delta > 0 ? `הדירוג שלך עלה ב־${delta}` : delta < 0 ? `הדירוג שלך ירד ב־${-delta}` : 'הדירוג שלך לא השתנה',
+    unrated: {
+      notEnoughProfiles: 'המשחק לא דורג: צריך לפחות שני שחקנים עם פרופיל',
+      notFinished: 'המשחק לא דורג: המשחק לא הסתיים',
+    },
+    column: 'דירוג',
+    others: 'שינויי דירוג',
   },
   reactions: {
     button: 'תגובה מהירה',
