@@ -11,7 +11,9 @@
  * Crowded scenarios: `window.__fixture.advance()` then sends three more states: I cover 7C, then 6H,
  * then 8D closes the bout (beaten), so the table cards fly to the discard pile (anchors after a resize).
  * `?scenario=lobby`: the host's lobby (two bots, one free seat). `?scenario=gameover`: a finished
- * six-player game (a reload into it: no reveal, the game-over overlay right away).
+ * six-player game (a reload into it: no reveal, the game-over overlay right away), rated: I lost 32.
+ * `?scenario=gameover-reload`: the same after a real reload: no game:over (so no stats table), only
+ * the finished view and the re-sent game:ratings (my change plus the five others as a list).
  */
 import {
   DEFAULT_GAME_CONFIG,
@@ -61,8 +63,9 @@ class PageTransport implements Transport {
 const ROOM = 'room1234';
 const card = (rank: Card['rank'], suit: Card['suit']): Card => ({ rank, suit });
 const scenario = new URLSearchParams(window.location.search).get('scenario') ?? 'default';
-const crowded = scenario === 'crowded' || scenario === 'crowded6' || scenario === 'gameover';
-const six = scenario === 'crowded6' || scenario === 'gameover';
+const gameOverScenario = scenario === 'gameover' || scenario === 'gameover-reload';
+const crowded = scenario === 'crowded' || scenario === 'crowded6' || gameOverScenario;
+const six = scenario === 'crowded6' || gameOverScenario;
 const OTHERS = six ? ['bob', 'carl', 'dana', 'eli', 'fay'] : ['bob', 'carl'];
 const PLAYERS = ['me', ...OTHERS];
 const hand: Card[] = crowded
@@ -199,7 +202,7 @@ transport.send('session:issued', { sessionToken: 'x'.repeat(43), playerId: 'me',
 if (scenario === 'lobby') {
   transport.send('room:state', room('lobby', [member('me'), member('b1', true), member('b2', true)]));
   fixture.ready = true;
-} else if (scenario === 'gameover') {
+} else if (gameOverScenario) {
   const finishOrder = ['bob', 'carl', 'dana', 'eli', 'fay'];
   const over: PlayerView = {
     ...view(2),
@@ -211,14 +214,25 @@ if (scenario === 'lobby') {
   const stat = (n: number) => ({ boutsAttacked: n, boutsDefended: n, defenses: n - 1, takes: 1, cardsTaken: 3 * n, throwIns: n, transfers: n % 3, cardsPlayed: 10 * n });
   transport.send('room:state', room('finished'));
   transport.send('game:state', { ...game(2), view: over, turnDeadline: null });
-  transport.send('game:over', {
+  if (scenario === 'gameover') {
+    transport.send('game:over', {
+      roomId: ROOM,
+      durakId: 'me',
+      finishOrder: [...finishOrder, 'me'],
+      endReason: 'normal',
+      botAssisted: [],
+      forfeits: [],
+      stats: Object.fromEntries(PLAYERS.map((id, i) => [id, stat(i + 2)])),
+    });
+  }
+  // Six rated humans: the durak loses 32, every other player gains about 32/5.
+  const befores: Record<string, number> = { me: 1012, bob: 1100, carl: 990, dana: 1000, eli: 1203, fay: 950 };
+  const deltas: Record<string, number> = { me: -32, bob: 6, carl: 7, dana: 6, eli: 5, fay: 8 };
+  transport.send('game:ratings', {
     roomId: ROOM,
-    durakId: 'me',
-    finishOrder: [...finishOrder, 'me'],
-    endReason: 'normal',
-    botAssisted: [],
-    forfeits: [],
-    stats: Object.fromEntries(PLAYERS.map((id, i) => [id, stat(i + 2)])),
+    gameId: 'g1',
+    status: 'rated',
+    entries: PLAYERS.map((id) => ({ playerId: id, before: befores[id]!, after: befores[id]! + deltas[id]!, delta: deltas[id]! })),
   });
   fixture.ready = true;
 } else {
