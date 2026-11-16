@@ -3,6 +3,7 @@ import { GameConfigInputSchema, MAX_PLAYERS, MIN_PLAYERS } from './config.js';
 import { ClientMoveSchema } from './moves.js';
 import type { GameErrorCode } from './errors.js';
 import { ReactionIdSchema, type ReactionId } from './reactions.js';
+import type { GameRatingsPayload } from './ratings.js';
 import type { GameStats } from './stats.js';
 import type { PlayerView } from './view.js';
 
@@ -28,6 +29,8 @@ export const ServerEvents = {
   RoomState: 'room:state',
   GameState: 'game:state',
   GameOver: 'game:over',
+  /** The rating outcome of a finished game (pending / rated / unrated); see ratings.ts. */
+  GameRatings: 'game:ratings',
   Session: 'session:issued',
   RestartVoteEnded: 'room:restartVoteEnded',
   Reaction: 'room:reaction',
@@ -300,6 +303,7 @@ export interface ServerToClientEvents {
   'room:state': (payload: RoomStatePayload) => void;
   'game:state': (payload: GameStatePayload) => void;
   'game:over': (payload: GameOverPayload) => void;
+  'game:ratings': (payload: GameRatingsPayload) => void;
   'session:issued': (payload: SessionIssuedPayload) => void;
   'room:restartVoteEnded': (payload: RestartVoteEndedPayload) => void;
   'room:reaction': (payload: ReactionPayload) => void;

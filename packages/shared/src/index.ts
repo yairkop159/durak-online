@@ -8,3 +8,4 @@ export * from './departure.js';
 export * from './reactions.js';
 export * from './stats.js';
 export * from './profile.js';
+export * from './ratings.js';
