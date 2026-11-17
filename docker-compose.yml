@@ -19,7 +19,8 @@ services:
     container_name: durak-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      # POSTGRES_PORT: the host port (e.g. 5433 when a native Postgres already owns 5432).
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-durak}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-durak}
