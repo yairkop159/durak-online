@@ -268,9 +268,8 @@ describe.skipIf(!executablePath)('phones (mobile emulation, touch)', () => {
         await seedProfile(page);
         await stubProfileApi(page);
         await page.goto(`${env!.base}profile`);
-        // After navigation the page still fetches the profile: under a loaded full-suite run that
-        // can pass the 5 s default, so it gets the navigation budget (no layout depends on it).
-        await page.getByTestId('rating').waitFor({ timeout: 15_000 });
+        // The stubbed /api answers in well under 1 s after the page loaded (measured over 140 loads).
+        await page.getByTestId('rating').waitFor();
         expect(await page.getByTestId('recent-game').count()).toBe(20);
         const before = await audit(page, false);
         expect(before.problems).toEqual([]);
@@ -290,7 +289,7 @@ describe.skipIf(!executablePath)('phones (mobile emulation, touch)', () => {
         await seedProfile(page);
         await stubProfileApi(page);
         await page.goto(`${env!.base}leaderboard`);
-        await page.getByRole('list', { name: t.leaderboard.title }).waitFor({ timeout: 15_000 });
+        await page.getByRole('list', { name: t.leaderboard.title }).waitFor();
         expect(await page.locator('ol[aria-label] > li').count()).toBe(20);
         expect(await page.locator('[aria-current="true"]').count()).toBe(1);
         const board = await audit(page, false);
