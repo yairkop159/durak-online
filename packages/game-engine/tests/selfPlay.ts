@@ -77,9 +77,18 @@ function checkViewParity(state: GameState): void {
   }
 }
 
-export function playRandomGame(players: number, mode: GameMode, seed: number): GameState {
+/** Extra options for callers other than the classic fuzz tests (which pass none). */
+export interface RandomGameOptions {
+  /** 2v2 team mode (4 players). */
+  readonly teams?: boolean;
+  /** Called after every applied move with the state before, the move and the state after. */
+  readonly onStep?: (before: GameState, move: Move, after: GameState) => void;
+}
+
+export function playRandomGame(players: number, mode: GameMode, seed: number, options: RandomGameOptions = {}): GameState {
   const ids = Array.from({ length: players }, (_, i) => `p${i}`);
-  const created = createGame({ playerIds: ids, seed, config: { mode } });
+  const config = options.teams ? { mode, teams: true } : { mode };
+  const created = createGame({ playerIds: ids, seed, config });
   if (!created.ok) throw new Error(created.error.message);
   const rng = createRng(seed ^ 0x9e3779b9);
   let state = deepFreeze(created.value);
@@ -101,6 +110,7 @@ export function playRandomGame(players: number, mode: GameMode, seed: number): G
     if (!result.ok) throw new Error(`Legal move rejected: ${JSON.stringify(move)} -> ${result.error.code}`);
     const before = state;
     state = deepFreeze(result.value);
+    options.onStep?.(before, move, state);
     if (state.boutNumber !== before.boutNumber || (state.phase.kind === 'finished' && before.phase.kind === 'bout')) {
       checkLastBout(before, state);
     } else {

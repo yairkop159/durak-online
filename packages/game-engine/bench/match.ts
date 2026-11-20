@@ -13,6 +13,8 @@ export interface MatchOptions {
   readonly players: number;
   readonly mode: GameMode;
   readonly seed: number;
+  /** 2v2 team mode (4 players; seats 0+2 vs 1+3). */
+  readonly teams?: boolean;
   /** One bot per seat. */
   readonly bots: readonly Bot[];
   /** Moves before the game is declared abandoned. Default 3000. */
@@ -34,7 +36,8 @@ export interface MatchResult {
 
 export function playMatch(options: MatchOptions): MatchResult {
   const ids = Array.from({ length: options.players }, (_, i) => `p${i}`);
-  const created = createGame({ playerIds: ids, seed: options.seed, config: { mode: options.mode } });
+  const config = options.teams ? { mode: options.mode, teams: true } : { mode: options.mode };
+  const created = createGame({ playerIds: ids, seed: options.seed, config });
   if (!created.ok) throw new Error(created.error.message);
   let state = created.value;
   const rng = createRng(options.seed ^ 0x2545f491);
