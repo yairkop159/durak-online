@@ -14,7 +14,11 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/game-engine/package.json packages/game-engine/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
-RUN npm ci --no-audit --no-fund
+# The npm cache lives in a BuildKit cache mount: a changed lockfile reinstalls from local tarballs
+# instead of the network. It never reaches a layer, so the image doesn't grow; `npm ci` still installs
+# exactly the lockfile (integrity-checked), so the build stays reproducible.
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund --prefer-offline
 
 COPY tsconfig.base.json ./
 COPY packages packages
@@ -38,8 +42,9 @@ COPY apps/web/package.json apps/web/
 # schema engine for this platform (linux-musl).
 # node_modules/@durak/* are symlinks to packages/*, which is how the bot worker threads load
 # the built engine (`import '@durak/game-engine'` -> packages/game-engine/dist).
-RUN npm ci --omit=dev --no-audit --no-fund --workspace=apps/server \
- && npm cache clean --force
+# Same npm cache mount as the build stage (no `npm cache clean`: the cache is never in the layer).
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev --no-audit --no-fund --prefer-offline --workspace=apps/server
 
 # ---------------------------------------------------------------- runtime
 FROM node:${NODE_VERSION} AS runtime
