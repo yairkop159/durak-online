@@ -5,11 +5,16 @@ import { searchBotMove } from '../src/bot/ismcts.js';
 import { GreedyBot, RandomBot, type Bot } from '../src/index.js';
 import { playMatch } from './match.js';
 
-/** One benchmark game: IS-MCTS in `ismctsSeat`, the opponent bot in every other seat. */
+/**
+ * One benchmark game: IS-MCTS in `ismctsSeat`, the opponent bot in every other seat. With `teams`
+ * (2v2, 4 players) IS-MCTS plays both `ismctsSeat` and its partner `ismctsSeat + 2`, each seat with
+ * its own view and knowledge; the opponent bot plays the other team.
+ */
 export interface GameTask {
   readonly configId: number;
   readonly players: number;
   readonly mode: GameMode;
+  readonly teams?: boolean;
   readonly opponent: 'random' | 'greedy';
   readonly seed: number;
   readonly ismctsSeat: number;
@@ -51,9 +56,19 @@ export function runGame(task: GameTask): GameOutcome {
     },
   };
   const opponent = task.opponent === 'random' ? RandomBot : GreedyBot;
-  const bots = Array.from({ length: task.players }, (_, seat) => (seat === task.ismctsSeat ? ismcts : opponent));
-  const result = playMatch({ players: task.players, mode: task.mode, seed: task.seed, bots, clock: () => performance.now() });
-  const mine = result.decisions[task.ismctsSeat]!;
+  const isMine = (seat: number) => seat === task.ismctsSeat || (task.teams === true && seat % 2 === task.ismctsSeat % 2);
+  const bots = Array.from({ length: task.players }, (_, seat) => (isMine(seat) ? ismcts : opponent));
+  const result = playMatch({
+    players: task.players,
+    mode: task.mode,
+    seed: task.seed,
+    teams: task.teams === true,
+    bots,
+    clock: () => performance.now(),
+  });
+  const mine = result.decisions
+    .filter((_, seat) => isMine(seat))
+    .reduce((sum, d) => ({ count: sum.count + d.count, ms: sum.ms + d.ms }), { count: 0, ms: 0 });
   return {
     configId: task.configId,
     ismctsSeat: task.ismctsSeat,
