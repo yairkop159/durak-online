@@ -36,6 +36,11 @@
   --color-role-attack: #fb7185;
   --color-role-defend: #38bdf8;
 
+  /* 2v2 teams (seats 0+2 = team a, 1+3 = team b): a deep blue and an orange, distinct from the role
+     pills and the accent; always paired with text (team name, "partner"), never colour alone */
+  --color-team-a: #6d8dfa;
+  --color-team-b: #fb923c;
+
   /* cards */
   --color-card: #fbfcfe;
   --color-card-edge: #e2e8f0;

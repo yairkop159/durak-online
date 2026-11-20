@@ -12,6 +12,22 @@ import { SeatEffect } from '../../moments/MomentBanner';
 /** The moment effect on a seat right now (the id re-runs it for a new moment), or null. */
 export type SeatEffectProp = { readonly kind: SeatEffectKind; readonly id: number } | null;
 import { PlayerBadges } from './parts';
+import { TEAM_DOT, TEAM_RING, teamName, teamOf } from '../../game/teams';
+
+/** A coloured dot on the avatar's corner naming the seat's team (2v2 only; text for screen readers). */
+function TeamDot({ view, playerId }: { view: PlayerView; playerId: string }) {
+  const team = teamOf(view, playerId);
+  if (team === null) return null;
+  return (
+    <span
+      data-testid={`team-${playerId}`}
+      data-team={team}
+      className={`pointer-events-none absolute -start-0.5 -top-0.5 z-10 size-3 rounded-full ring-2 ring-surface ${TEAM_DOT[team]}`}
+    >
+      <span className="sr-only">{teamName(team)}</span>
+    </span>
+  );
+}
 
 export interface TurnRing {
   /** 1 -> 0 as the turn timer runs out, or null when this player isn't awaited. */
@@ -76,11 +92,15 @@ export function OpponentSeat({
         dim={member ? !member.connected : false}
       />
       {small && count}
+      <TeamDot view={view} playerId={player.id} />
       {effect && <SeatEffect key={`effect-${effect.id}`} effect={effect.kind} momentId={effect.id} reduced={reduced} />}
       {reaction && <ReactionBubble key={`reaction-${reaction.id}`} reaction={reaction} />}
     </div>
   );
-  const frame = `${awaited ? 'bg-surface-2/90 ring-1 ring-accent/25' : 'bg-surface/60 ring-1 ring-line'} ${player.finished ? 'opacity-55' : ''}`;
+  // Team games: the frame ring is the team's colour (the turn still shows on the avatar's ring).
+  const team = teamOf(view, player.id);
+  const frameRing = team !== null ? `ring-2 ${TEAM_RING[team]}` : awaited ? 'ring-1 ring-accent/25' : 'ring-1 ring-line';
+  const frame = `${awaited ? 'bg-surface-2/90' : 'bg-surface/60'} ${frameRing} ${player.finished ? 'opacity-55' : ''}`;
   if (variant === 'inline') {
     return (
       <li data-testid={`seat-${player.id}`} dir="rtl" className={`flex min-w-0 items-center gap-1 rounded-xl py-0.5 ps-0.5 pe-1.5 transition-colors ${frame}`}>
@@ -141,6 +161,7 @@ export function MySeat({
     <div className="flex min-w-0 items-center gap-2" data-testid={`seat-${player.id}`}>
       <div ref={anchor} className="relative">
         <Avatar id={player.id} name={name} size={30} progress={ring.progress} urgent={ring.urgent} />
+        <TeamDot view={view} playerId={player.id} />
         {effect && <SeatEffect key={`effect-${effect.id}`} effect={effect.kind} momentId={effect.id} reduced={reduced} />}
         {reaction && <ReactionBubble key={`reaction-${reaction.id}`} reaction={reaction} />}
       </div>

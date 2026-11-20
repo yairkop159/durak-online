@@ -24,9 +24,12 @@ export function DurakReveal({
   viewerId,
   nameOf,
   stinger,
+  teamCaption = null,
   onDone,
 }: {
   plan: RevealPlan;
+  /** 2v2: which team lost, shown under the caption. */
+  teamCaption?: string | null;
   viewerId: string | null;
   nameOf: (id: string) => string;
   /** The win / durak stinger, played when the stamp lands (null for spectators). */
@@ -114,10 +117,15 @@ export function DurakReveal({
             {plan.kind === 'draw' ? t.reveal.draw : t.reveal.stamp}
           </motion.span>
           <span className="relative whitespace-nowrap text-base font-bold text-white drop-shadow">{caption}</span>
+          {teamCaption && (
+            <span data-testid="reveal-team" className="relative whitespace-nowrap text-sm font-semibold text-white/85 drop-shadow">
+              {teamCaption}
+            </span>
+          )}
         </div>
       )}
       <div aria-live="polite" className="sr-only">
-        {stage === 'stamp' ? caption : ''}
+        {stage === 'stamp' ? [caption, teamCaption].filter(Boolean).join('. ') : ''}
       </div>
       {/* The only interactive layer: tap anywhere to skip to the result. */}
       <button

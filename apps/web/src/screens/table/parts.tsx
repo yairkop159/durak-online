@@ -4,6 +4,7 @@ import { t } from '../../i18n';
 import type { ReactNode } from 'react';
 import { secondsLeft } from '../../net/clock';
 import { BotPill } from '../../components/BotPill';
+import { myPartner, teamOf } from '../../game/teams';
 
 /** Role/status pills shared by opponents and the viewer's own strip (labels, not buttons). */
 export function PlayerBadges({
@@ -20,8 +21,15 @@ export function PlayerBadges({
 }) {
   const phase = view.phase;
   const playing = phase.kind !== 'finished';
+  const partner = myPartner(view) === player.id;
+  const team = teamOf(view, player.id);
   return (
     <span className={`flex items-center justify-center gap-1 ${compact ? 'max-w-full flex-nowrap overflow-hidden' : 'flex-wrap'}`}>
+      {partner && team !== null && (
+        <span data-testid={`partner-${player.id}`} className="contents">
+          <Pill tone={team === 0 ? 'teamA' : 'teamB'}>{t.teams.partner}</Pill>
+        </span>
+      )}
       {playing && !player.finished && view.attackerId === player.id && <Pill tone="attack">{t.table.attacker}</Pill>}
       {playing && !player.finished && view.defenderId === player.id && <Pill tone="defend">{t.table.defender}</Pill>}
       {phase.kind === 'bout' && phase.passed.includes(player.id) && <Pill tone="muted">{t.table.passed}</Pill>}
