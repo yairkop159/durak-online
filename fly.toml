@@ -1,5 +1,5 @@
-# Fly.io config for the production image (see DEPLOY.md). Nothing is deployed until you run
-# `fly deploy` yourself. Replace the app name with your own (fly apps create <name>).
+# Fly.io config for the production image. Unused: Fly.io is paid and permanent hosting is TBD
+# (see DEPLOY.md). Kept for reference only; nothing is deployed from it.
 app = "durak-online-CHANGE-ME"
 primary_region = "fra"
 

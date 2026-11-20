@@ -8,10 +8,9 @@
  * context, painted after the absolutely positioned gear) covered the settings gear, so a real
  * click never reached it while every jsdom test passed.
  */
-import { type Browser } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { t } from '../../src/i18n';
-import { LIFECYCLE_TIMEOUT_MS, coveredControls, executablePath, seedProfile, startBrowserEnv, stopBrowserEnv, stubProfileApi, type BrowserEnv } from './harness';
+import { LIFECYCLE_TIMEOUT_MS, coveredControls, executablePath, seedProfile, startBrowserEnv, stopBrowserEnv, stubProfileApi, withPage, type BrowserEnv } from './harness';
 
 const VIEWPORTS = [
   { name: 'phone', width: 390, height: 844 },
@@ -31,20 +30,18 @@ const FIT_VIEWPORTS = [
 
 describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
   let env: BrowserEnv | undefined;
-  let browser: Browser;
   let base: string;
 
   beforeAll(async () => {
     env = await startBrowserEnv();
-    ({ browser, base } = env);
+    ({ base } = env);
   }, LIFECYCLE_TIMEOUT_MS);
 
   afterAll(() => stopBrowserEnv(env), LIFECYCLE_TIMEOUT_MS);
 
   for (const vp of VIEWPORTS) {
     it(`Home (${vp.name}): the settings gear opens the dialog with a real mouse click`, async () => {
-      const page = await browser.newPage({ viewport: vp });
-      try {
+      await withPage(env!, { viewport: vp }, async (page) => {
         await page.goto(base);
         const gear = page.getByRole('button', { name: t.settings.title });
         await gear.waitFor();
@@ -52,14 +49,11 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
         // A raw mouse click at the gear's center (no actionability retries), like a user's.
         await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
         await expect(page.getByRole('dialog', { name: t.settings.title }).waitFor({ timeout: 2000 })).resolves.toBeUndefined();
-      } finally {
-        await page.close();
-      }
+      });
     }, 30_000);
 
     it(`table (${vp.name}): a moment banner and reaction bubbles never block the hand, the table or Take/Pass`, async () => {
-      const page = await browser.newPage({ viewport: vp });
-      try {
+      await withPage(env!, { viewport: vp }, async (page) => {
         await page.goto(`${base}tests/browser/fixtures/table.html`);
         await page.waitForFunction(() => (window as unknown as { __fixture?: { ready: boolean } }).__fixture?.ready === true);
         // The overlays are really on screen right now.
@@ -122,25 +116,20 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
           () => (window as unknown as { __fixture: { emitted: { event: string }[] } }).__fixture.emitted.map((e) => e.event),
         );
         expect(emitted).toContain('game:move');
-      } finally {
-        await page.close();
-      }
+      });
     }, 30_000);
 
     for (const path of ['/', '/rules', '/profile', '/leaderboard']) {
       it(`${path} (${vp.name}): no visible control is covered by another element`, async () => {
-        const page = await browser.newPage({ viewport: vp });
-        try {
+        await withPage(env!, { viewport: vp }, async (page) => {
           await seedProfile(page);
           await stubProfileApi(page);
           await page.goto(base + path.slice(1));
-          if (path === '/profile') await page.getByTestId('rating').waitFor({ timeout: 15_000 });
-          if (path === '/leaderboard') await page.locator('ol[aria-label] > li').first().waitFor({ timeout: 15_000 });
+          if (path === '/profile') await page.getByTestId('rating').waitFor();
+          if (path === '/leaderboard') await page.locator('ol[aria-label] > li').first().waitFor();
           await page.getByRole('heading', { level: 1 }).first().waitFor();
           expect(await coveredControls(page)).toEqual([]);
-        } finally {
-          await page.close();
-        }
+        });
       }, 30_000);
     }
   }
@@ -148,8 +137,7 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
   // The table screen fits one viewport: however full the table and the hand, nothing scrolls.
   for (const vp of FIT_VIEWPORTS) {
     it(`table ${vp.width}x${vp.height}: 6 pairs + a 15-card hand fit the screen, every card and Take clickable`, async () => {
-      const page = await browser.newPage({ viewport: vp });
-      try {
+      await withPage(env!, { viewport: vp }, async (page) => {
         await page.goto(`${base}tests/browser/fixtures/table.html?scenario=crowded`);
         await page.waitForFunction(() => (window as unknown as { __fixture?: { ready: boolean } }).__fixture?.ready === true);
         await page.getByTestId('moment-banner').waitFor({ state: 'visible', timeout: 3000 });
@@ -228,9 +216,7 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
           () => (window as unknown as { __fixture: { emitted: { event: string }[] } }).__fixture.emitted.map((e) => e.event),
         );
         expect(emitted).toContain('game:move');
-      } finally {
-        await page.close();
-      }
+      });
     }, 30_000);
   }
 });

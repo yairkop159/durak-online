@@ -42,7 +42,13 @@ npm run prod:down
 
 ---
 
-המשך המסמך מסביר איך להעלות את דוראק אונליין לאוויר באופן קבוע: השוואה בין שלוש פלטפורמות, ההמלצה, והוראות צעד-אחר-צעד.
+## אירוח קבוע: עוד לא נקבע
+
+**כרגע:** הדרך לשחק עם חברים היא ה-Quick Tunnel שלמעלה.
+**אירוח קבוע:** עוד לא נבחר. הכיוון שנבדק הוא Azure דרך GitHub Student Pack.
+(`fly.toml` נשאר בריפו מתקופה קודמת, אבל לא משתמשים ב-Fly.io: הוא בתשלום.)
+
+החלקים הבאים לא תלויים בפלטפורמה: מה כל שרת קבוע צריך לספק.
 
 > ## ⚠️ חשוב: השרת תומך במופע (instance) אחד בלבד
 > הנעילה לכל חדר (`KeyedMutex`), טיימרי התורות והבוטים חיים בזיכרון של תהליך Node אחד.
@@ -61,102 +67,27 @@ image אחד (`Dockerfile`) שמריץ תהליך Node יחיד:
 - Redis חיצוני לשמירת חדרים, משחקים ו-sessions (חובה בייצור: בלי Redis הכול בזיכרון ונמחק בכל ריסטארט).
 
 הרצה מקומית של build הייצור: `npm run prod:up` ואז http://localhost:8080 (עצירה: `npm run prod:down`).
-בדיקת קצה-לקצה מול כל שרת: `npm run build --workspace=packages/shared --workspace=packages/game-engine` ואז `npm run smoke -- <URL>`.
 
-## השוואת פלטפורמות
+## מה שרת קבוע צריך
 
-המחירים נאספו בנובמבר 2026 ממקורות ציבוריים (חלקם צד שלישי) ומשתנים לעיתים קרובות. **בדוק את דף התמחור הרשמי לפני שאתה נרשם.**
-הערכת עלות ל"תחביב קטן": מכונה אחת קטנה שרצה 24/7 + Redis קטן.
+- **מכונה אחת שתמיד דולקת:** WebSockets ארוכים, בלי "שינה" אחרי חוסר פעילות (השרת מחזיק טיימרים, בוטים וחיבורים פתוחים), ובלי autoscaling.
+- **CPU אמיתי:** הבוט (IS-MCTS) חושב עד 300 ms למהלך ב-worker threads; ‏0.1 CPU איטי מדי.
+- **Redis עם persistence**, שתומך ב-`MULTI/EXEC`, ‏`SCAN`, ‏`GETEX` ו-`SET … KEEPTTL` (השרת נבדק מול Redis 7).
+- **Postgres** (לא חובה) לפרופילים ולדירוג.
+- **HTTPS** (נדרש גם ל-PWA וגם ל-wake lock), ו-health check על `/health`.
+- **פריסה שמחליפה את המופע** (לא מריצה שניים במקביל). השבתה קצרה בעדכון היא בסדר: המשחקים שמורים ב-Redis, הלקוחות מתחברים מחדש לבד, ולכל שחקן יש 60 שניות (`RECONNECT_GRACE_MS`) לפני הפסד טכני.
 
-| | **Fly.io** | **Railway** | **Render** |
-|---|---|---|---|
-| WebSockets ארוכים | ✅ | ✅ | ✅ (בתשלום) |
-| מופע יחיד שתמיד דולק | ✅ עם `auto_stop_machines = "off"` | ✅ (שירות רגיל לא נרדם) | ✅ רק בתוכנית בתשלום |
-| מכונה קטנה | shared-cpu-1x: 256MB ≈ ‎$2.19 לחודש, 512MB ≈ ‎$3.7 (הערכה לפי ‎$6 ל-GB) | לפי שימוש: ‎$20 ל-vCPU ו-‎$10 ל-GB RAM בחודש | Starter ‏(512MB): ‎$7 לחודש |
-| דמי מנוי | אין | Hobby: ‎$5 לחודש שכוללים ‎$5 שימוש | אין (workspace Hobby חינם) |
-| שכבה חינמית | אין לארגונים חדשים (ניסיון קצר בלבד) | ניסיון חד-פעמי (‎$5 קרדיט); לפי חלק מהמקורות גם ‎$1 לחודש אחריו | Free: ‏512MB, ‏0.1 CPU, **נרדם אחרי 15 דקות** |
-| Redis מנוהל | Upstash דרך `fly redis create`: לפי שימוש ‎$0.20 ל-100K פקודות, או קבוע מ-‎$10 לחודש | תבנית Redis בקליק, מחויבת לפי שימוש כמו כל שירות | Key Value: חינמי 25MB **בלי persistence**; בתשלום מ-‎~$10 לחודש |
-| שינה / cold start | לא, אם מכבים auto-stop | לא (אלא אם מפעילים serverless/sleep) | בחינמי: נרדם אחרי 15 דק', ההתעוררות ‎~1 דקה |
-| עלות משוערת לחודש | **‎~$4–6** (מכונה 512MB + Upstash לפי שימוש) | **‎~$5–8** | **‎~$17** (Starter + Key Value בתשלום) |
-| קושי | בינוני: CLI ‏(`flyctl`) + `fly.toml` (קיים בריפו) | קל: חיבור GitHub, מזהה את ה-Dockerfile לבד | קל: דשבורד, מזהה Dockerfile |
+## משתני סביבה
 
-**למה לא Render Free:** השרת שומר טיימרים, בוטים וחיבורים פתוחים בתהליך. שינה אחרי 15 דקות מנתקת שחקנים, ו-0.1 CPU איטי מדי לבוט (IS-MCTS).
-ה-Key Value החינמי בלי persistence, אז ריסטארט מוחק את כל המשחקים.
-
-## ההמלצה: Fly.io
-
-- הכי זול למכונה שתמיד דולקת (בערך ‎$4–6 לחודש), בלי מנוי חודשי.
-- מריץ את ה-Dockerfile שלנו כמו שהוא, WebSockets עובדים בלי הגדרות מיוחדות, ויש אזורים קרובים לישראל (למשל `fra`, פרנקפורט).
-- שליטה מלאה במספר המכונות (חשוב, כי מותר רק מופע אחד), ו-Redis מנוהל זמין בפקודה אחת.
-
-אלטרנטיבה אם אתה מעדיף דשבורד ובלי CLI: **Railway** (בערך אותו מחיר, פשוט יותר).
-שם צריך לוודא ש-Replicas = 1, להגדיר `NODE_ENV=production`, ‏`TRUST_PROXY=1`, ‏`REDIS_URL` (מתוך שירות ה-Redis), ו-Healthcheck Path = `/health`.
-
-## פריסה ל-Fly.io צעד אחר צעד
-
-### 0. דרישות
-חשבון ב-Fly.io (דורש כרטיס אשראי). אני לא יצרתי חשבון ולא פרסתי כלום; הצעדים האלה בשבילך.
-
-### 1. התקנת flyctl והתחברות
-```powershell
-pwsh -Command "iwr https://fly.io/install.ps1 -useb | iex"
-fly auth signup   # או: fly auth login
-```
-
-### 2. יצירת האפליקציה
-בחר שם ייחודי (הוא יהיה גם הכתובת `https://<name>.fly.dev`), ועדכן אותו בשורה `app = ...` בקובץ `fly.toml`:
-```bash
-fly apps create durak-yourname
-```
-
-### 3. Redis
-**אפשרות א' (מומלצת, מנוהלת): Upstash דרך Fly**
-```bash
-fly redis create
-```
-- בחר את אותו אזור (`fra`), **בלי eviction**, ותוכנית pay-as-you-go.
-- בסוף הפקודה תודפס כתובת חיבור (`redis://default:<password>@fly-<name>.upstash.io:6379`). שמור אותה בתור secret:
-```bash
-fly secrets set REDIS_URL="redis://default:<password>@fly-<name>.upstash.io:6379" --app durak-yourname
-```
-הערכת שימוש: בדיקת `/health` כל 30 שניות היא ‎~86K פקודות בחודש. משחק שלם הוא כמה מאות פקודות. בשימוש תחביבי זה סנטים עד דולרים בודדים לחודש.
-
-> בדקתי את השרת רק מול Redis 7 רגיל (מקומי ו-CI), ולא מול Upstash. השרת משתמש ב-`MULTI/EXEC`, ‏`SCAN`, ‏`GETEX` ו-`SET … KEEPTTL`.
-> אם `/health` מחזיר `redis: "down"` או שיש שגיאות Redis בלוגים, עבור לאפשרות ב'.
-
-**אפשרות ב': Redis משלך על Fly (תאימות מלאה, ‎~$2.5 לחודש)**
-אפליקציה נפרדת עם volume. ראה https://fly.io/docs/ (חפש "Redis on Fly"). מגדירים `REDIS_URL=redis://<redis-app>.internal:6379` כ-secret.
-
-### 3ב. Postgres (פרופילים ודירוג, לא חובה)
-```bash
-fly postgres create          # או כל Postgres מנוהל (Neon, Supabase…)
-fly postgres attach <pg-app> --app durak-yourname   # מגדיר DATABASE_URL כ-secret
-```
-- השרת מריץ `prisma migrate deploy` בכל עלייה (`DB_MIGRATE_ON_START=true`). אפשר לכבות ולהריץ ידנית מתוך ה-image: `node node_modules/prisma/build/index.js migrate deploy` בתיקייה `apps/server`.
-- אם Postgres נופל: המשחקים ממשיכים. תוצאות שמחכות נשמרות בזיכרון ומנוסות שוב עד שעה; **מגבלה ידועה:** אם גם השרת עושה ריסטארט בזמן נפילה ארוכה, תוצאות של משחקים שהסתיימו לפני יותר מ-30 דקות עלולות לא להיכנס לדירוג.
-- `curl …/health` צריך להראות `"postgres":"ok"`.
-
-### 4. פריסה, ובדיוק מכונה אחת
-```bash
-fly deploy --ha=false
-fly scale count 1 --yes
-fly status
-```
-- `--ha=false` חשוב: בלעדיו Fly יוצר **שתי** מכונות בפריסה הראשונה.
-- `fly.toml` כבר מגדיר `auto_stop_machines = "off"`, ‏`min_machines_running = 1`, ‏`strategy = "rolling"` ו-health check על `/health`.
-- `fly status` צריך להראות מכונה אחת בדיוק במצב `started`.
-
-### 5. משתני סביבה
-
-| משתנה | ערך ב-Fly | הערות |
+| משתנה | ערך מומלץ | הערות |
 |---|---|---|
-| `REDIS_URL` | secret (צעד 3) | חובה בייצור |
-| `NODE_ENV` | `production` (ב-`fly.toml`) | מפעיל CORS של same-origin בלבד |
-| `PORT` | `8080` (ב-`fly.toml`) | תואם `internal_port` |
-| `TRUST_PROXY` | `1` (ב-`fly.toml`) | ה-proxy של Fly הוא hop אחד; כך כתובות ה-IP של לקוחות נכונות להגבלות |
-| `TRUSTED_PROXIES` | ריק | רשימת CIDR של ה-proxy; ריק = כל peer (ב-Fly רק ה-proxy של Fly מגיע לאפליקציה) |
+| `REDIS_URL` | secret | חובה בייצור |
+| `NODE_ENV` | `production` | מפעיל CORS של same-origin בלבד |
+| `PORT` | `8080` | ברירת המחדל ב-image |
+| `TRUST_PROXY` | מספר ה-proxies לפני האפליקציה (בדרך כלל `1`) | כך כתובות ה-IP של לקוחות נכונות להגבלות |
+| `TRUSTED_PROXIES` | ה-CIDR של ה-proxy, אם ידוע | ריק = כל peer נחשב proxy (בסדר רק אם רק ה-proxy מגיע לאפליקציה) |
 | `TRUST_CF_CONNECTING_IP` | `false` | רק כש-Cloudflare לפני האפליקציה |
-| `DATABASE_URL` | secret (צעד 3ב) | לא חובה: בלעדיו אין פרופילים ודירוג |
+| `DATABASE_URL` | secret | לא חובה: בלעדיו אין פרופילים ודירוג |
 | `DB_MIGRATE_ON_START` | `true` | `prisma migrate deploy` בעליית השרת |
 | `CORS_ORIGINS` | ריק | רק אם דומיין אחר צריך להתחבר |
 | `BOT_WORKERS` | ריק | ברירת מחדל: מעבדים זמינים פחות 1, בין 1 ל-4 (מזהה מגבלת cgroup) |
@@ -165,36 +96,19 @@ fly status
 | `RATE_LIMIT_DISCONNECT_AFTER` | 100 | אירועים שנזרקו ב-10 שניות לפני ניתוק |
 | `MAX_ROOMS_PER_IP_PER_HOUR`, ‏`MAX_ROOMS`, ‏`MAX_SOCKETS_PER_IP` | 30 / 500 / 20 | הגבלות נגד ניצול לרעה |
 
-שינוי משתנה רגיל: `fly secrets set NAME=value` (גורם לריסטארט), או עריכת `[env]` ב-`fly.toml` ואז `fly deploy --ha=false`.
+## בדיקה אחרי פריסה
 
-### 6. בדיקת /health ובדיקת קצה-לקצה
 ```bash
-curl https://durak-yourname.fly.dev/health
+curl https://<הכתובת>/health
 # צפוי: {"ok":true,"repository":"redis","redis":"PONG","postgres":"ok"}
-
-fly checks list        # מצב ה-health check של Fly
-fly logs               # לוגים חיים; בעלייה מודפסת שורת "settings" עם כל ההגדרות בפועל
 
 # מהריפו המקומי: משחק אמיתי נגד בוט
 npm run build --workspace=packages/shared --workspace=packages/game-engine
-npm run smoke -- https://durak-yourname.fly.dev
+npm run smoke -- https://<הכתובת>
 ```
-ואז פשוט לפתוח את `https://durak-yourname.fly.dev` בדפדפן ולשחק.
-
-### 7. עדכונים
-```bash
-fly deploy --ha=false
-```
-- הפריסה מחליפה את המכונה הקיימת, אז יש השבתה קצרה (שניות).
-- המשחקים שמורים ב-Redis, הלקוחות מתחברים מחדש לבד ומחדשים את ה-session.
-- לכל שחקן יש 60 שניות (`RECONNECT_GRACE_MS`) לפני הפסד טכני.
+בעליית השרת מודפסת בלוג שורת `settings` עם כל ההגדרות בפועל.
 
 ### תקלות נפוצות
-- **`/health` מחזיר 503 / `redis: "down"`:** בדוק את `REDIS_URL` (`fly secrets list`) ואת `fly logs`.
+- **`/health` מחזיר 503 / `redis: "down"`:** בדוק את `REDIS_URL` ואת הלוגים.
 - **"יותר מדי חיבורים":** כמה שחקנים מאחורי אותה רשת (NAT). העלה את `MAX_SOCKETS_PER_IP`.
-- **מופיעות שתי מכונות ב-`fly status`:** הרץ `fly scale count 1 --yes` מיד.
-
-## מקורות (תמחור, נובמבר 2026)
-- Fly.io: https://fly.io/docs/about/pricing/ , https://fly.io/docs/upstash/redis/ , https://fly.io/docs/launch/autostop-autostart/
-- Railway: https://railway.com/pricing (סיכומים: https://www.srvrlss.io/provider/railway/ , https://www.budgetforge.dev/tools/railway-pricing-2026)
-- Render: https://render.com/pricing (סיכומים: https://temps.sh/blog/render-pricing-2026 , https://www.activepieces.com/blog/render-pricing-2026-free-tier-workers-total-cost)
+- **כל השחקנים מקבלים אותה כתובת IP בלוג `socket connected`:** `TRUST_PROXY` לא מוגדר נכון לפלטפורמה.

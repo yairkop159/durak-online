@@ -59,16 +59,44 @@ export function phoneContext(width: number, height: number): BrowserContextOptio
   return { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 };
 }
 
-/** Runs `fn` on a fresh page in its own context; the context is always closed, even on failure. */
+/** Chrome's error when the OS reports a network change mid-request (see `withPage`). */
+const NETWORK_CHANGED = 'net::ERR_NETWORK_CHANGED';
+
+/**
+ * Runs `fn` on a fresh page in its own context; the context is always closed, even on failure.
+ *
+ * Retried once, on a new context, ONLY when the attempt failed and Chrome aborted a request with
+ * ERR_NETWORK_CHANGED during it. On Windows, Docker Desktop's virtual adapters can flap; Chrome
+ * then aborts in-flight requests, a Vite module load fails, the app never mounts, and no wait is
+ * long enough (seen: 1 of 140 page loads). Any other failure is rethrown as is.
+ */
 export async function withPage<T>(env: BrowserEnv, options: BrowserContextOptions, fn: (page: Page) => Promise<T>): Promise<T> {
+  const first = await attempt(env, options, fn);
+  if (first.ok) return first.value;
+  if (!first.networkChanged) throw first.error;
+  console.warn(`[browser tests] retried: network changed (${first.networkChanged})`);
+  const second = await attempt(env, options, fn);
+  if (second.ok) return second.value;
+  throw second.error;
+}
+
+type Attempt<T> = { ok: true; value: T } | { ok: false; error: unknown; networkChanged: string | null };
+
+async function attempt<T>(env: BrowserEnv, options: BrowserContextOptions, fn: (page: Page) => Promise<T>): Promise<Attempt<T>> {
   let context: BrowserContext | null = null;
+  let networkChanged: string | null = null;
   try {
     context = await env.browser.newContext(options);
+    context.on('requestfailed', (request) => {
+      if (request.failure()?.errorText === NETWORK_CHANGED) networkChanged ??= request.url();
+    });
     const page = await context.newPage();
     page.setDefaultTimeout(5000);
     // A cold dev server transforms the app on the first visit: navigations get longer.
     page.setDefaultNavigationTimeout(20_000);
-    return await fn(page);
+    return { ok: true, value: await fn(page) };
+  } catch (error) {
+    return { ok: false, error, networkChanged };
   } finally {
     await context?.close().catch(() => {});
   }
