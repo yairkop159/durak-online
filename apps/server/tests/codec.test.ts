@@ -150,3 +150,25 @@ describe('codec: rating outcome on a finished game', () => {
     expect(logger.error).toHaveBeenCalled();
   });
 });
+
+describe('codec: team mode', () => {
+  it('records stored before it (no teams field) decode unchanged; teams round-trips in room and game config', () => {
+    const room = makeRoom('room1');
+    const game = makeGame('room1');
+    expect(decode(RoomSchema, encode(room), 'k', log())).toEqual(room);
+    expect(decode(StoredGameSchema, encode(game), 'k', log())?.state.config).toEqual(game.state.config);
+    expect(game.state.config).not.toHaveProperty('teams');
+
+    const teamRoom = { ...room, config: { ...room.config, teams: true } };
+    const teamGame = { ...game, state: { ...game.state, config: { ...game.state.config, teams: true } } };
+    expect(decode(RoomSchema, encode(teamRoom), 'k', log())).toEqual(teamRoom);
+    expect(decode(StoredGameSchema, encode(teamGame), 'k', log())).toEqual(teamGame);
+  });
+
+  it('rejects a non-boolean teams flag as a corrupted value', () => {
+    const room = makeRoom('room1');
+    const logger = log();
+    expect(decode(RoomSchema, encode({ ...room, config: { teams: 'yes' } }), 'k', logger)).toBeNull();
+    expect(logger.error).toHaveBeenCalledOnce();
+  });
+});
