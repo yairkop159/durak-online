@@ -284,6 +284,8 @@ export interface Strings {
     readonly results: Record<PlayerResult, string>;
     readonly unrated: string;
     readonly botAssisted: string;
+    /** Tag on a 2v2 team game in the history. */
+    readonly teamsTag: string;
     readonly vs: (names: string) => string;
     readonly noProfile: string;
     readonly unavailable: string;
@@ -704,9 +706,10 @@ export const he: Strings = {
     duraks: 'פעמים דוראק',
     recent: 'משחקים אחרונים',
     noGames: 'עוד אין משחקים. המשחקים הבאים יופיעו כאן.',
-    results: { win: 'ניצחון', durak: 'דוראק', draw: 'תיקו', forfeit: 'הפסד טכני', unfinished: 'לא הסתיים' },
+    results: { win: 'ניצחון', durak: 'דוראק', draw: 'תיקו', forfeit: 'הפסד טכני', unfinished: 'לא הסתיים', teamLoss: 'הפסד קבוצתי' },
     unrated: 'לא מדורג',
     botAssisted: 'בוט שיחק חלק מהמשחק',
+    teamsTag: '2 נגד 2',
     vs: (names) => `נגד ${names}`,
     noProfile: 'הפרופיל נוצר אוטומטית במשחק הראשון. יש לך פרופיל במכשיר אחר? אפשר להעביר אותו לכאן עם קוד.',
     unavailable: 'הפרופילים והדירוג לא זמינים כרגע. המשחק עצמו עובד כרגיל.',

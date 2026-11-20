@@ -37,6 +37,7 @@ export function buildResultInput(
     gameId: game.gameId,
     roomId: room.id,
     mode: state.config.mode,
+    teams: state.config.teams === true,
     startedAt: game.startedAt,
     endedAt,
     endReason,

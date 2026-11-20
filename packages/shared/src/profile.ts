@@ -90,9 +90,10 @@ export interface TransferCodeResponse {
  * - durak: the last player holding cards (a loss);
  * - unfinished: the game was abandoned or restarted (not rated);
  * - draw: the game ended without a durak;
+ * - teamLoss: team mode, the durak's partner (their team lost);
  * - win: everyone else.
  */
-export const PLAYER_RESULTS = ['win', 'durak', 'draw', 'forfeit', 'unfinished'] as const;
+export const PLAYER_RESULTS = ['win', 'durak', 'draw', 'forfeit', 'unfinished', 'teamLoss'] as const;
 export type PlayerResult = (typeof PLAYER_RESULTS)[number];
 
 export interface RecentGamePlayer {
@@ -107,6 +108,8 @@ export interface RecentGame {
   readonly gameId: string;
   readonly endedAt: number;
   readonly mode: GameMode;
+  /** A 2v2 team game (absent in older responses = a classic game). */
+  readonly teams?: boolean;
   readonly endReason: GameEndReason;
   readonly rated: boolean;
   readonly result: PlayerResult;
