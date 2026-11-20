@@ -14,6 +14,10 @@
  * six-player game (a reload into it: no reveal, the game-over overlay right away), rated: I lost 32.
  * `?scenario=gameover-reload`: the same after a real reload: no game:over (so no stats table), only
  * the finished view and the re-sent game:ratings (my change plus the five others as a list).
+ * 2v2 team mode (seats 0+2 vs 1+3: me + carl vs bob + dana): `?scenario=teams` is the crowded table
+ * in a team game (carl, my partner, attacks dana; dana transfers to me); `?scenario=teams-lobby` the
+ * host's team lobby (three members, one free seat, swap buttons); `?scenario=teams-gameover` a
+ * finished, rated team game that my team lost (carl is the durak).
  */
 import {
   DEFAULT_GAME_CONFIG,
@@ -64,9 +68,13 @@ const ROOM = 'room1234';
 const card = (rank: Card['rank'], suit: Card['suit']): Card => ({ rank, suit });
 const scenario = new URLSearchParams(window.location.search).get('scenario') ?? 'default';
 const gameOverScenario = scenario === 'gameover' || scenario === 'gameover-reload';
-const crowded = scenario === 'crowded' || scenario === 'crowded6' || gameOverScenario;
+const teams = scenario === 'teams' || scenario === 'teams-lobby' || scenario === 'teams-gameover';
+const crowded = scenario === 'crowded' || scenario === 'crowded6' || gameOverScenario || teams;
 const six = scenario === 'crowded6' || gameOverScenario;
-const OTHERS = six ? ['bob', 'carl', 'dana', 'eli', 'fay'] : ['bob', 'carl'];
+const OTHERS = six ? ['bob', 'carl', 'dana', 'eli', 'fay'] : teams ? ['bob', 'carl', 'dana'] : ['bob', 'carl'];
+/** Step 1's attacker and defender; the defender transfers to me in step 2. Teams: always opponents. */
+const FIRST_ATTACKER = teams ? 'carl' : 'bob';
+const TRANSFERRER = teams ? 'dana' : 'carl';
 const PLAYERS = ['me', ...OTHERS];
 const hand: Card[] = crowded
   ? [
@@ -129,7 +137,7 @@ function view(step: Step): PlayerView {
     hand,
     players: PLAYERS.map((id) => ({
       id,
-      handCount: id === 'me' ? hand.length : id === 'carl' && step === 1 ? 6 : 5,
+      handCount: id === 'me' ? hand.length : id === TRANSFERRER && step === 1 ? 6 : 5,
       finished: false,
     })),
     deckCount: crowded ? 0 : 12,
@@ -137,12 +145,12 @@ function view(step: Step): PlayerView {
     trumpSuit: 'D',
     discardCount: 0,
     table,
-    attackerId: step === 1 ? 'bob' : 'carl',
-    defenderId: step === 1 ? 'carl' : 'me',
+    attackerId: step === 1 ? FIRST_ATTACKER : TRANSFERRER,
+    defenderId: step === 1 ? TRANSFERRER : 'me',
     phase: { kind: 'bout', taking: false, passed: [] },
     boutNumber: 2,
     finishOrder: [],
-    config: { ...DEFAULT_GAME_CONFIG, mode: 'perevodnoy' },
+    config: teams ? { ...DEFAULT_GAME_CONFIG, mode: 'perevodnoy', teams: true } : { ...DEFAULT_GAME_CONFIG, mode: 'perevodnoy' },
     lastBout: null,
   };
 }
@@ -190,8 +198,8 @@ const game = (step: Step) => ({ roomId: ROOM, gameId: 'g1', version: step, view:
 const room = (status: 'lobby' | 'playing' | 'finished', list = members) => ({
   roomId: ROOM,
   hostId: 'me',
-  maxPlayers: Math.max(3, list.length + (status === 'lobby' ? 1 : 0)),
-  config: { mode: 'perevodnoy' as const, teams: false },
+  maxPlayers: teams ? 4 : Math.max(3, list.length + (status === 'lobby' ? 1 : 0)),
+  config: { mode: 'perevodnoy' as const, teams },
   members: list,
   spectatorCount: 0,
   status,
@@ -200,7 +208,42 @@ const room = (status: 'lobby' | 'playing' | 'finished', list = members) => ({
 
 transport.connect();
 transport.send('session:issued', { sessionToken: 'x'.repeat(43), playerId: 'me', roomId: ROOM });
-if (scenario === 'lobby') {
+if (scenario === 'teams-lobby') {
+  // Seats: me (team 0), the bot (team 1), carl (team 0); seat 3 (team 1) is free.
+  transport.send('room:state', room('lobby', [member('me'), member('b1', true), member('carl')]));
+  fixture.ready = true;
+} else if (scenario === 'teams-gameover') {
+  // bob and dana went out: my team lost, carl (my partner, more cards) is the durak.
+  const over: PlayerView = {
+    ...view(2),
+    table: [],
+    players: PLAYERS.map((id) => ({ id, handCount: id === 'me' ? 2 : id === 'carl' ? 4 : 0, finished: id === 'bob' || id === 'dana' })),
+    phase: { kind: 'finished', durak: 'carl' },
+    finishOrder: ['bob', 'dana'],
+  };
+  const stat = (n: number) => ({ boutsAttacked: n, boutsDefended: n, defenses: n - 1, takes: 1, cardsTaken: 3 * n, throwIns: n, transfers: n % 3, cardsPlayed: 10 * n });
+  transport.send('room:state', room('finished'));
+  transport.send('game:state', { ...game(2), view: over, turnDeadline: null });
+  transport.send('game:over', {
+    roomId: ROOM,
+    durakId: 'carl',
+    finishOrder: ['bob', 'dana'],
+    endReason: 'normal',
+    botAssisted: [],
+    forfeits: [],
+    stats: Object.fromEntries(PLAYERS.map((id, i) => [id, stat(i + 2)])),
+  });
+  // Four rated humans, pairwise team ELO: each of us loses 16, each of them gains 16.
+  const befores: Record<string, number> = { me: 1012, bob: 1100, carl: 990, dana: 1000 };
+  const deltas: Record<string, number> = { me: -16, bob: 16, carl: -16, dana: 16 };
+  transport.send('game:ratings', {
+    roomId: ROOM,
+    gameId: 'g1',
+    status: 'rated',
+    entries: PLAYERS.map((id) => ({ playerId: id, before: befores[id]!, after: befores[id]! + deltas[id]!, delta: deltas[id]! })),
+  });
+  fixture.ready = true;
+} else if (scenario === 'lobby') {
   transport.send('room:state', room('lobby', [member('me'), member('b1', true), member('b2', true)]));
   fixture.ready = true;
 } else if (gameOverScenario) {
