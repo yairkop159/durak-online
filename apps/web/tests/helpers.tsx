@@ -129,6 +129,7 @@ export function roomState(status: RoomStatePayload['status'], ids: string[] = ['
     roomId: ROOM_ID,
     hostId: ids[0]!,
     maxPlayers: ids.length,
+    config: { mode: 'podkidnoy', teams: false },
     members: ids.map((id) => ({
       playerId: id,
       nickname: id.toUpperCase(),

@@ -502,6 +502,7 @@ export const he: Strings = {
     unrated: {
       notEnoughProfiles: 'המשחק לא דורג: צריך לפחות שני שחקנים עם פרופיל',
       notFinished: 'המשחק לא דורג: המשחק לא הסתיים',
+      teamsNeedFourHumans: 'משחק קבוצות מדורג רק כשכל ארבעת השחקנים אנשים עם פרופיל',
     },
     column: 'דירוג',
     others: 'שינויי דירוג',
@@ -777,6 +778,7 @@ export const he: Strings = {
     VOTE_IN_PROGRESS: 'כבר יש הצבעה פתוחה',
     VOTE_COOLDOWN: 'הצעת משחק חדש לפני רגע. אפשר להציע שוב בעוד דקה',
     NO_ACTIVE_VOTE: 'ההצבעה כבר הסתיימה',
+    TEAMS_NEED_FOUR: 'משחק קבוצות צריך חדר של ארבעה שחקנים, וכל ארבעת המקומות תפוסים',
     INVALID_PLAYER_COUNT: 'מספר שחקנים לא תקין',
     DUPLICATE_PLAYER: 'שחקן כפול',
     INVALID_CONFIG: 'הגדרות משחק לא תקינות',

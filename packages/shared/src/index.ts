@@ -1,5 +1,6 @@
 export * from './cards.js';
 export * from './config.js';
+export * from './teams.js';
 export * from './moves.js';
 export * from './errors.js';
 export * from './view.js';

@@ -191,6 +191,7 @@ const room = (status: 'lobby' | 'playing' | 'finished', list = members) => ({
   roomId: ROOM,
   hostId: 'me',
   maxPlayers: Math.max(3, list.length + (status === 'lobby' ? 1 : 0)),
+  config: { mode: 'perevodnoy' as const, teams: false },
   members: list,
   spectatorCount: 0,
   status,
