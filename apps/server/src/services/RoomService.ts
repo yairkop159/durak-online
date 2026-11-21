@@ -43,6 +43,7 @@ function newMember(playerId: string, nickname: string, profileId: string | null)
     graceDeadline: null,
     leftGame: false,
     profileId,
+    disconnectedAt: null,
   };
 }
 
@@ -68,6 +69,7 @@ export function newBotMember(playerId: string, nickname: string, difficulty: Bot
     graceDeadline: null,
     leftGame: false,
     profileId: null,
+    disconnectedAt: null,
   };
 }
 
@@ -131,6 +133,8 @@ export class RoomService {
         createdAt: this.deps.now(),
         restartVote: null,
         restartCooldowns: {},
+        tournamentSetup: null,
+        tournament: null,
       };
       const session: Session = { token: newSessionToken(), roomId, role: 'player', id: playerId };
       await repos.rooms.save(room);

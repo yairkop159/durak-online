@@ -36,6 +36,7 @@ export function dealGame(room: Room, seed: number, now: number): Result<{ room: 
       room.members.filter((m) => !m.isBot && m.profileId !== null).map((m) => [m.playerId, m.profileId as string]),
     ),
     ratings: null, // set by RatingsPublisher once the rating write commits
+    finishGroups: [],
   };
   return ok({ room: updated, game });
 }

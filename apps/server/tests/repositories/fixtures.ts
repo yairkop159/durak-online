@@ -11,15 +11,17 @@ export function makeRoom(id = uid(), status: Room['status'] = 'lobby'): Room {
     maxPlayers: 4,
     config: { mode: 'perevodnoy' },
     members: [
-      { playerId: 'p_host', nickname: 'Host', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
-      { playerId: 'p_guest', nickname: 'Guest', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
-      { playerId: 'p_bot', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
+      { playerId: 'p_host', nickname: 'Host', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null, disconnectedAt: null },
+      { playerId: 'p_guest', nickname: 'Guest', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null, disconnectedAt: null },
+      { playerId: 'p_bot', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null, disconnectedAt: null },
     ],
     spectators: [{ spectatorId: 's_1', nickname: 'Watcher' }],
     status,
     createdAt: 1_700_000_000_000,
     restartVote: null,
     restartCooldowns: {},
+    tournamentSetup: null,
+    tournament: null,
   };
 }
 
@@ -48,6 +50,7 @@ export function makeGame(roomId: string, finished = false): StoredGame {
     },
     profiles: { p_host: 'profHostAAAAAAAAAAAAAA' },
     ratings: finished ? [{ playerId: 'p_host', before: 1000, after: 1016, delta: 16 }, { playerId: 'p_guest', before: 1000, after: 984, delta: -16 }] : null,
+    finishGroups: finished ? [['p_host']] : [],
   };
 }
 

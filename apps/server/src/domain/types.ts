@@ -1,4 +1,16 @@
-import type { BotDifficulty, GameConfigInput, GameEndReason, GameStats, PlayerId, RatingEntry } from '@durak/shared';
+import type {
+  BotDifficulty,
+  GameConfigInput,
+  GameEndReason,
+  GameStats,
+  PlayerId,
+  RatingEntry,
+  TournamentGameCount,
+  TournamentGameResult,
+  TournamentSeat,
+  TournamentSetup,
+  TournamentStatus,
+} from '@durak/shared';
 import type { GameState, PublicKnowledge } from '@durak/game-engine';
 
 // All domain records are plain JSON so any repository (in-memory, Redis) can store them unchanged.
@@ -31,6 +43,11 @@ export interface RoomMember {
    * or null. Server-only (never in room:state). A profile holds at most one seat per room.
    */
   readonly profileId: string | null;
+  /**
+   * Epoch ms of the last disconnect while offline, or null (connected, or unknown). Server-only.
+   * Lets other humans lead a tournament between games when the host has been away a while.
+   */
+  readonly disconnectedAt: number | null;
 }
 
 export interface Spectator {
@@ -63,7 +80,36 @@ export interface Room {
   readonly restartVote: RestartVote | null;
   /** Proposer -> epoch ms until which they may not propose again. Expired entries are pruned. */
   readonly restartCooldowns: Readonly<Record<PlayerId, number>>;
+  /** The lobby's tournament setting; null = single games. Kept across series. */
+  readonly tournamentSetup: TournamentSetup | null;
+  /** The current or last series (until the room goes back to the lobby), or null. */
+  readonly tournament: Tournament | null;
 }
+
+/** A roster seat plus its profile (server-only; credits in the match history). */
+export interface TournamentRosterSeat extends TournamentSeat {
+  readonly profileId: string | null;
+}
+
+/**
+ * A series of N normal games in this room (CLAUDE.md "Tournaments"). Only the counted results are
+ * stored; standings and champions are derived from them (`@durak/shared` standings), so there is
+ * no second copy that could drift. Updated only by the game write path (GameCommitter) and by the
+ * room's own lock-held operations (leave, next, end), each through `services/tournament.ts`.
+ */
+export interface Tournament {
+  readonly id: string;
+  readonly status: TournamentStatus;
+  readonly teams: boolean;
+  readonly gamesPlanned: TournamentGameCount;
+  readonly startedAt: number;
+  readonly endedAt: number | null;
+  /** Locked at the start, in seat order (teams follow seats). */
+  readonly roster: readonly TournamentRosterSeat[];
+  /** One per counted game, in order; at most one per gameId (idempotent scoring). */
+  readonly results: readonly TournamentGameResult[];
+}
+
 
 export type SessionRole = 'player' | 'spectator';
 
@@ -121,4 +167,9 @@ export interface StoredGame {
    * finished game's remaining TTL is kept. The only write to a StoredGame outside GameCommitter.
    */
   readonly ratings: readonly RatingEntry[] | null;
+  /**
+   * Who went out together, in order: each committed step that put players out is one group (the
+   * durak is never in a group). Advanced by GameCommitter like `stats`; tournament scoring uses it.
+   */
+  readonly finishGroups: readonly (readonly PlayerId[])[];
 }

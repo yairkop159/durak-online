@@ -5,6 +5,8 @@ import {
   GameConfigInputSchema,
   GameConfigSchema,
   RatingEntrySchema,
+  TOURNAMENT_STATUSES,
+  TournamentGameCountSchema,
 } from '@durak/shared';
 import { z } from 'zod';
 
@@ -26,6 +28,7 @@ export const RoomMemberSchema = z
     graceDeadline: z.number().nullable().default(null),
     leftGame: z.boolean().default(false), // Phase 7
     profileId: z.string().nullable().default(null), // Phase 10
+    disconnectedAt: z.number().nullable().default(null), // tournaments
   })
   .strict();
 
@@ -41,6 +44,40 @@ export const RestartVoteSchema = z
   })
   .strict();
 
+export const TournamentRosterSeatSchema = z
+  .object({
+    playerId: z.string(),
+    nickname: z.string(),
+    isBot: z.boolean(),
+    left: z.boolean(),
+    profileId: z.string().nullable(),
+  })
+  .strict();
+
+export const TournamentGameResultSchema = z
+  .object({
+    gameId: z.string(),
+    points: z.record(z.string(), z.number()),
+    duraks: z.array(z.string()),
+    firsts: z.array(z.string()),
+  })
+  .strict();
+
+export const TournamentSchema = z
+  .object({
+    id: z.string(),
+    status: z.enum(TOURNAMENT_STATUSES),
+    teams: z.boolean(),
+    gamesPlanned: TournamentGameCountSchema,
+    startedAt: z.number(),
+    endedAt: z.number().nullable(),
+    roster: z.array(TournamentRosterSeatSchema),
+    results: z.array(TournamentGameResultSchema),
+  })
+  .strict();
+
+export const TournamentSetupSchema = z.object({ games: TournamentGameCountSchema }).strict();
+
 export const RoomSchema = z
   .object({
     id: z.string(),
@@ -54,6 +91,9 @@ export const RoomSchema = z
     // Phase 7
     restartVote: RestartVoteSchema.nullable().default(null),
     restartCooldowns: z.record(z.string(), z.number()).default({}),
+    // Tournaments
+    tournamentSetup: TournamentSetupSchema.nullable().default(null),
+    tournament: TournamentSchema.nullable().default(null),
   })
   .strict();
 
@@ -141,6 +181,8 @@ export const StoredGameSchema = z
     stats: z.record(z.string(), PlayerStatsSchema).default({}), // Phase 8
     profiles: z.record(z.string(), z.string()).default({}), // Phase 10
     ratings: z.array(RatingEntrySchema).nullable().default(null), // rating delta on game over
+    // Tournaments. Older games: empty; scoring falls back to finishOrder (one player per group).
+    finishGroups: z.array(z.array(z.string())).default([]),
   })
   .strict();
 

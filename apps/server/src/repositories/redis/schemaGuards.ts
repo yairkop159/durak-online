@@ -6,7 +6,7 @@
 import type { GameState, PlayerState, PublicKnowledge } from '@durak/game-engine';
 import type { BoutSummary, TablePair } from '@durak/shared';
 import type { z } from 'zod';
-import type { RestartVote, Room, RoomMember, Session, Spectator, StoredGame } from '../../domain/types.js';
+import type { RestartVote, Room, RoomMember, Session, Spectator, StoredGame, Tournament } from '../../domain/types.js';
 import type {
   BoutSummarySchema,
   GameStateSchema,
@@ -19,6 +19,7 @@ import type {
   SpectatorSchema,
   StoredGameSchema,
   TablePairSchema,
+  TournamentSchema,
 } from './codec.js';
 
 /** Strips `readonly` recursively (Zod infers mutable types; domain types are readonly). */
@@ -46,7 +47,9 @@ export const schemaGuards: {
   tablePair: Same<typeof TablePairSchema, TablePair>;
   boutSummary: Same<typeof BoutSummarySchema, BoutSummary>;
   knowledge: Same<typeof PublicKnowledgeSchema, PublicKnowledge>;
+  tournament: Same<typeof TournamentSchema, Tournament>;
 } = {
+  tournament: true,
   knowledge: true,
   room: true,
   restartVote: true,
