@@ -11,6 +11,9 @@ import type {
   UnratedReason,
 } from '@durak/shared';
 import type { ProfileApiError } from '../profile/api';
+import type { Card, Rank } from '@durak/shared';
+import type { Reason, TutorialGameId } from '../tutorial/lessons';
+import { rich, type Rich } from '../tutorial/rich';
 
 export type ErrorCode = ServerErrorCode | GameErrorCode;
 
@@ -342,6 +345,34 @@ export interface Strings {
   /** Profile / rating API errors (Phase 10), including NETWORK (no server answer). */
   readonly apiErrors: Record<ProfileApiError, string>;
   readonly tips: Record<TipId, string> & { readonly label: string; readonly dismiss: string };
+  /** The interactive tutorial. Texts that name a card are `Rich` (each card is bidi-isolated when shown). */
+  readonly tutorial: {
+    readonly homeButton: string;
+    readonly offer: { readonly title: string; readonly body: string; readonly start: string; readonly later: string };
+    readonly rulesLink: string;
+    readonly menuTitle: string;
+    readonly menuIntro: string;
+    readonly basics: string;
+    readonly basicsHint: string;
+    readonly advanced: string;
+    readonly advancedHint: string;
+    readonly practiceLocked: string;
+    readonly completed: string;
+    readonly lessonOf: (n: number, total: number) => string;
+    readonly goal: string;
+    readonly hint: string;
+    readonly tryAgain: string;
+    readonly next: string;
+    readonly toMenu: string;
+    readonly skip: string;
+    readonly wrongTitle: string;
+    readonly successTitle: string;
+    readonly failedTitle: string;
+    readonly picked: (n: number, total: number) => string;
+    readonly names: Readonly<Record<string, string>>;
+    readonly lessons: Record<TutorialGameId, { readonly title: string; readonly goal: Rich; readonly hint: Rich; readonly success: Rich }>;
+    readonly reason: (reason: Reason, trump: Suit) => Rich;
+  };
   readonly suits: Record<Suit, string>;
   readonly errors: Record<ErrorCode, string>;
 }
@@ -820,6 +851,134 @@ export const he: Strings = {
     firstThrowIn: 'אפשר להוסיף קלף בערך שכבר על השולחן – או ללחוץ "סיימתי".',
     firstTransfer: 'יש לך קלף באותו ערך: אפשר להעביר את ההתקפה לשחקן הבא (קלף ואז "העברה").',
   },
+  tutorial: {
+    homeButton: 'איך משחקים? מדריך',
+    offer: {
+      title: 'חדשים בדוראק?',
+      body: 'למדו לשחק תוך 5 דקות: משחק אמיתי עם רמזים, שיעור אחרי שיעור.',
+      start: 'למדריך',
+      later: 'לא עכשיו',
+    },
+    rulesLink: 'מעדיפים ללמוד תוך כדי משחק? למדריך',
+    menuTitle: 'מדריך: לומדים לשחק',
+    menuIntro: 'שיעורים קצרים, ובכל אחד מטרה אחת. הכול קורה כאן בדפדפן: בלי שרת משחק, בלי חדר ובלי דירוג.',
+    basics: 'יסודות',
+    basicsHint: 'שמונה שיעורים, כ-5 דקות בסך הכול. בסופם נפתח משחק אימון מול בוט.',
+    advanced: 'מתקדמים',
+    advancedHint: 'לא חובה: אפשר לדלג ולחזור אליהם מתי שרוצים.',
+    practiceLocked: 'נפתח אחרי היסודות',
+    completed: 'הושלם',
+    lessonOf: (n, total) => `שיעור ${n} מתוך ${total}`,
+    goal: 'המטרה',
+    hint: 'רמז',
+    tryAgain: 'נסו שוב',
+    next: 'לשיעור הבא',
+    toMenu: 'לתפריט המדריך',
+    skip: 'דילוג',
+    wrongTitle: 'כמעט!',
+    successTitle: 'כל הכבוד!',
+    failedTitle: 'לא הפעם',
+    picked: (n, total) => `נבחרו ${n} מתוך ${total}`,
+    names: { bot: 'מחשב', west: 'יריב 1', east: 'יריב 2', partner: 'השותף' },
+    lessons: {
+      trump: {
+        title: 'החפיסה והשליט',
+        goal: ['לחצו על שני קלפי השליט שביד שלכם'],
+        hint: ['הקלף הפתוח מתחת לחפיסה קובע את השליט. כאן זה לב: כל קלף לב הוא שליט.'],
+        success: ['נכון! שליט מנצח כל קלף אחר. משחקים ב-36 קלפים, מ-6 עד אס, ולכל שחקן 6 ביד.'],
+      },
+      attack: {
+        title: 'התקפה',
+        goal: ['פתחו את הסיבוב: לחצו על קלף שאינו שליט'],
+        hint: ['התוקף פותח בכל קלף שירצה. כדאי לפתוח בקלף נמוך ולשמור את השליטים.'],
+        success: ['מצוין! עכשיו היריב מגן: הוא חייב לכסות את הקלף, או לקחת אותו.'],
+      },
+      'defend-suit': {
+        title: 'הגנה: גבוה יותר באותה צורה',
+        goal: rich`כסו את ${C(8, 'C')} בתלתן גבוה יותר`,
+        hint: rich`לחצו על ${C(10, 'C')} ואז על ${C(8, 'C')} שעל השולחן.`,
+        success: ['כיסיתם! כשכל הקלפים מכוסים והתוקף סיים, הסיבוב נגמר והקלפים יוצאים מהמשחק.'],
+      },
+      'defend-trump': {
+        title: 'הגנה עם שליט',
+        goal: rich`אין לכם יהלום גבוה מ-${C(14, 'D')}: כסו אותו בשליט`,
+        hint: rich`שליט מכסה כל קלף שאינו שליט, אפילו אס. לחצו על ${C(8, 'H')} ואז על ${C(14, 'D')}.`,
+        success: ['בדיוק! ושליט מכסים רק בשליט גבוה יותר.'],
+      },
+      take: {
+        title: 'לקחת',
+        goal: rich`אי אפשר לכסות את ${C(10, 'S')}: לחצו "לקחת"`,
+        hint: ['אין לכם עלה גבוה יותר ואין שליט. מי שלא יכול להגן לוקח את כל הקלפים שעל השולחן.'],
+        success: ['לקחתם. בזמן שלוקחים, התוקף עוד יכול להוסיף קלפים באותו ערך. ומי שלקח מפסיד את התור לתקוף.'],
+      },
+      'throw-in': {
+        title: 'הוספת קלפים',
+        goal: ['הוסיפו קלף בערך שכבר נמצא על השולחן'],
+        hint: rich`על השולחן יש 7 ו-9, אז אפשר להוסיף את ${C(7, 'C')} או את ${C(9, 'D')}.`,
+        success: ['הוספתם! כל שחקן חוץ מהמגן יכול להוסיף, כל עוד יש למגן קלפים לכסות.'],
+      },
+      'bout-end': {
+        title: 'סוף סיבוב ומשיכת קלפים',
+        goal: ['הכול מכוסה. סיימו את הסיבוב: לחצו "סיימתי"'],
+        hint: rich`אפשר היה להוסיף את ${C(8, 'D')}, אבל עכשיו מסיימים. הסיבוב נגמר כשמי שמוסיף אומר "סיימתי".`,
+        success: ['הקלפים הלכו לערימת ההשלכה, וכולם השלימו ל-6 מהחפיסה: קודם התוקף, המגן אחרון. מי שהגן בהצלחה תוקף עכשיו.'],
+      },
+      durak: {
+        title: 'מי הדוראק?',
+        goal: ['החפיסה נגמרה. היפטרו מכל הקלפים שלכם לפני היריב'],
+        hint: ['מי שנשאר אחרון עם קלפים ביד הוא הדוראק. שמרו את השליט להגנה.'],
+        success: ['יצאתם! כשהחפיסה ריקה, מי שנשאר בלי קלפים יוצא, והאחרון שנשאר עם קלפים הוא הדוראק.'],
+      },
+      transfer: {
+        title: 'העברה (פרבודנוי)',
+        goal: rich`העבירו את ההתקפה הלאה עם ${C(7, 'D')}`,
+        hint: rich`בפרבודנוי, מגן עם קלף באותו ערך יכול להעביר את ההתקפה. לחצו על ${C(7, 'D')} ואז על "העברה".`,
+        success: ['העברתם! עכשיו היריב מגן על שני הקלפים, ואתם התוקפים.'],
+      },
+      teams: {
+        title: '2 נגד 2: השותף',
+        goal: ['השותף שלכם תוקף. עזרו לקבוצה: הוסיפו קלף'],
+        hint: rich`השותף יושב מולכם. הוסיפו את ${C(9, 'D')}: יש 9 על השולחן.`,
+        success: ['עזרתם לשותף! וכשהשותף שלכם מגן, אתם לא מוסיפים ויושבים בצד עד סוף הסיבוב. הקבוצה שנשארת אחרונה עם קלפים מפסידה.'],
+      },
+      practice: {
+        title: 'משחק אימון מול בוט',
+        goal: ['משחק חופשי מול בוט קל. בהצלחה!'],
+        hint: ['מכסים בקלף גבוה באותה צורה או בשליט, מוסיפים באותו ערך, ומי שנשאר אחרון עם קלפים הוא הדוראק.'],
+        success: ['כל הכבוד! אתם מוכנים למשחק אמיתי.'],
+      },
+    },
+    reason: (reason, trump) => {
+      switch (reason.kind) {
+        case 'notTrump':
+          return rich`${reason.card} הוא לא שליט: השליט כאן הוא ${SUIT_NAMES[trump]}.`;
+        case 'lowerSameSuit':
+          return rich`${reason.card} נמוך מ-${reason.target}. באותה צורה מכסים רק בקלף גבוה יותר.`;
+        case 'otherSuit':
+          return rich`${reason.card} לא יכול לכסות את ${reason.target}: צריך ${SUIT_NAMES[reason.target.suit]} גבוה יותר, או שליט.`;
+        case 'trumpNeedsHigherTrump':
+          return rich`${reason.target} הוא שליט: רק שליט גבוה יותר מכסה אותו.`;
+        case 'rankNotOnTable':
+          return rich`אין ${RANK_WORD[reason.card.rank]} על השולחן, ולכן אי אפשר להוסיף את ${reason.card}. מוסיפים רק בערך שכבר שם.`;
+        case 'tableLimit':
+          return ['אי אפשר להוסיף עוד: אסור שיהיו על השולחן יותר קלפים ממה שיש למגן ביד, ולא יותר מ-6 (5 בסיבוב הראשון).'];
+        case 'notNow':
+          return ['זה לא המהלך של השיעור הזה. קראו את המטרה ונסו שוב.'];
+        case 'saveTrump':
+          return rich`${reason.card} הוא שליט. זה חוקי, אבל חבל לבזבז אותו כאן: נסו קלף רגיל.`;
+        case 'canBeat':
+          return ['אפשר לקחת, אבל כאן אפשר גם להגן! נסו לכסות.'];
+        case 'shouldThrowIn':
+          return ['אפשר לסיים, אבל המטרה כאן היא להוסיף קלף.'];
+        case 'shouldPass':
+          return ['אפשר להוסיף, אבל המטרה כאן היא לסיים את הסיבוב: לחצו "סיימתי".'];
+        case 'shouldTransfer':
+          return rich`זה חוקי, אבל נסו להעביר: ל-${reason.card} יש אותו ערך כמו לקלף ההתקפה.`;
+        case 'durak':
+          return ['נשארתם אחרונים עם קלפים, ולכן אתם הדוראק. נסו שוב, ושמרו את השליט להגנה.'];
+      }
+    },
+  },
   suits: { S: 'עלה', C: 'תלתן', D: 'יהלום', H: 'לב' },
   errors: {
     INVALID_PAYLOAD: 'בקשה לא תקינה',
@@ -861,3 +1020,11 @@ export const he: Strings = {
     ALREADY_PASSED: 'כבר סיימת בסיבוב הזה',
   },
 };
+
+/** A card named inside tutorial text (he.ts only). */
+function C(rank: Rank, suit: Suit): Card {
+  return { rank, suit };
+}
+const SUIT_NAMES: Record<Suit, string> = { S: 'עלה', C: 'תלתן', D: 'יהלום', H: 'לב' };
+/** "There is no <rank> on the table": the rank as a word (the card itself is shown isolated next to it). */
+const RANK_WORD: Record<Rank, string> = { 6: '6', 7: '7', 8: '8', 9: '9', 10: '10', 11: 'נסיך', 12: 'מלכה', 13: 'מלך', 14: 'אס' };

@@ -27,6 +27,11 @@ export function cardLabel(card: Card): string {
   return `${RANK_LABEL[card.rank]} ${t.suits[card.suit]}`;
 }
 
+/** The short label shown inside text ("8♣"). Always left-to-right: isolate it inside Hebrew text. */
+export function cardGlyph(card: Card): string {
+  return `${RANK_LABEL[card.rank]}${SUIT_SYMBOL[card.suit]}`;
+}
+
 /** xs = last-bout peek, sm = trump under the deck, md = table, lg = hand. */
 export type CardSize = 'xs' | 'sm' | 'md' | 'lg';
 /** playable = highlighted, dimmed = not playable now, selected = waiting for a target, target = can be clicked as a target. */
