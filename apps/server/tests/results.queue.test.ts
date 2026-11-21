@@ -27,6 +27,7 @@ describe('ResultQueue', () => {
     const seen: string[] = [];
     let inFlight = 0;
     const store: ResultStore = {
+      recordTournament: async () => ({ kind: 'recorded' }),
       async recordGame(i) {
         inFlight++;
         expect(inFlight).toBe(1);
@@ -46,6 +47,7 @@ describe('ResultQueue', () => {
 
   it('a bug-type error (not an outage) is retried a few times, then dropped so it never blocks the queue', async () => {
     const store: ResultStore = {
+      recordTournament: async () => ({ kind: 'recorded' }),
       recordGame: vi.fn(async (i: GameResultInput) => {
         if (i.gameId === 'bad') throw new Error('constraint violated');
         return { kind: 'recorded', ratings: null } as const;
@@ -61,7 +63,8 @@ describe('ResultQueue', () => {
   });
 
   it('stays bounded: beyond maxSize the oldest result is dropped and logged', async () => {
-    const store: ResultStore = { recordGame: async () => Promise.reject(new RatingsUnavailableError()) };
+    const store: ResultStore = {
+      recordTournament: async () => ({ kind: 'recorded' }), recordGame: async () => Promise.reject(new RatingsUnavailableError()) };
     const { queue, log } = setup(store, { maxSize: 2 });
     queue.enqueue(input('a'));
     queue.enqueue(input('b'));
@@ -72,7 +75,8 @@ describe('ResultQueue', () => {
 
   it('kick() retries at once (the database came back) instead of waiting for the backoff', async () => {
     let down = true;
-    const store: ResultStore = { recordGame: async () => (down ? Promise.reject(new RatingsUnavailableError()) : { kind: 'recorded', ratings: null }) };
+    const store: ResultStore = {
+      recordTournament: async () => ({ kind: 'recorded' }), recordGame: async () => (down ? Promise.reject(new RatingsUnavailableError()) : { kind: 'recorded', ratings: null }) };
     const { queue, time } = setup(store, { baseDelayMs: 60_000 });
     queue.enqueue(input('a'));
     await time.advanceBy(0);
@@ -85,7 +89,8 @@ describe('ResultQueue', () => {
   });
 
   it('logs game ids only, never anything from the error message', async () => {
-    const store: ResultStore = { recordGame: async () => Promise.reject(Object.assign(new Error('value secret-123'), { code: 'P1001' })) };
+    const store: ResultStore = {
+      recordTournament: async () => ({ kind: 'recorded' }), recordGame: async () => Promise.reject(Object.assign(new Error('value secret-123'), { code: 'P1001' })) };
     const { queue, time, log } = setup(store);
     queue.enqueue(input('a'));
     await time.advanceBy(0);
@@ -106,7 +111,7 @@ describe('ResultQueue', () => {
         dup: { kind: 'duplicate' },
       };
       const onRecorded = vi.fn();
-      const { queue, time } = setup({ recordGame: async (i) => outcomes[i.gameId]! }, {}, onRecorded);
+      const { queue, time } = setup({ recordGame: async (i) => outcomes[i.gameId]!, recordTournament: async () => ({ kind: 'recorded' }) }, {}, onRecorded);
       for (const id of ['rated', 'unrated', 'dup']) queue.enqueue(input(id));
       await time.advanceBy(0);
       expect(onRecorded).toHaveBeenCalledTimes(1);
@@ -117,6 +122,7 @@ describe('ResultQueue', () => {
       let down = true;
       const onRecorded = vi.fn();
       const store: ResultStore = {
+      recordTournament: async () => ({ kind: 'recorded' }),
         recordGame: async () => (down ? Promise.reject(new RatingsUnavailableError()) : { kind: 'recorded', ratings: entries }),
       };
       const { queue, time } = setup(store, {}, onRecorded);
@@ -133,7 +139,8 @@ describe('ResultQueue', () => {
         if (i.gameId === 'a') throw new Error('secret-xyz');
         return new Promise<void>(() => undefined); // never settles
       });
-      const store: ResultStore = { recordGame: async () => ({ kind: 'recorded', ratings: entries }) };
+      const store: ResultStore = {
+      recordTournament: async () => ({ kind: 'recorded' }), recordGame: async () => ({ kind: 'recorded', ratings: entries }) };
       const { queue, time, log } = setup(store, {}, onRecorded);
       for (const id of ['a', 'b', 'c']) queue.enqueue(input(id));
       await time.advanceBy(0);

@@ -105,7 +105,7 @@ suite('GET /api/leaderboard and /api/profile/:id (real Postgres)', () => {
 
   it('a profile with only unrated games has no rank', async () => {
     const { body } = await get<PublicProfile>(`/api/profile/${loner}`);
-    expect(body).toMatchObject({ rank: null, games: 1, ratedGames: 0, wins: 0, duraks: 1, rating: 1000 });
+    expect(body).toMatchObject({ rank: null, games: 1, ratedGames: 0, wins: 0, duraks: 1, rating: 1000, tournamentsWon: 0 });
     expect(body.recent[0]).toMatchObject({ result: 'durak', rated: false });
   });
 

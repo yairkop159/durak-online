@@ -6,6 +6,7 @@ import type { ClientState } from '../net/store';
 import { JoinPrompt } from './JoinPrompt';
 import { LobbyScreen } from './LobbyScreen';
 import { OnlineTable } from './OnlineTable';
+import { TournamentScreen } from '../tournament/TournamentScreen';
 
 /** True when `/room/:roomId` shows the game table (the same choice RoomRoute makes). */
 export function showsTable(state: ClientState, roomId: string): boolean {
@@ -37,7 +38,10 @@ export function RoomRoute({ roomId }: { roomId: string }) {
   if (!room || room.roomId !== roomId) return <Loading />;
 
   if (room.status === 'lobby') return <LobbyScreen room={room} session={session} />;
-  if (!game || game.roomId !== roomId) return <Loading />;
+  if (!game || game.roomId !== roomId) {
+    // A series between games whose finished game is gone (expired; the room lives on): its table.
+    return room.status === 'finished' && room.tournament ? <TournamentScreen room={room} session={session} /> : <Loading />;
+  }
   return <OnlineTable />;
 }
 

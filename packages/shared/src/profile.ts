@@ -132,6 +132,8 @@ export interface PublicProfile {
   readonly wins: number;
   readonly duraks: number;
   readonly forfeits: number;
+  /** Tournaments won (co-champions each count one). */
+  readonly tournamentsWon: number;
   /** Leaderboard position (1-based), or null before the first rated game. */
   readonly rank: number | null;
   readonly recent: readonly RecentGame[];

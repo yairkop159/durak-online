@@ -40,6 +40,14 @@ describe('rules and interface guide', () => {
     for (const section of t.help.guide) expect(screen.getByRole('heading', { name: section.title })).toBeInTheDocument();
   });
 
+  it('the rules have a short tournament section (scoring, tie-break, leaving)', () => {
+    renderAt('/rules');
+    const section = t.help.rules.find((r) => r.id === 'tournament')!;
+    expect(screen.getByRole('heading', { name: section.title })).toBeInTheDocument();
+    expect(section.body.join(' ')).toMatch(/דוראק/);
+    for (const line of section.body) expect(screen.getByText(line)).toBeInTheDocument();
+  });
+
   it('in-game "?" opens the same content in a dialog without leaving the room', async () => {
     const user = userEvent.setup();
     const { transport } = renderTable(makeView({ hand: '6S' }));

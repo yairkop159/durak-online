@@ -1,5 +1,6 @@
 import type { LeaderboardResponse, MyProfile, ProfileCredentials, PublicProfile, RatingEntry } from '@durak/shared';
 import type { GameResultInput } from './gameResult.js';
+import type { TournamentResultInput } from './tournamentResult.js';
 
 /** Postgres is not configured or not reachable: profiles and ratings are off (games still run). */
 export class RatingsUnavailableError extends Error {
@@ -44,6 +45,11 @@ export type RecordOutcome =
  */
 export interface ResultStore {
   recordGame(input: GameResultInput): Promise<RecordOutcome>;
+  /**
+   * Writes a finished or early-ended tournament, its roster and the champions' `tournaments_won`
+   * in ONE transaction, idempotent by tournamentId (a duplicate writes nothing).
+   */
+  recordTournament(input: TournamentResultInput): Promise<{ readonly kind: 'recorded' | 'duplicate' }>;
 }
 
 /** Read side: public profiles (rank + recent games) and the top-20 leaderboard. */

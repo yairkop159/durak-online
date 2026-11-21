@@ -2,6 +2,7 @@ import type { RatingEntry } from '@durak/shared';
 import type { Clock, Scheduler, TimerHandle } from '../services/scheduling.js';
 import { isRated, type GameResultInput } from './gameResult.js';
 import { errorName, isUnavailable, type ResultStore } from './ports.js';
+import type { TournamentResultInput } from './tournamentResult.js';
 
 export interface ResultQueueLogger {
   info(obj: object, msg: string): void;
@@ -28,11 +29,21 @@ export const DEFAULT_RESULT_QUEUE_SETTINGS: ResultQueueSettings = {
   maxErrorAttempts: 3,
 };
 
+/** One pending write: a finished game, or a tournament that is over. */
+type Job =
+  | { readonly kind: 'game'; readonly input: GameResultInput }
+  | { readonly kind: 'tournament'; readonly input: TournamentResultInput };
+
 interface Pending {
-  readonly input: GameResultInput;
+  readonly job: Job;
   readonly queuedAt: number;
   attempts: number;
 }
+
+const jobKey = (job: Job): string => (job.kind === 'game' ? `game:${job.input.gameId}` : `tournament:${job.input.tournamentId}`);
+/** Ids for logs (never anything else from the job). */
+const jobIds = (job: Job): Record<string, string> =>
+  job.kind === 'game' ? { gameId: job.input.gameId } : { tournamentId: job.input.tournamentId };
 
 /**
  * Writes finished games to the ResultStore one at a time, off the game path: `enqueue` never
@@ -69,11 +80,21 @@ export class ResultQueue {
   }
 
   enqueue(input: GameResultInput): void {
-    if (this.disposed || this.pending.some((p) => p.input.gameId === input.gameId)) return;
-    this.pending.push({ input, queuedAt: this.deps.clock.now(), attempts: 0 });
+    this.push({ kind: 'game', input });
+  }
+
+  /** A tournament that is over; written after every game queued before it (FIFO). */
+  enqueueTournament(input: TournamentResultInput): void {
+    this.push({ kind: 'tournament', input });
+  }
+
+  private push(job: Job): void {
+    const key = jobKey(job);
+    if (this.disposed || this.pending.some((p) => jobKey(p.job) === key)) return;
+    this.pending.push({ job, queuedAt: this.deps.clock.now(), attempts: 0 });
     while (this.pending.length > this.settings.maxSize) {
       const dropped = this.pending.shift()!;
-      this.deps.log.error({ gameId: dropped.input.gameId }, 'game result dropped: result queue full');
+      this.deps.log.error(jobIds(dropped.job), 'game result dropped: result queue full');
     }
     this.kick();
   }
@@ -116,24 +137,31 @@ export class ResultQueue {
     const { store, clock, log } = this.deps;
     while (this.pending.length > 0 && !this.disposed) {
       const item = this.pending[0]!;
-      const { gameId } = item.input;
+      const { job } = item;
+      const ids = jobIds(job);
       try {
-        const outcome = await store.recordGame(item.input);
-        this.pending.shift();
-        log.info({ gameId, outcome: outcome.kind, rated: isRated(item.input), attempts: item.attempts + 1 }, 'game result stored');
-        if (outcome.kind === 'recorded' && outcome.ratings !== null) this.announce(item.input, outcome.ratings);
+        if (job.kind === 'game') {
+          const outcome = await store.recordGame(job.input);
+          this.pending.shift();
+          log.info({ ...ids, outcome: outcome.kind, rated: isRated(job.input), attempts: item.attempts + 1 }, 'game result stored');
+          if (outcome.kind === 'recorded' && outcome.ratings !== null) this.announce(job.input, outcome.ratings);
+        } else {
+          const outcome = await store.recordTournament(job.input);
+          this.pending.shift();
+          log.info({ ...ids, outcome: outcome.kind, attempts: item.attempts + 1 }, 'tournament result stored');
+        }
       } catch (error) {
         item.attempts += 1;
         const unavailable = isUnavailable(error);
         const tooOld = clock.now() - item.queuedAt >= this.settings.maxAgeMs;
         if (tooOld || (!unavailable && item.attempts >= this.settings.maxErrorAttempts)) {
           this.pending.shift();
-          log.error({ gameId, attempts: item.attempts, err: errorName(error) }, 'game result dropped');
+          log.error({ ...ids, attempts: item.attempts, err: errorName(error) }, 'game result dropped');
           continue;
         }
         const delay = Math.min(this.settings.maxDelayMs, this.settings.baseDelayMs * 2 ** (item.attempts - 1));
         log.warn(
-          { gameId, attempts: item.attempts, retryInMs: delay, pending: this.pending.length, err: errorName(error) },
+          { ...ids, attempts: item.attempts, retryInMs: delay, pending: this.pending.length, err: errorName(error) },
           unavailable ? 'game result not stored yet: postgres unavailable' : 'game result not stored yet',
         );
         this.timer = this.deps.scheduler.schedule(clock.now() + delay, async () => {

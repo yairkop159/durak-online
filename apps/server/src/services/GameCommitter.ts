@@ -12,6 +12,8 @@ import {
 } from '@durak/game-engine';
 import type { GameEndReason, GameStats, PlayerId } from '@durak/shared';
 import { advanceStats, initialStats } from './gameStats.js';
+import { advanceFinishGroups } from './gameEvents.js';
+import { advanceTournament } from './tournament.js';
 import type { Room, StoredGame } from '../domain/types.js';
 import type { Repositories } from '../repositories/interfaces.js';
 import type { GameChangeInfo, GameChangeListener, RoomNotifier } from './ports.js';
@@ -23,6 +25,8 @@ export interface GameCommitterDeps {
   readonly timers: TurnTimerService;
   /** Late-bound (the BotDriver is built after the services it uses). Called in order. */
   readonly listeners: () => readonly GameChangeListener[];
+  /** Server clock (tournament end times). Default: Date.now. */
+  readonly now?: () => number;
 }
 
 export interface CommitInput {
@@ -80,31 +84,38 @@ export class GameCommitter {
     let endReason = input.endReason;
     // Stats from public events of this step (a move or one timeout step: at most one bout resolution).
     let stats = advanceStats(prev.stats, prev.state, state);
+    let finishGroups = advanceFinishGroups(prev.finishGroups, prev.state, state);
 
-    const forwarded = fastForwardIfBotsOnly(input.room, state, stats);
+    const forwarded = fastForwardIfBotsOnly(input.room, state, stats, finishGroups);
     if (forwarded) {
       state = forwarded.state;
       endReason = forwarded.endReason;
       stats = forwarded.stats;
+      finishGroups = forwarded.finishGroups;
     }
 
     const finished = state.phase.kind === 'finished';
     // A game that ends on its own closes any open restart vote (nothing left to restart).
-    const room: Room = finished ? { ...input.room, status: 'finished', restartVote: null } : input.room;
+    const ended: Room = finished ? { ...input.room, status: 'finished', restartVote: null } : input.room;
     const closedVote = finished ? input.room.restartVote : null;
-    const roomChanged = input.roomChanged || room.status !== input.room.status || finished;
     const game: StoredGame = {
       ...prev,
       version: prev.version + 1,
       state,
       timeoutStreak: input.timeoutStreak ?? prev.timeoutStreak,
       endReason: endReason !== undefined ? endReason : finished ? 'normal' : null,
-      turnDeadline: timers.deadlineFor(room, state),
+      turnDeadline: timers.deadlineFor(ended, state),
       knowledge: advanceKnowledge(prev.state, state, prev.knowledge),
       botAssisted: input.botAssisted ?? prev.botAssisted,
       forfeits: input.forfeits ?? prev.forfeits,
       stats,
+      finishGroups,
     };
+    // The tournament advances in this same write: departures (room changes), then the score of
+    // the game that just finished. Idempotent by gameId.
+    const room = advanceTournament(ended, finished ? game : null, (this.deps.now ?? Date.now)());
+    const roomChanged = input.roomChanged || room !== input.room;
+    const tournamentClosed = input.room.tournament?.status === 'running' && room.tournament?.status !== 'running';
 
     if (roomChanged) await repos.atomic.saveRoomAndGame(room, game);
     else await repos.games.save(game);
@@ -120,12 +131,17 @@ export class GameCommitter {
     } else {
       timers.armTurn(game);
     }
-    this.announce(room, game, prev.state, { fastForwarded: forwarded !== null });
+    this.announce(room, game, prev.state, { fastForwarded: forwarded !== null, tournamentClosed });
     return { room, game };
   }
 
   /** Tells the listener about a change that did not go through `commit` (resume, startup). */
-  announce(room: Room, game: StoredGame, prev: GameState | null, info: GameChangeInfo = { fastForwarded: false }): void {
+  announce(
+    room: Room,
+    game: StoredGame,
+    prev: GameState | null,
+    info: GameChangeInfo = { fastForwarded: false, tournamentClosed: false },
+  ): void {
     for (const listener of this.deps.listeners()) listener.onGameChanged(room, game, prev, info);
   }
 }
@@ -158,7 +174,13 @@ export function fastForwardIfBotsOnly(
   room: Room,
   state: GameState,
   stats: GameStats = {},
-): { state: GameState; endReason: GameEndReason; stats: GameStats } | null {
+  finishGroups: readonly (readonly PlayerId[])[] = [],
+): {
+  state: GameState;
+  endReason: GameEndReason;
+  stats: GameStats;
+  finishGroups: (readonly PlayerId[])[];
+} | null {
   if (state.phase.kind === 'finished') return null;
   const isBot = (id: string) => room.members.find((m) => m.playerId === id)?.isBot === true;
   const stillIn = state.players.filter((p) => !state.finishOrder.includes(p.id));
@@ -166,8 +188,9 @@ export function fastForwardIfBotsOnly(
 
   let current = state;
   let currentStats = stats;
+  let groups = [...finishGroups];
   for (let i = 0; i < FAST_FORWARD_MAX_MOVES; i++) {
-    if (current.phase.kind === 'finished') return { state: current, endReason: 'normal', stats: currentStats };
+    if (current.phase.kind === 'finished') return { state: current, endReason: 'normal', stats: currentStats, finishGroups: groups };
     const actor = canonicalActor(current);
     if (actor < 0) break;
     const id = current.players[actor]!.id;
@@ -177,9 +200,16 @@ export function fastForwardIfBotsOnly(
     const next = applyMove(current, { ...move, playerId: id });
     if (!next.ok) break;
     currentStats = advanceStats(currentStats, current, next.value);
+    groups = advanceFinishGroups(groups, current, next.value);
     current = next.value;
   }
-  if (current.phase.kind === 'finished') return { state: current, endReason: 'normal', stats: currentStats };
+  if (current.phase.kind === 'finished') return { state: current, endReason: 'normal', stats: currentStats, finishGroups: groups };
   const abandoned = abandon(current);
-  return abandoned.ok ? { state: abandoned.value, endReason: 'abandoned', stats: currentStats } : null;
+  if (!abandoned.ok) return null;
+  return {
+    state: abandoned.value,
+    endReason: 'abandoned',
+    stats: currentStats,
+    finishGroups: advanceFinishGroups(groups, current, abandoned.value),
+  };
 }

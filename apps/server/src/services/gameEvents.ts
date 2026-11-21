@@ -78,3 +78,22 @@ export function gameEvents(prev: GameState, next: GameState): GameEvent[] {
   if (next.phase.kind === 'finished') events.push({ type: 'finished', durak: next.phase.durak });
   return events;
 }
+
+/**
+ * Who went out in one committed step (one group: they went out together), the durak excluded.
+ * Empty when nobody went out. A resign or abandon appends everyone still in at once: one group.
+ */
+export function finishGroupOf(prev: GameState, next: GameState): PlayerId[] {
+  const durak = next.phase.kind === 'finished' ? next.phase.durak : null;
+  return next.finishOrder.filter((id) => !prev.finishOrder.includes(id) && id !== durak);
+}
+
+/** `groups` after one committed step from `prev` to `next`. */
+export function advanceFinishGroups(
+  groups: readonly (readonly PlayerId[])[],
+  prev: GameState,
+  next: GameState,
+): (readonly PlayerId[])[] {
+  const group = finishGroupOf(prev, next);
+  return group.length > 0 ? [...groups, group] : [...groups];
+}

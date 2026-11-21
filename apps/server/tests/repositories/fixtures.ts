@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { createGame, initKnowledge, sanitizeStateForPlayer } from '@durak/game-engine';
-import type { Room, Session, StoredGame } from '../../src/domain/types.js';
+import type { Room, Session, StoredGame, Tournament } from '../../src/domain/types.js';
 
 export const uid = () => randomBytes(5).toString('hex');
 
@@ -11,15 +11,36 @@ export function makeRoom(id = uid(), status: Room['status'] = 'lobby'): Room {
     maxPlayers: 4,
     config: { mode: 'perevodnoy' },
     members: [
-      { playerId: 'p_host', nickname: 'Host', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
-      { playerId: 'p_guest', nickname: 'Guest', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
-      { playerId: 'p_bot', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
+      { playerId: 'p_host', nickname: 'Host', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null, disconnectedAt: null },
+      { playerId: 'p_guest', nickname: 'Guest', connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null, disconnectedAt: null },
+      { playerId: 'p_bot', nickname: 'Bot 1', connected: true, isBot: true, botDifficulty: 'hard', afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null, disconnectedAt: null },
     ],
     spectators: [{ spectatorId: 's_1', nickname: 'Watcher' }],
     status,
     createdAt: 1_700_000_000_000,
     restartVote: null,
     restartCooldowns: {},
+    tournamentSetup: null,
+    tournament: null,
+  };
+}
+
+/** A finished room between games of a series (or after it, for another status). */
+export function makeTournamentRoom(status: Tournament['status'], id = uid()): Room {
+  const room = makeRoom(id, 'finished');
+  return {
+    ...room,
+    tournamentSetup: { games: 3 },
+    tournament: {
+      id: 't_fixture',
+      status,
+      teams: false,
+      gamesPlanned: 3,
+      startedAt: 1_700_000_000_000,
+      endedAt: status === 'running' ? null : 1_700_000_900_000,
+      roster: room.members.map((m) => ({ playerId: m.playerId, nickname: m.nickname, isBot: m.isBot, left: false, profileId: m.profileId })),
+      results: [{ gameId: 'g_1', points: { p_host: 2, p_guest: 1, p_bot: 0 }, duraks: ['p_bot'], firsts: ['p_host'] }],
+    },
   };
 }
 
@@ -48,6 +69,7 @@ export function makeGame(roomId: string, finished = false): StoredGame {
     },
     profiles: { p_host: 'profHostAAAAAAAAAAAAAA' },
     ratings: finished ? [{ playerId: 'p_host', before: 1000, after: 1016, delta: 16 }, { playerId: 'p_guest', before: 1000, after: 984, delta: -16 }] : null,
+    finishGroups: finished ? [['p_host']] : [],
   };
 }
 

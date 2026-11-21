@@ -2,6 +2,7 @@ import { ratingEntry } from '@durak/shared';
 import type { PrismaClient } from '../db/database.js';
 import { isRated, ratedSeats, ratingsAfter, seatResult, type GameResultInput } from './gameResult.js';
 import { RatingsUnavailableError, type RecordOutcome, type ResultStore } from './ports.js';
+import type { TournamentResultInput } from './tournamentResult.js';
 
 type Tx = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
 
@@ -31,6 +32,68 @@ export class PrismaResultStore implements ResultStore {
     const db = this.client();
     if (!db) throw new RatingsUnavailableError();
     return db.$transaction(async (tx) => this.write(tx, input), { maxWait: 5_000, timeout: 15_000 });
+  }
+
+  /**
+   * One transaction, like a game: lock the roster's profiles (ORDER BY id FOR UPDATE), insert the
+   * tournament ON CONFLICT DO NOTHING (0 rows → duplicate, nothing else written), insert every
+   * seat, then +1 `tournaments_won` for each credited seat. A deleted profile becomes unprofiled.
+   */
+  async recordTournament(input: TournamentResultInput): Promise<{ readonly kind: 'recorded' | 'duplicate' }> {
+    const db = this.client();
+    if (!db) throw new RatingsUnavailableError();
+    return db.$transaction(async (tx) => this.writeTournament(tx, input), { maxWait: 5_000, timeout: 15_000 });
+  }
+
+  private async writeTournament(tx: Tx, input: TournamentResultInput): Promise<{ readonly kind: 'recorded' | 'duplicate' }> {
+    const wanted = [...new Set(input.seats.flatMap((s) => (s.profileId === null ? [] : [s.profileId])))].sort();
+    const rows =
+      wanted.length > 0
+        ? await tx.$queryRaw<{ id: string }[]>`SELECT id FROM profiles WHERE id = ANY(${wanted}) ORDER BY id FOR UPDATE`
+        : [];
+    const existing = new Set(rows.map((r) => r.id));
+    const inserted = await tx.tournament.createMany({
+      data: [
+        {
+          id: input.tournamentId,
+          roomId: input.roomId,
+          mode: input.mode,
+          teams: input.teams,
+          gamesPlanned: input.gamesPlanned,
+          gamesPlayed: input.gamesPlayed,
+          status: input.status,
+          startedAt: new Date(input.startedAt),
+          endedAt: new Date(input.endedAt),
+        },
+      ],
+      skipDuplicates: true,
+    });
+    if (inserted.count === 0) return { kind: 'duplicate' };
+
+    const profileOf = (id: string | null) => (id !== null && existing.has(id) ? id : null);
+    await tx.tournamentPlayer.createMany({
+      data: input.seats.map((s) => ({
+        tournamentId: input.tournamentId,
+        seat: s.seat,
+        profileId: profileOf(s.profileId),
+        nickname: s.nickname,
+        isBot: s.isBot,
+        left: s.left,
+        points: s.points,
+        duraks: s.duraks,
+        rank: s.rank,
+        champion: s.champion,
+      })),
+    });
+    const credited = [...new Set(input.seats.filter((s) => s.credited).flatMap((s) => {
+      const id = profileOf(s.profileId);
+      return id === null ? [] : [id];
+    }))];
+    if (credited.length > 0) {
+      await tx.profile.updateMany({ where: { id: { in: credited } }, data: { tournamentsWon: { increment: 1 } } });
+    }
+    if (this.options.beforeCommit) await this.options.beforeCommit(tx);
+    return { kind: 'recorded' };
   }
 
   private async write(tx: Tx, input: GameResultInput): Promise<RecordOutcome> {

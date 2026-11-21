@@ -590,6 +590,117 @@ describe.skipIf(!executablePath)('phones (mobile emulation, touch)', () => {
         await shot(page, `gameover-reload-${size}`);
       });
     }, TEST_TIMEOUT_MS);
+    it(`tournament lobby ${size}: the series switch and the 3/5/7 picker >= 44 px and tappable; a change goes out`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base, 'tournament-lobby');
+        await page.getByTestId('lobby-tournament').waitFor();
+        await page.waitForTimeout(300);
+        const lobby = await audit(page, false);
+        expect(lobby.problems).toEqual([]);
+        expect(await page.getByTestId('tournament-switch').getAttribute('aria-checked')).toBe('true');
+        expect(await page.getByTestId('tournament-games').getByRole('radio').count()).toBe(3);
+        const seven = page.getByRole('radio', { name: t.tournament.gamesOption(7) });
+        await seven.scrollIntoViewIfNeeded();
+        const box = (await seven.boundingBox())!;
+        await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+        await page.waitForFunction(() =>
+          (window as unknown as { __fixture: { emitted: { event: string; payload: { games?: number } }[] } }).__fixture.emitted.some(
+            (e) => e.event === 'room:setTournament' && e.payload.games === 7,
+          ),
+        );
+        await shot(page, `tournament-lobby-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`tournament table ${size}: the "game 3/5" pill fits the top bar; the crowded table still fits; controls >= 44 px`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base, 'tournament');
+        await page.getByRole('button', { name: t.table.take }).waitFor();
+        await page.waitForTimeout(700);
+        const table = await audit(page, true, HAND_CARD);
+        expect(table.problems).toEqual([]);
+        expect(await coveredControls(page, HAND_CARD)).toEqual([]);
+        const pill = (await page.getByTestId('tournament-pill').boundingBox())!;
+        expect(pill.x).toBeGreaterThanOrEqual(0);
+        expect(pill.x + pill.width).toBeLessThanOrEqual(vp.width);
+        expect(pill.y).toBeGreaterThanOrEqual(0);
+        expect(await page.getByTestId('tournament-pill').getAttribute('aria-label')).toBe(t.tournament.gamePill(3, 5));
+        await shot(page, `tournament-table-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`tournament standings ${size}: the table, "next game", "end" and "leave" reachable and >= 44 px; nothing scrolls the page`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base, 'tournament-standings');
+        await page.getByTestId('tournament-standings').waitFor();
+        await page.waitForTimeout(800); // the panel's spring
+        const over = await audit(page, false);
+        expect(over.problems).toEqual([]);
+        expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight)).toBe(true);
+        // The main action is pinned: on screen without scrolling the panel.
+        const next = (await page.getByTestId('tournament-next').boundingBox())!;
+        expect(next.y).toBeGreaterThanOrEqual(0);
+        expect(next.y + next.height).toBeLessThanOrEqual(vp.height);
+        // Every standings row is readable: scrolled into view, inside the screen, not under the actions.
+        expect(await ratingVisibility(page, 'tournament-progress', 'standing-bob', 'standing-fay')).toEqual([]);
+        expect(await page.getByTestId('standing-dana').textContent()).toContain(t.tournament.left);
+        // Names stay readable: shown whole, or at least MIN_NAME_PX of a long one. Both widths are
+        // the exact layout widths (a Range over the text vs the box): scrollWidth is rounded to whole
+        // pixels and made a fully shown 23.5 px name look truncated under other fonts (CI, Linux).
+        const MIN_NAME_PX = 40;
+        for (const [id, name] of [['me', 'ME'], ['bob', 'BOB'], ['dana', 'Dana']] as const) {
+          const shown = await page.getByTestId(`standing-${id}`).locator('td:nth-child(2) .truncate').evaluate((el) => {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            return { text: el.textContent ?? '', box: el.getBoundingClientRect().width, natural: range.getBoundingClientRect().width };
+          });
+          expect(shown.text.startsWith(name.slice(0, 2)), id).toBe(true);
+          expect(shown.box, id).toBeGreaterThanOrEqual(Math.min(shown.natural, MIN_NAME_PX));
+        }
+        await shot(page, `tournament-standings-${size}`);
+
+        await tapCenter(page, '[data-testid="tournament-next"]');
+        await page.waitForFunction(() =>
+          (window as unknown as { __fixture: { emitted: { event: string }[] } }).__fixture.emitted.some((e) => e.event === 'tournament:next'),
+        );
+        await tapCenter(page, '[data-testid="tournament-actions"] [data-testid="leave-button"]');
+        await page.getByTestId('confirm-body').waitFor();
+        expect(await page.getByTestId('confirm-body').textContent()).toContain(t.tournament.leaveBot);
+        const dialog = await audit(page, false);
+        expect(dialog.problems).toEqual([]);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`tournament champion ${size}: the champion line and the final table on screen; "back to lobby" reachable`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base, 'tournament-champion');
+        await page.getByTestId('tournament-result').waitFor();
+        await page.waitForTimeout(800);
+        expect(await page.getByTestId('tournament-result').textContent()).toBe(t.tournament.champion('BOB'));
+        expect(await page.getByTestId('champion-reveal').count()).toBe(0); // a reload: no moment
+        const over = await audit(page, false);
+        expect(over.problems).toEqual([]);
+        const back = (await page.getByRole('button', { name: t.gameOver.backToLobby }).boundingBox())!;
+        expect(back.y).toBeGreaterThanOrEqual(0);
+        expect(back.y + back.height).toBeLessThanOrEqual(vp.height);
+        expect(await ratingVisibility(page, 'tournament-result', 'standing-bob')).toEqual([]);
+        await shot(page, `tournament-champion-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`tournament 2v2 standings ${size}: team rows with both partners; controls >= 44 px`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base, 'tournament-teams');
+        await page.getByTestId('tournament-standings').waitFor();
+        await page.waitForTimeout(800);
+        const over = await audit(page, false);
+        expect(over.problems).toEqual([]);
+        expect(await page.getByTestId('standing-team1').textContent()).toContain(t.teams.names[1]);
+        expect(await page.getByTestId('standing-team0').textContent()).toContain('CARL');
+        expect(await ratingVisibility(page, 'standing-team0', 'standing-team1')).toEqual([]);
+        await shot(page, `tournament-teams-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
   }
 
   for (const vp of LANDSCAPE) {

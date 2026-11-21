@@ -126,12 +126,19 @@ suite('Postgres migrations (real database)', () => {
   }, 60_000);
   afterAll(async () => tdb?.drop());
 
-  it('creates the three tables in the selected schema', async () => {
+  it('creates every table in the selected schema', async () => {
     const rows = await tdb.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables WHERE table_schema = $1 ORDER BY table_name`,
       [tdb.schema],
     );
-    expect(rows.map((r) => r.table_name)).toEqual(['_prisma_migrations', 'game_players', 'games', 'profiles']);
+    expect(rows.map((r) => r.table_name)).toEqual([
+      '_prisma_migrations',
+      'game_players',
+      'games',
+      'profiles',
+      'tournament_players',
+      'tournaments',
+    ]);
   });
 
   it('migrate deploy is idempotent', async () => {

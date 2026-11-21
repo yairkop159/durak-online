@@ -1,7 +1,7 @@
 import { getLegalMovesForView } from '@durak/game-engine';
 import { GAME_ERROR_CODES, type Card, type ClientMove } from '@durak/shared';
 import { LayoutGroup, useReducedMotion } from 'motion/react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnchorProvider, AnchorRegistry } from '../../anim/anchors';
 import { FlightLayer } from '../../anim/FlightLayer';
 import { planFlights, useBoardAnimation, type Flight } from '../../anim/useBoardAnimation';
@@ -48,6 +48,10 @@ import { gameOverCue } from '../../audio/soundPlan';
 import { DurakReveal } from '../../moments/DurakReveal';
 import { teamName, teamOf } from '../../game/teams';
 import { MomentBanner } from '../../moments/MomentBanner';
+import { championLine, TournamentActions, TournamentPill } from '../../tournament/TournamentPanel';
+import { planChampionReveal } from '../../anim/championReveal';
+import { ChampionReveal } from '../../moments/ChampionReveal';
+import { tournamentLeave } from '../../tournament/tournament';
 import { useMomentQueue } from '../../moments/useMomentQueue';
 
 const GAME_ERRORS: ReadonlySet<string> = new Set(GAME_ERROR_CODES);
@@ -143,6 +147,13 @@ export function TableScreen({ source }: { source: TableSource }) {
     [game?.gameId, gameFinished, gameOver, reduced],
   );
   const [revealDoneFor, setRevealDoneFor] = useState<string | null>(null);
+  // The tournament's champion moment follows the reveal of the series' last game (one we watched end).
+  const seriesOver = online && room?.tournament?.status === 'finished' ? room.tournament : null;
+  const championPlan = useMemo(
+    () => (game && gameFinished && sawRunning.current === game.gameId ? planChampionReveal(seriesOver, { reduced, speed }) : null),
+    [game?.gameId, gameFinished, seriesOver?.id, seriesOver?.status, reduced],
+  );
+  const [championDoneFor, setChampionDoneFor] = useState<string | null>(null);
 
   // The screen stays on while the game runs (released when it ends, re-taken after the page was hidden).
   // (A local game, the tutorial, has no room: it runs while its game does.)
@@ -182,6 +193,7 @@ export function TableScreen({ source }: { source: TableSource }) {
   const effects = moment ? seatEffects(moment.moment) : null;
   const effectOf = (id: string): SeatEffectProp => (moment && effects?.has(id) ? { kind: effects.get(id)!, id: moment.id } : null);
   const revealing = finished && overlayReady && revealPlan !== null && revealDoneFor !== game.gameId;
+  const championing = finished && overlayReady && !revealing && championPlan !== null && championDoneFor !== game.gameId;
 
   // First-game tips: shown for the current situation until dismissed or acted on once.
   // A short landscape screen has no room for them (they show in portrait and on bigger screens).
@@ -274,8 +286,14 @@ export function TableScreen({ source }: { source: TableSource }) {
     />
   );
 
+  // A tournament: the pill while a series game runs, the series' consequence in the leave confirm.
+  const series = online ? (room?.tournament ?? null) : null;
+  const seriesLeave = tournamentLeave(series ? room : null, viewerId);
+  const leaveExtra = seriesLeave === 'bot' ? t.tournament.leaveBot : seriesLeave === 'ends' ? t.tournament.leaveEnds : null;
+  const leaveButton = <LeaveButton outcome={source.leave.outcome} onLeave={source.leave.run} extra={leaveExtra} />;
   const tools = (
     <>
+      {series && series.status === 'running' && room?.status === 'playing' && <TournamentPill tournament={series} />}
       {online && canProposeRestart(view, room) && <RestartButton disabled={!!room?.restartVote || reconnecting} />}
       <HelpButton />
       <SettingsButton />
@@ -303,13 +321,42 @@ export function TableScreen({ source }: { source: TableSource }) {
         />
       )}
 
-      {finished && overlayReady && !revealing && gameOver?.endReason !== 'restarted' && (
+      {championing && championPlan && seriesOver && (
+        <ChampionReveal
+          plan={championPlan}
+          caption={championLine(seriesOver, nameOf, viewerId)}
+          onDone={() => setChampionDoneFor(game.gameId)}
+        />
+      )}
+
+      {finished && overlayReady && !revealing && !championing && gameOver?.endReason !== 'restarted' && (
         <GameOverOverlay
           view={view}
           gameOver={gameOver}
           nameOf={nameOf}
           canRematch={!spectator && !!online}
           {...(online ? { onRematch: online.rematch } : {})}
+          {...(series && room
+            ? {
+                tournament: {
+                  view: series,
+                  actions:
+                    series.status === 'running' && online ? (extra: ReactNode) => (
+                      <TournamentActions
+                        extra={extra}
+                        room={room}
+                        viewerId={viewerId}
+                        roomReceivedAt={online.roomReceivedAt}
+                        now={source.now}
+                        nameOf={nameOf}
+                        onNext={online.tournamentNext}
+                        onEnd={online.tournamentEnd}
+                        {...(!spectator ? { leave: leaveButton } : {})}
+                      />
+                    ) : null,
+                },
+              }
+            : {})}
           {...(guide?.gameOverAction ? { action: guide.gameOverAction } : {})}
           reduced={reduced}
           reactions={reactions}
@@ -320,7 +367,7 @@ export function TableScreen({ source }: { source: TableSource }) {
     </>
   );
   // While the durak reveal runs, my side of the table slides away.
-  const hideOnReveal = `transition duration-500 ${revealing ? 'translate-y-24 opacity-0' : ''}`;
+  const hideOnReveal = `transition duration-500 ${revealing || championing ? 'translate-y-24 opacity-0' : ''}`;
 
   if (short) {
     // Short landscape (a phone on its side): height is scarce, width is not. Three columns, each the
@@ -338,7 +385,7 @@ export function TableScreen({ source }: { source: TableSource }) {
           >
             <aside className="flex w-28 shrink-0 flex-col gap-1.5" data-testid="seat-column">
               <div className="flex">
-                <LeaveButton outcome={source.leave.outcome} onLeave={source.leave.run} />
+                {leaveButton}
               </div>
               <ul className="flex min-h-0 flex-1 flex-col justify-evenly gap-1" aria-label="opponents">
                 {opponentsInOrder(view).map((p) => (
@@ -406,7 +453,7 @@ export function TableScreen({ source }: { source: TableSource }) {
           className="relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-2 pt-2 pr-[max(var(--sai-right),0.5rem)] pl-[max(var(--sai-left),0.5rem)] sm:gap-3 sm:pt-3 sm:pr-[max(var(--sai-right),1rem)] sm:pl-[max(var(--sai-left),1rem)] [@media(max-height:820px)]:gap-2"
           data-layout={mode}
         >
-          <TopBar leave={<LeaveButton outcome={source.leave.outcome} onLeave={source.leave.run} />} extra={tools} />
+          <TopBar leave={leaveButton} extra={tools} />
           {online && <RestartVotePanel viewerId={view.viewerId} />}
           {opponents}
 

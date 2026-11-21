@@ -142,6 +142,8 @@ export function roomState(status: RoomStatePayload['status'], ids: string[] = ['
     spectatorCount: 0,
     status,
     restartVote: null,
+    tournamentSetup: null,
+    tournament: null,
   };
 }
 

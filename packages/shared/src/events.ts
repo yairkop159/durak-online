@@ -7,6 +7,7 @@ import { ReactionIdSchema, type ReactionId } from './reactions.js';
 import type { GameRatingsPayload } from './ratings.js';
 import type { GameStats } from './stats.js';
 import type { PlayerView } from './view.js';
+import { TournamentGameCountSchema, type TournamentSetup, type TournamentView } from './tournament.js';
 
 /** Socket.io event names, client -> server. */
 export const ClientEvents = {
@@ -24,6 +25,9 @@ export const ClientEvents = {
   React: 'room:react',
   SetTeams: 'room:setTeams',
   SwapSeats: 'room:swapSeats',
+  SetTournament: 'room:setTournament',
+  TournamentNext: 'tournament:next',
+  TournamentEnd: 'tournament:end',
 } as const;
 export type ClientEventName = (typeof ClientEvents)[keyof typeof ClientEvents];
 
@@ -100,6 +104,17 @@ export const SwapSeatsPayloadSchema = z
   .strict()
   .refine((p) => p.a !== p.b, { message: 'Cannot swap a seat with itself', path: ['b'] });
 
+/** Host only, lobby only: play a series of N games (null = a single game). */
+export const SetTournamentPayloadSchema = z
+  .object({ roomId: RoomIdSchema, games: TournamentGameCountSchema.nullable() })
+  .strict();
+
+/** Between games of a running series: deal the next game (the host, or anyone once the host is away). */
+export const TournamentNextPayloadSchema = z.object({ roomId: RoomIdSchema }).strict();
+
+/** Between games of a running series: end it now (ended early, no champion). Same rule as next. */
+export const TournamentEndPayloadSchema = z.object({ roomId: RoomIdSchema }).strict();
+
 /** A seated human proposes to end the running game and deal a new one (same seats and config). */
 export const RestartProposePayloadSchema = z.object({ roomId: RoomIdSchema }).strict();
 
@@ -147,6 +162,9 @@ export const ClientEventSchemas = {
   [ClientEvents.React]: ReactPayloadSchema,
   [ClientEvents.SetTeams]: SetTeamsPayloadSchema,
   [ClientEvents.SwapSeats]: SwapSeatsPayloadSchema,
+  [ClientEvents.SetTournament]: SetTournamentPayloadSchema,
+  [ClientEvents.TournamentNext]: TournamentNextPayloadSchema,
+  [ClientEvents.TournamentEnd]: TournamentEndPayloadSchema,
 } as const satisfies Record<ClientEventName, z.ZodTypeAny>;
 
 export type CreateRoomPayload = z.infer<typeof CreateRoomPayloadSchema>;
@@ -163,6 +181,9 @@ export type RestartRespondPayload = z.infer<typeof RestartRespondPayloadSchema>;
 export type ReactPayload = z.infer<typeof ReactPayloadSchema>;
 export type SetTeamsPayload = z.infer<typeof SetTeamsPayloadSchema>;
 export type SwapSeatsPayload = z.infer<typeof SwapSeatsPayloadSchema>;
+export type SetTournamentPayload = z.infer<typeof SetTournamentPayloadSchema>;
+export type TournamentNextPayload = z.infer<typeof TournamentNextPayloadSchema>;
+export type TournamentEndPayload = z.infer<typeof TournamentEndPayloadSchema>;
 
 export interface RoomMember {
   readonly playerId: string;
@@ -207,6 +228,10 @@ export interface RoomStatePayload {
   readonly status: 'lobby' | 'playing' | 'finished';
   /** The open restart vote, or null. */
   readonly restartVote: RestartVoteState | null;
+  /** The lobby's tournament setting (null = a single game). */
+  readonly tournamentSetup: TournamentSetup | null;
+  /** The current or last series of this room (kept until the next lobby), or null. */
+  readonly tournament: TournamentView | null;
 }
 
 export const RESTART_VOTE_OUTCOMES = ['passed', 'declined', 'expired', 'cancelled'] as const;
@@ -306,6 +331,12 @@ export const SERVER_ERROR_CODES = [
   'NO_ACTIVE_VOTE',
   /** Team mode needs a 4-seat room, and the game starts only with all four seats filled. */
   'TEAMS_NEED_FOUR',
+  /** A tournament needs at least two humans. */
+  'TOURNAMENT_NEEDS_HUMANS',
+  /** Not allowed while a tournament runs (back to lobby, seat swaps). */
+  'TOURNAMENT_IN_PROGRESS',
+  /** No running tournament between games (tournament:next / tournament:end). */
+  'NO_TOURNAMENT',
 ] as const;
 export type ServerErrorCode = (typeof SERVER_ERROR_CODES)[number];
 
@@ -330,6 +361,9 @@ export interface ClientToServerEvents {
   'room:react': (payload: ReactPayload) => void;
   'room:setTeams': (payload: SetTeamsPayload) => void;
   'room:swapSeats': (payload: SwapSeatsPayload) => void;
+  'room:setTournament': (payload: SetTournamentPayload) => void;
+  'tournament:next': (payload: TournamentNextPayload) => void;
+  'tournament:end': (payload: TournamentEndPayload) => void;
 }
 
 export interface ServerToClientEvents {

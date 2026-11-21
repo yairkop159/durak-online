@@ -158,9 +158,10 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
 
   // The table screen fits one viewport: however full the table and the hand, nothing scrolls.
   // `teams`: the same crowded table in a 2v2 game (team rings, team dots and the partner pill on the seats).
-  for (const scenario of ['crowded', 'teams'] as const)
+  // `tournament`: a six-player series game (the "🏆 3/5" pill in the top bar).
+  for (const scenario of ['crowded', 'teams', 'tournament'] as const)
   for (const vp of FIT_VIEWPORTS) {
-    it(`table${scenario === 'teams' ? ' (2v2)' : ''} ${vp.width}x${vp.height}: 6 pairs + a 15-card hand fit the screen, every card and Take clickable`, async () => {
+    it(`table${scenario === 'teams' ? ' (2v2)' : scenario === 'tournament' ? ' (tournament)' : ''} ${vp.width}x${vp.height}: 6 pairs + a 15-card hand fit the screen, every card and Take clickable`, async () => {
       await withPage(env!, { viewport: vp }, async (page) => {
         await page.goto(`${base}tests/browser/fixtures/table.html?scenario=${scenario}`);
         await page.waitForFunction(() => (window as unknown as { __fixture?: { ready: boolean } }).__fixture?.ready === true);

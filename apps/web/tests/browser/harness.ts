@@ -179,7 +179,7 @@ export async function stubProfileApi(page: Page): Promise<void> {
       { nickname: 'אבי', isBot: false, profileId: null, result: 'win' },
     ],
   }));
-  const profile = { profileId: me, nickname: STUB_PROFILE.nickname, rating: 1234, games: 57, ratedGames: 40, wins: 31, duraks: 12, forfeits: 1, rank: 3, recent };
+  const profile = { profileId: me, nickname: STUB_PROFILE.nickname, rating: 1234, games: 57, ratedGames: 40, wins: 31, duraks: 12, forfeits: 1, tournamentsWon: 2, rank: 3, recent };
   const entries = Array.from({ length: 20 }, (_, i) => ({
     rank: i + 1,
     profileId: i === 2 ? me : `${String(i).padStart(2, '0')}`.padEnd(22, 'x'),

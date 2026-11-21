@@ -84,6 +84,8 @@ export interface ServiceHarnessOptions {
   results?: ResultStore;
   /** Whether Postgres counts as connected for the rating status (default: true). */
   ratingsReady?: () => boolean;
+  /** Called once whenever a running tournament ends (a commit or a room operation). */
+  onTournamentClosed?: (room: Room) => void;
 }
 
 /** Services wired exactly like buildServer, on in-memory repos and fake time, without sockets. */
@@ -124,7 +126,17 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     repos,
     notifier,
     timers,
-    listeners: () => [...(driver ? [driver] : []), reactions, ...(recorder ? [recorder] : [])],
+    listeners: () => [
+      ...(driver ? [driver] : []),
+      reactions,
+      ...(recorder ? [recorder] : []),
+      {
+        onGameChanged: (room: Room, _g: StoredGame, _p: unknown, info?: { tournamentClosed?: boolean }) => {
+          if (info?.tournamentClosed) options.onTournamentClosed?.(room);
+        },
+      },
+    ],
+    now: () => time.now(),
   });
   timers.attachCommitter(committer);
   const seed = options.seed ?? 42;
@@ -150,6 +162,14 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     committer,
     votes,
     ...(recorder ? { ratingStatus: (room: Room, game: StoredGame) => recorder.statusFor(room, game) } : {}),
+    ...(options.onTournamentClosed || recorder
+      ? {
+          onTournamentClosed: (room: Room) => {
+            recorder?.recordTournament(room);
+            options.onTournamentClosed?.(room);
+          },
+        }
+      : {}),
   });
   const games = new GameService({ repos, mutex, notifier, committer });
   const runner = options.bots?.runner ?? new InProcessRunner({ recordJobs: true });

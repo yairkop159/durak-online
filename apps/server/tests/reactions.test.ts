@@ -124,7 +124,7 @@ describe('bot reactions', () => {
     const room2 = (await sure.repos.rooms.get(r2.roomId))!;
     const step2 = fakeStep(r2.botIds[0]!);
     sure.reactions.onGameChanged(room2, step2.game, null);
-    sure.reactions.onGameChanged(room2, step2.game, step2.prev, { fastForwarded: true });
+    sure.reactions.onGameChanged(room2, step2.game, step2.prev, { fastForwarded: true, tournamentClosed: false });
     await ctx.time.advanceBy(5_000);
     await sure.time.advanceBy(5_000);
     expect(reactions(ctx)).toEqual([]);

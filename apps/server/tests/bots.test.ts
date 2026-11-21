@@ -456,13 +456,15 @@ function roomWith(ids: string[], botIds: string[]): Room {
     members: ids.map((id) =>
       botIds.includes(id)
         ? newBotMember(id, id, 'easy')
-        : { playerId: id, nickname: id, connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null },
+        : { playerId: id, nickname: id, connected: true, isBot: false, botDifficulty: null, afk: false, consecutiveTimeouts: 0, graceDeadline: null, leftGame: false, profileId: null, disconnectedAt: null },
     ),
     spectators: [],
     status: 'playing',
     createdAt: 0,
     restartVote: null,
     restartCooldowns: {},
+    tournamentSetup: null,
+    tournament: null,
   };
 }
 
@@ -496,6 +498,7 @@ function handcraftedBotTurn(): { room: Room; game: StoredGame } {
       stats: {},
       profiles: {},
       ratings: null,
+      finishGroups: [],
     };
     return { room: roomWith(['h', 'b'], ['b']), game };
   }

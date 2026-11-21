@@ -1,5 +1,13 @@
 import { getAwaitedPlayers } from '@durak/game-engine';
-import { isTeamGame, TEAM_GAME_PLAYERS, type BotDifficulty, type GameConfigInput, type GameRatingsPayload } from '@durak/shared';
+import {
+  isTeamGame,
+  TEAM_GAME_PLAYERS,
+  TOURNAMENT_MIN_HUMANS,
+  type BotDifficulty,
+  type GameConfigInput,
+  type GameRatingsPayload,
+  type TournamentGameCount,
+} from '@durak/shared';
 import { fail, ok, type Result } from '../domain/result.js';
 import type { Room, RoomMember, Session, StoredGame } from '../domain/types.js';
 import type { Repositories } from '../repositories/interfaces.js';
@@ -7,10 +15,18 @@ import type { GameCommitter } from './GameCommitter.js';
 import type { KeyedMutex } from './KeyedMutex.js';
 import type { RoomNotifier, SessionBinder } from './ports.js';
 import type { RestartVoteService } from './RestartVoteService.js';
-import { newPlayerId, newRoomId, newSessionToken, newSpectatorId, type SeedSource } from './random.js';
+import { newPlayerId, newRoomId, newSessionToken, newShortId, newSpectatorId, type SeedSource } from './random.js';
 import { dealGame } from './dealing.js';
 import { departSeat, isActiveHuman, nextHost } from './departure.js';
 import { isOut, type TurnTimerService } from './TurnTimerService.js';
+import {
+  advanceTournament,
+  canLeadTournament,
+  endTournamentEarly,
+  newTournament,
+  nextGameMembers,
+  tournamentRunning,
+} from './tournament.js';
 
 export interface RoomServiceDeps {
   readonly repos: Repositories;
@@ -29,6 +45,11 @@ export interface RoomServiceDeps {
    * on resume and to a spectator joining, so a reload still shows it. None → never sent.
    */
   readonly ratingStatus?: (room: Room, game: StoredGame) => GameRatingsPayload | null;
+  /**
+   * A room operation here (a leave, "end tournament") just ended the room's running series; the
+   * room is as saved. Game commits report the same through `GameChangeInfo.tournamentClosed`.
+   */
+  readonly onTournamentClosed?: (room: Room) => void;
 }
 
 function newMember(playerId: string, nickname: string, profileId: string | null): RoomMember {
@@ -43,6 +64,7 @@ function newMember(playerId: string, nickname: string, profileId: string | null)
     graceDeadline: null,
     leftGame: false,
     profileId,
+    disconnectedAt: null,
   };
 }
 
@@ -68,6 +90,7 @@ export function newBotMember(playerId: string, nickname: string, difficulty: Bot
     graceDeadline: null,
     leftGame: false,
     profileId: null,
+    disconnectedAt: null,
   };
 }
 
@@ -131,6 +154,8 @@ export class RoomService {
         createdAt: this.deps.now(),
         restartVote: null,
         restartCooldowns: {},
+        tournamentSetup: null,
+        tournament: null,
       };
       const session: Session = { token: newSessionToken(), roomId, role: 'player', id: playerId };
       await repos.rooms.save(room);
@@ -212,10 +237,20 @@ export class RoomService {
           m.playerId === session.id && !m.leftGame ? { ...m, connected: false, leftGame: true, graceDeadline: null } : m,
         );
         updated = { ...current, members, hostId: nextHost(current.hostId, session.id, members) };
+      } else if (tournamentRunning(room)) {
+        // Between games of a series the roster is locked: the seat stays (a bot plays it from the
+        // next game on) and is marked left, so it can no longer win.
+        if (!room.members.some((m) => m.playerId === session.id)) return fail('NOT_IN_ROOM', 'You are not seated here');
+        const members = room.members.map((m) =>
+          m.playerId === session.id ? { ...m, connected: false, leftGame: true, graceDeadline: null } : m,
+        );
+        updated = { ...room, members, hostId: nextHost(room.hostId, session.id, members) };
       } else {
         const members = room.members.filter((m) => m.playerId !== session.id);
         updated = { ...room, members, hostId: nextHost(room.hostId, session.id, members) };
       }
+      const before = updated.tournament;
+      updated = advanceTournament(updated, null, this.deps.now());
       await repos.sessions.delete(session.token);
 
       // A room always contains at least one human: with only bots left it is deleted.
@@ -227,6 +262,7 @@ export class RoomService {
         await repos.rooms.save(updated);
       }
       notifier.roomState(updated);
+      if (before?.status === 'running' && updated.tournament?.status !== 'running') this.deps.onTournamentClosed?.(updated);
       if (hasHuman(updated.members)) await this.deps.votes?.reconcile(updated);
       return ok(undefined);
     });
@@ -261,7 +297,7 @@ export class RoomService {
               ...room,
               members: room.members.map((m) =>
                 m.playerId === session.id
-                  ? { ...m, connected: true, afk: false, consecutiveTimeouts: 0, graceDeadline: null }
+                  ? { ...m, connected: true, afk: false, consecutiveTimeouts: 0, graceDeadline: null, disconnectedAt: null }
                   : m,
               ),
             }
@@ -326,7 +362,9 @@ export class RoomService {
       const graceDeadline = needsGrace ? timers.newGraceDeadline() : null;
       const updated: Room = {
         ...room,
-        members: room.members.map((m) => (m.playerId === session.id ? { ...m, connected: false, graceDeadline } : m)),
+        members: room.members.map((m) =>
+          m.playerId === session.id ? { ...m, connected: false, graceDeadline, disconnectedAt: this.deps.now() } : m,
+        ),
       };
       await repos.rooms.save(updated);
       if (graceDeadline !== null) timers.armGrace(session.roomId, session.id, graceDeadline);
@@ -350,10 +388,84 @@ export class RoomService {
         return fail('TEAMS_NEED_FOUR', `A team game starts with all ${TEAM_GAME_PLAYERS} seats filled`);
       }
 
-      const dealt = dealGame(room, this.deps.seedSource(), this.deps.now());
+      let toDeal = room;
+      if (room.tournamentSetup) {
+        if (room.members.filter(isActiveHuman).length < TOURNAMENT_MIN_HUMANS) {
+          return fail('TOURNAMENT_NEEDS_HUMANS', `A tournament needs at least ${TOURNAMENT_MIN_HUMANS} humans`);
+        }
+        toDeal = { ...room, tournament: newTournament(room, room.tournamentSetup.games, newShortId(), this.deps.now()) };
+      }
+      const dealt = dealGame(toDeal, this.deps.seedSource(), this.deps.now());
       if (!dealt.ok) return dealt;
       return ok(await this.deps.committer.start(dealt.value.room, dealt.value.game));
     });
+  }
+
+  /** Host only, lobby only: play a series of `games` games (null = single games). Idempotent. */
+  async setTournament(session: Session, games: TournamentGameCount | null): Promise<Result<void>> {
+    const { repos, mutex, notifier } = this.deps;
+    return mutex.runExclusive(session.roomId, async () => {
+      const room = await repos.rooms.get(session.roomId);
+      if (!room) return fail('ROOM_NOT_FOUND', 'Room no longer exists');
+      if (session.role !== 'player' || room.hostId !== session.id) return fail('NOT_HOST', 'Only the host can set up a tournament');
+      if (room.status !== 'lobby') return fail('GAME_IN_PROGRESS', 'A tournament can only be set up in the lobby');
+      if ((room.tournamentSetup?.games ?? null) === games) {
+        notifier.roomState(room);
+        return ok(undefined);
+      }
+      const updated: Room = { ...room, tournamentSetup: games === null ? null : { games } };
+      await repos.rooms.save(updated);
+      notifier.roomState(updated);
+      return ok(undefined);
+    });
+  }
+
+  /**
+   * Between games of a running series: deals the next game straight away (no lobby). The same
+   * roster in the same seats; a seat whose human left is played by a bot. Who may: the host, or
+   * any connected human once the host is away (`canLeadTournament`).
+   */
+  async tournamentNext(session: Session): Promise<Result<StoredGame>> {
+    const { repos, mutex, timers } = this.deps;
+    return mutex.runExclusive(session.roomId, async () => {
+      const room = await repos.rooms.get(session.roomId);
+      if (!room) return fail('ROOM_NOT_FOUND', 'Room no longer exists');
+      const checked = this.checkLead(room, session);
+      if (!checked.ok) return checked;
+      const members = nextGameMembers(room.members);
+      const prepared: Room = { ...room, members, hostId: nextHost(room.hostId, '', members) };
+      const dealt = dealGame(prepared, this.deps.seedSource(), this.deps.now());
+      if (!dealt.ok) return dealt;
+      timers.cancelRoom(room.id);
+      return ok(await this.deps.committer.start(dealt.value.room, dealt.value.game));
+    });
+  }
+
+  /** Between games of a running series: ends it now (ended early, no champion). Same rule as next. */
+  async tournamentEnd(session: Session): Promise<Result<void>> {
+    const { repos, mutex, notifier } = this.deps;
+    return mutex.runExclusive(session.roomId, async () => {
+      const room = await repos.rooms.get(session.roomId);
+      if (!room) return fail('ROOM_NOT_FOUND', 'Room no longer exists');
+      const checked = this.checkLead(room, session);
+      if (!checked.ok) return checked;
+      const updated: Room = { ...room, tournament: endTournamentEarly(room.tournament!, this.deps.now()) };
+      await repos.rooms.save(updated);
+      notifier.roomState(updated);
+      this.deps.onTournamentClosed?.(updated);
+      return ok(undefined);
+    });
+  }
+
+  private checkLead(room: Room, session: Session): Result<void> {
+    if (session.role !== 'player' || !room.members.some((m) => m.playerId === session.id)) {
+      return fail('NOT_IN_ROOM', 'Only seated players can lead a tournament');
+    }
+    if (room.status !== 'finished' || !tournamentRunning(room)) {
+      return fail('NO_TOURNAMENT', 'No tournament is waiting for its next game');
+    }
+    if (!canLeadTournament(room, session.id, this.deps.now())) return fail('NOT_HOST', 'Only the host can lead the tournament');
+    return ok(undefined);
   }
 
   /** Host only, lobby only, 4-seat rooms only: turns 2v2 team mode on or off. */
@@ -452,6 +564,7 @@ export class RoomService {
         return fail('NOT_IN_ROOM', 'Only seated players can start a rematch');
       }
       if (room.status === 'playing') return fail('GAME_IN_PROGRESS', 'The game is still running');
+      if (tournamentRunning(room)) return fail('TOURNAMENT_IN_PROGRESS', 'The tournament is not over yet');
       if (room.status === 'lobby') {
         notifier.roomState(room);
         return ok(undefined);
@@ -460,7 +573,14 @@ export class RoomService {
       const members = room.members
         .filter((m) => !m.leftGame)
         .map((m) => ({ ...m, afk: false, consecutiveTimeouts: 0, graceDeadline: null }));
-      const updated: Room = { ...room, status: 'lobby', members, hostId: nextHost(room.hostId, '', members) };
+      // A finished (or ended) series is cleared; the lobby keeps its setting for the next one.
+      const updated: Room = {
+        ...room,
+        status: 'lobby',
+        members,
+        hostId: nextHost(room.hostId, '', members),
+        tournament: null,
+      };
       await repos.atomic.saveRoomDeleteGame(updated);
       timers.cancelRoom(room.id);
       notifier.roomState(updated);

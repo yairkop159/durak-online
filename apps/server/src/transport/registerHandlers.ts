@@ -253,6 +253,36 @@ function attach(socket: IoSocket, ip: string, deps: HandlerDeps, shared: SharedL
     if (!result.ok) sendError(result.error);
   });
 
+  on(ClientEvents.SetTournament, async (payload) => {
+    const session = socket.data.session;
+    if (!session || session.roomId !== payload.roomId) {
+      sendError({ code: 'NOT_IN_ROOM', message: 'You are not in this room' });
+      return;
+    }
+    const result = await rooms.setTournament(session, payload.games);
+    if (!result.ok) sendError(result.error);
+  });
+
+  on(ClientEvents.TournamentNext, async (payload) => {
+    const session = socket.data.session;
+    if (!session || session.roomId !== payload.roomId) {
+      sendError({ code: 'NOT_IN_ROOM', message: 'You are not in this room' });
+      return;
+    }
+    const result = await rooms.tournamentNext(session);
+    if (!result.ok) sendError(result.error);
+  });
+
+  on(ClientEvents.TournamentEnd, async (payload) => {
+    const session = socket.data.session;
+    if (!session || session.roomId !== payload.roomId) {
+      sendError({ code: 'NOT_IN_ROOM', message: 'You are not in this room' });
+      return;
+    }
+    const result = await rooms.tournamentEnd(session);
+    if (!result.ok) sendError(result.error);
+  });
+
   on(ClientEvents.RestartPropose, async (payload) => {
     const session = socket.data.session;
     if (!session || session.roomId !== payload.roomId) {

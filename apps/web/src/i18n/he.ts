@@ -30,7 +30,8 @@ export type RulesSectionId =
   | 'draw'
   | 'out'
   | 'durak'
-  | 'teams';
+  | 'teams'
+  | 'tournament';
 export type GuideSectionId = 'highlight' | 'defendTaps' | 'buttons' | 'countdown' | 'afk' | 'reconnect' | 'leave' | 'restart' | 'teamColors';
 
 export interface HelpSection<Id extends string> {
@@ -218,6 +219,53 @@ export interface Strings {
     readonly draw: string;
     readonly skip: string;
   };
+  /** Tournaments: a series of games in one room (lobby setting, standings, champion). */
+  readonly tournament: {
+    readonly toggle: string;
+    readonly toggleHint: string;
+    readonly games: string;
+    readonly gamesOption: (n: number) => string;
+    readonly lobbyLine: (n: number) => string;
+    readonly needHumans: string;
+    /** Top-bar pill while a series game runs. */
+    readonly gamePill: (k: number, n: number) => string;
+    readonly standings: string;
+    readonly finalStandings: string;
+    readonly afterGame: (k: number, n: number) => string;
+    readonly gamesLeft: (n: number) => string;
+    readonly leader: (name: string) => string;
+    readonly leadersTied: (names: string) => string;
+    readonly columns: {
+      readonly rank: string;
+      readonly name: string;
+      readonly points: string;
+      readonly last: string;
+      readonly duraks: string;
+    };
+    readonly you: string;
+    readonly left: string;
+    readonly next: (k: number, n: number) => string;
+    readonly end: string;
+    readonly endConfirm: { readonly title: string; readonly body: string; readonly confirm: string };
+    readonly waitingForHost: (name: string) => string;
+    readonly hostAwayIn: (seconds: number) => string;
+    readonly hostAway: string;
+    readonly champion: (name: string) => string;
+    readonly youChampion: string;
+    readonly coChampions: (names: string) => string;
+    readonly botChampion: (name: string) => string;
+    readonly teamChampion: (team: string) => string;
+    readonly endedEarly: string;
+    readonly endedEarlyBody: string;
+    /** The champion moment's stamp. */
+    readonly stamp: string;
+    readonly backToLobby: string;
+    /** The leave confirm in a running series. */
+    readonly leaveBot: string;
+    readonly leaveEnds: string;
+    /** Under the restart vote in a running series. */
+    readonly restartUnanimous: string;
+  };
   /** End-of-game statistics on the game-over screen. */
   readonly stats: {
     readonly highlights: string;
@@ -304,6 +352,8 @@ export interface Strings {
     readonly games: string;
     readonly wins: string;
     readonly duraks: string;
+    /** Tournaments this profile won. */
+    readonly tournamentsWon: string;
     readonly recent: string;
     readonly noGames: string;
     readonly results: Record<PlayerResult, string>;
@@ -546,6 +596,46 @@ export const he: Strings = {
     draw: 'תיקו!',
     skip: 'דילוג',
   },
+  tournament: {
+    toggle: 'טורניר',
+    toggleHint: 'כמה משחקים ברצף: ניקוד אחרי כל משחק, טבלה בין המשחקים ואלוף בסוף.',
+    games: 'מספר משחקים',
+    gamesOption: (n) => `${n} משחקים`,
+    lobbyLine: (n) => `טורניר של ${n} משחקים`,
+    needHumans: 'טורניר צריך לפחות שני שחקנים אנושיים',
+    gamePill: (k, n) => `משחק ${k}/${n}`,
+    standings: 'טבלת הטורניר',
+    finalStandings: 'הטבלה הסופית',
+    afterGame: (k, n) => `אחרי ${k} מתוך ${n} משחקים`,
+    gamesLeft: (n) => (n === 1 ? 'נשאר משחק אחד' : `נשארו ${n} משחקים`),
+    leader: (name) => `בהובלה: ${name}`,
+    leadersTied: (names) => `צמוד בצמרת: ${names}`,
+    columns: { rank: 'מקום', name: 'שחקן', points: 'נקודות', last: 'במשחק', duraks: 'דוראק' },
+    you: 'את/ה',
+    left: 'עזב/ה',
+    next: (k, n) => `למשחק הבא (${k}/${n})`,
+    end: 'סיום הטורניר',
+    endConfirm: {
+      title: 'לסיים את הטורניר עכשיו?',
+      body: 'הטבלה תישמר כמו שהיא, ולא יהיה אלוף.',
+      confirm: 'סיום',
+    },
+    waitingForHost: (name) => `ממתינים למארח (${name}) שיתחיל את המשחק הבא`,
+    hostAwayIn: (seconds) => `המארח לא מחובר. בעוד ${seconds} שניות כל אחד יוכל להמשיך.`,
+    hostAway: 'המארח לא מחובר: כל אחד יכול להמשיך.',
+    champion: (name) => `${name} – אלוף הטורניר!`,
+    youChampion: 'ניצחת בטורניר!',
+    coChampions: (names) => `אלופים משותפים: ${names}`,
+    botChampion: (name) => `הבוט ניצח: ${name}`,
+    teamChampion: (team) => `${team} – אלופת הטורניר!`,
+    endedEarly: 'הטורניר הסתיים מוקדם',
+    endedEarlyBody: 'הטבלה נשמרה כמו שהיא, ואין אלוף.',
+    stamp: 'אלוף הטורניר!',
+    backToLobby: 'חזרה ללובי',
+    leaveBot: 'בוט ישחק במקומך עד סוף הטורניר, ולא תוכל/י לזכות בו.',
+    leaveEnds: 'בלעדיך יישאר בטורניר רק שחקן אנושי אחד, ולכן הטורניר יסתיים בלי אלוף.',
+    restartUnanimous: 'בטורניר, משחק חדש צריך הסכמה של כל השחקנים.',
+  },
   stats: {
     highlights: 'רגעי שיא',
     mostTaken: 'הכי הרבה קלפים נלקחו',
@@ -713,6 +803,17 @@ export const he: Strings = {
           'אם השחקנים האחרונים של שתי הקבוצות נפטרו מהקלפים באותו סיבוב – תיקו. לא רואים את הקלפים של השותף.',
         ],
       },
+      {
+        id: 'tournament',
+        title: 'טורניר',
+        body: [
+          'המארח בוחר בלובי טורניר של 3, 5 או 7 משחקים. אותם שחקנים משחקים את כל המשחקים ברצף, ובין משחק למשחק מוצגת הטבלה.',
+          'ניקוד: הראשון שיוצא מקבל הכי הרבה נקודות (מספר השחקנים פחות אחד), הבא אחריו נקודה אחת פחות, והדוראק 0. מי שיצאו יחד מתחלקים בנקודות. מי שעוזב מקבל 0.',
+          'בטורניר קבוצות (2 נגד 2) הקבוצה המנצחת מקבלת נקודה, ובתיקו כל קבוצה חצי.',
+          'בסוף זוכה מי שצבר הכי הרבה נקודות. בשוויון: פחות פעמים דוראק, ואחר כך יותר פעמים ראשון. אם עדיין שווים – אלופים משותפים.',
+          'מי שעוזב באמצע – בוט ממשיך במקומו, והוא לא יכול לזכות. אם נשאר פחות משני שחקנים אנושיים, הטורניר מסתיים בלי אלוף. משחק חדש באמצע טורניר צריך הסכמה של כולם, והמשחק שבוטל לא נספר.',
+        ],
+      },
     ],
     guide: [
       {
@@ -796,6 +897,7 @@ export const he: Strings = {
     games: 'משחקים',
     wins: 'ניצחונות',
     duraks: 'פעמים דוראק',
+    tournamentsWon: 'זכיות בטורניר',
     recent: 'משחקים אחרונים',
     noGames: 'עוד אין משחקים. המשחקים הבאים יופיעו כאן.',
     results: { win: 'ניצחון', durak: 'דוראק', draw: 'תיקו', forfeit: 'הפסד טכני', unfinished: 'לא הסתיים', teamLoss: 'הפסד קבוצתי' },
@@ -1002,6 +1104,9 @@ export const he: Strings = {
     VOTE_COOLDOWN: 'הצעת משחק חדש לפני רגע. אפשר להציע שוב בעוד דקה',
     NO_ACTIVE_VOTE: 'ההצבעה כבר הסתיימה',
     TEAMS_NEED_FOUR: 'משחק קבוצות צריך חדר של ארבעה שחקנים, וכל ארבעת המקומות תפוסים',
+    TOURNAMENT_NEEDS_HUMANS: 'טורניר צריך לפחות שני שחקנים אנושיים',
+    TOURNAMENT_IN_PROGRESS: 'אי אפשר באמצע טורניר',
+    NO_TOURNAMENT: 'אין טורניר פעיל',
     INVALID_PLAYER_COUNT: 'מספר שחקנים לא תקין',
     DUPLICATE_PLAYER: 'שחקן כפול',
     INVALID_CONFIG: 'הגדרות משחק לא תקינות',
