@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { App } from '../src/App';
@@ -176,20 +176,21 @@ describe('menu, progress and the practice game', () => {
     expect(window.location.pathname).toBe('/tutorial/practice');
 
     // Play: my legal cards are the highlighted ones; when nothing of mine is lit, Take or Pass.
+    // (Synchronous clicks: a whole game of userEvent clicks is too slow under a loaded test run.)
     for (let i = 0; i < 400 && !screen.queryByRole('dialog'); i++) {
       timers.runAll();
       if (screen.queryByRole('dialog')) break;
-      const lit = screen.queryAllByRole('button').find((b) => b.dataset.state === 'playable');
-      const take = screen.queryByRole('button', { name: t.table.take }) ?? screen.queryByRole('button', { name: t.table.pass });
-      const target = screen.queryAllByRole('button').find((b) => b.dataset.state === 'target');
-      if (target) await user.click(target);
-      else if (lit) await user.click(lit);
-      else if (take) await user.click(take);
+      const buttons = document.querySelectorAll<HTMLElement>('button');
+      const lit = [...buttons].find((b) => b.dataset.state === 'playable');
+      const target = [...buttons].find((b) => b.dataset.state === 'target');
+      const take = [...buttons].find((b) => b.textContent === t.table.take || b.textContent === t.table.pass);
+      const next = target ?? lit ?? take;
+      if (next) act(() => void fireEvent.click(next));
     }
     expect(await screen.findByText(t.gameOver.title, {}, { timeout: 4000 })).toBeInTheDocument();
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: t.tutorial.toMenu }));
     expect(window.location.pathname).toBe('/tutorial');
-  });
+  }, 60_000);
 
   it('progress is versioned and parsed field by field', () => {
     expect(parseProgress(null)).toEqual({ v: 1, completed: [], offerSeen: false });

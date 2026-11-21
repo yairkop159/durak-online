@@ -17,6 +17,8 @@
 import type { Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { t } from '../../src/i18n';
+import { BASICS } from '../../src/tutorial/lessons';
+import { TUTORIAL_KEY } from '../../src/tutorial/progress';
 import {
   LIFECYCLE_TIMEOUT_MS,
   coveredControls,
@@ -215,6 +217,40 @@ async function insideInset(page: Page, side: 'left' | 'right', px: number): Prom
 
 const OPPONENTS = ['bob', 'carl', 'dana', 'eli', 'fay'];
 
+/**
+ * Card labels inside the tutorial's Hebrew text: each is drawn left to right (its rank left of its
+ * suit) on one line, although the sentence around it runs right to left.
+ */
+async function cardLabelGeometry(page: Page): Promise<{ count: number; problems: string[] }> {
+  return page.evaluate(() => {
+    const problems: string[] = [];
+    const labels = [...document.querySelectorAll<HTMLElement>('[data-testid="guide"] bdi[data-card-label]')];
+    for (const b of labels) {
+      const id = b.dataset.cardLabel;
+      const glyph = b.querySelector<HTMLElement>('[data-glyph]');
+      const text = glyph?.firstChild;
+      if (!glyph || !text || text.nodeType !== Node.TEXT_NODE) {
+        problems.push(`${id}: no glyph text`);
+        continue;
+      }
+      const s = text.textContent ?? '';
+      const suitAt = s.search(/[♠♣♦♥]/);
+      const range = document.createRange();
+      range.setStart(text, 0);
+      range.setEnd(text, 1);
+      const rank = range.getBoundingClientRect();
+      range.setStart(text, suitAt);
+      range.setEnd(text, suitAt + 1);
+      const suit = range.getBoundingClientRect();
+      if (!(rank.right <= suit.left + 0.5)) problems.push(`${id}: the rank is not left of the suit (${Math.round(rank.left)} vs ${Math.round(suit.left)})`);
+      if (glyph.getClientRects().length !== 1 || Math.abs(rank.top - suit.top) > 1) problems.push(`${id}: the label breaks across lines`);
+    }
+    return { count: labels.length, problems };
+  });
+}
+
+const BASICS_DONE = JSON.stringify({ v: 1, completed: BASICS, offerSeen: true });
+
 const shot = async (page: Page, name: string) => {
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/mobile-${name}.png` });
 };
@@ -308,6 +344,76 @@ describe.skipIf(!executablePath)('phones (mobile emulation, touch)', () => {
         expect(lobby.problems).toEqual([]);
         expect(lobby.controls).toBeGreaterThan(2);
         await shot(page, `lobby-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`tutorial menu ${size}: no horizontal scroll, every lesson row >= 44 px and tappable`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await page.goto(`${env!.base}tutorial`);
+        await page.getByRole('heading', { level: 1, name: t.tutorial.menuTitle }).waitFor();
+        const menu = await audit(page, false);
+        expect(menu.problems).toEqual([]);
+        expect(menu.controls).toBeGreaterThan(10);
+        await shot(page, `tutorial-menu-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`tutorial lesson ${size}: the guide fits with the table; a wrong tap is explained (card labels LTR), then defend by tap`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await page.goto(`${env!.base}tutorial/defend-suit`);
+        await page.getByTestId('guide').waitFor();
+        await page.waitForTimeout(700); // the cards' layout springs settle
+        const playing = await audit(page, true, HAND_CARD);
+        expect(playing.problems).toEqual([]);
+        expect(await coveredControls(page, HAND_CARD)).toEqual([]);
+        const slices = await handSlices(page);
+        expect(slices.problems).toEqual([]);
+        expect(await page.getAttribute('[data-testid="guide-text"]', 'aria-live')).toBe('polite');
+        await shot(page, `tutorial-lesson-${size}`);
+
+        // 6♣ can't beat 8♣: a real tap on the dimmed card brings the explanation.
+        await page.touchscreen.tap(slices.tapAt['6C']!.x, slices.tapAt['6C']!.y);
+        await page.locator('[data-testid="guide"][data-phase="wrong"]').waitFor();
+        await page.waitForTimeout(300);
+        const labels = await cardLabelGeometry(page);
+        expect(labels.problems).toEqual([]);
+        expect(labels.count).toBeGreaterThanOrEqual(2);
+        const wrong = await audit(page, true, HAND_CARD);
+        expect(wrong.problems).toEqual([]);
+        // The guide never spills over the piles or the room tools (they are not controls the audit sees).
+        const guideBox = await boxOf(page, '[data-testid="guide"]');
+        for (const other of ['[data-testid="deck"]', '[data-testid="table-surface"]']) {
+          const o = await boxOf(page, other);
+          const overlaps = guideBox.x < o.x + o.w && o.x < guideBox.x + guideBox.w && guideBox.y < o.y + o.h && o.y < guideBox.y + guideBox.h;
+          expect(overlaps, other).toBe(false);
+        }
+        await shot(page, `tutorial-wrong-${size}`);
+
+        await tapCenter(page, `[data-testid="guide"] button:has-text("${t.tutorial.tryAgain}")`);
+        await page.locator('[data-testid="guide"][data-phase="playing"]').waitFor();
+        const again = await handSlices(page);
+        await page.touchscreen.tap(again.tapAt['10C']!.x, again.tapAt['10C']!.y);
+        await tapCenter(page, '[data-testid="pair-0"] button');
+        await page.locator('[data-testid="guide"][data-phase="success"]').waitFor({ timeout: 5000 });
+        await page.waitForTimeout(1500); // the bout's cards fly to the discard pile
+        const success = await audit(page, true, HAND_CARD);
+        expect(success.problems).toEqual([]);
+        await shot(page, `tutorial-success-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`tutorial practice game ${size}: the real table fits the screen with the guide; controls >= 44 px`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await page.addInitScript(([key, value]) => window.localStorage.setItem(key!, value!), [TUTORIAL_KEY, BASICS_DONE]);
+        await page.goto(`${env!.base}tutorial/practice`);
+        await page.getByTestId('guide').waitFor();
+        await page.getByTestId('hand').waitFor();
+        await page.waitForTimeout(700);
+        const table = await audit(page, true, HAND_CARD);
+        expect(table.problems).toEqual([]);
+        expect((await handSlices(page)).problems).toEqual([]);
+        expect(await coveredControls(page, HAND_CARD)).toEqual([]);
+        await shot(page, `tutorial-practice-${size}`);
       });
     }, TEST_TIMEOUT_MS);
 

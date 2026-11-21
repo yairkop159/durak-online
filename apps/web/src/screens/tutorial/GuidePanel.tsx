@@ -50,12 +50,13 @@ export function GuidePanel({
     phase === 'success' ? 'ring-accent bg-accent/10' : phase === 'wrong' || phase === 'failed' ? 'ring-warn bg-warn/10' : 'ring-accent/45 bg-surface-2/95';
   return (
     <section
-      className={`relative z-10 flex w-full max-w-xl shrink-0 flex-col gap-1.5 rounded-xl px-3 py-2 text-sm shadow-panel ring-1 ${tone}`}
+      // Compact (a phone on its side): the panel shares the side column, so it shrinks and its text scrolls.
+      className={`relative z-10 flex w-full max-w-xl flex-col gap-1.5 rounded-xl text-sm shadow-panel ring-1 ${compact ? 'min-h-0 shrink px-2 py-1.5' : 'shrink-0 px-3 py-2'} ${tone}`}
       aria-label={heading}
       data-testid="guide"
       data-phase={phase}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-2">
         <span className="min-w-0 truncate text-xs text-muted">{heading}</span>
         {onSkip && phase !== 'success' && (
           <button
@@ -67,7 +68,7 @@ export function GuidePanel({
           </button>
         )}
       </div>
-      <div className={`overflow-y-auto leading-snug ${compact ? 'max-h-[38dvh]' : 'max-h-[22dvh]'}`} aria-live="polite" data-testid="guide-text">
+      <div className={`overflow-y-auto leading-snug ${compact ? 'min-h-0 flex-1 text-xs' : 'max-h-[22dvh]'}`} aria-live="polite" data-testid="guide-text">
         <p>
           <strong className={phase === 'success' ? 'text-accent' : phase === 'playing' || phase === 'opponent' ? '' : 'text-warn'}>{title}: </strong>
           <TutorialText text={feedback ?? goal} />
@@ -79,7 +80,7 @@ export function GuidePanel({
           </p>
         )}
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
         {phase === 'playing' && !hintOpen && (
           <button
             type="button"

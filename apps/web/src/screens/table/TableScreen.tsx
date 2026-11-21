@@ -381,7 +381,8 @@ export function TableScreen({ source }: { source: TableSource }) {
               </div>
               <div className="flex min-h-0 flex-1 flex-col justify-end gap-1.5">
                 {guide?.panel}
-                {!finished && status}
+                {/* With a lesson's guide the status line repeats it: the narrow side column keeps the guide. */}
+                {!finished && !guide && status}
                 {!spectator && me && (
                   <div className="flex flex-wrap items-center justify-between gap-1.5">
                     {mySeat}
