@@ -1,5 +1,5 @@
 import type { GameOverPayload, PlayerView, RoomStatePayload, StandingRow, TournamentView } from '@durak/shared';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { App } from '../src/App';
@@ -7,6 +7,7 @@ import { t } from '../src/i18n';
 import { GameClient } from '../src/net/client';
 import { ClientProvider } from '../src/net/react';
 import { MemoryStorage } from '../src/net/sessionStore';
+import { planChampionReveal } from '../src/anim/championReveal';
 import { championLine } from '../src/tournament/TournamentPanel';
 import { canLead, formatPoints, gamesLeft, tournamentLeave } from '../src/tournament/tournament';
 import { FakeTransport, gameState, makeView, renderTable, ROOM_ID, roomState } from './helpers';
@@ -225,5 +226,48 @@ describe('a reload between games whose finished game is gone', () => {
       transport.serverSends('game:state', gameState(makeView({ counts: { me: 6, bob: 6, carl: 6 } }), 0, { gameId: 'g2' }));
     });
     expect(screen.queryByTestId('tournament-screen')).toBeNull();
+  });
+});
+
+describe('the champion moment', () => {
+  const done = series({ status: 'finished', gamesPlayed: 5, champions: ['bob'] });
+
+  it('plans a spotlight on the champion seats, scaled by speed; none for an early end or reduced motion', () => {
+    const plan = planChampionReveal(done, { reduced: false, speed: 1 })!;
+    expect(plan.seats).toEqual(['bob']);
+    expect(plan.totalMs).toBe(plan.dimMs + plan.spotMs + plan.stampMs);
+    expect(planChampionReveal(done, { reduced: false, speed: 0.6 })!.totalMs).toBeLessThan(plan.totalMs);
+    expect(planChampionReveal(series({ status: 'endedEarly' }), { reduced: false, speed: 1 })).toBeNull();
+    expect(planChampionReveal(done, { reduced: true, speed: 1 })).toBeNull();
+    expect(planChampionReveal(series(), { reduced: false, speed: 1 })).toBeNull();
+    const teams = series({ status: 'finished', teams: true, champions: ['team1'], standings: [row('team1', 3, 1, { playerIds: ['b', 'd'] })] });
+    expect(planChampionReveal(teams, { reduced: false, speed: 1 })!.seats).toEqual(['b', 'd']);
+  });
+
+  it("after the last game's reveal: the champion stamp (never takes clicks but the skip layer), then the final table", async () => {
+    const running = makeView({ counts: { me: 1, bob: 1, carl: 2 }, deckCount: 0 });
+    const ctx = renderTable(running);
+    act(() => ctx.transport.serverSends('room:state', seriesRoom('playing', series({ gamesPlayed: 4 }))));
+    act(() => {
+      ctx.transport.serverSends('room:state', seriesRoom('finished', done));
+      ctx.transport.serverSends('game:state', gameState(finishedView(), 4));
+      ctx.transport.serverSends('game:over', over);
+    });
+    fireEvent.click(await screen.findByTestId('reveal-skip'));
+    const reveal = await screen.findByTestId('champion-reveal');
+    for (const el of reveal.querySelectorAll(':scope > *')) {
+      if (el.getAttribute('data-testid') === 'champion-skip') continue;
+      expect(el.className).toMatch(/pointer-events-none|sr-only/);
+    }
+    expect(screen.queryByTestId('game-over-headline')).toBeNull();
+    fireEvent.click(screen.getByTestId('champion-skip'));
+    expect(screen.queryByTestId('champion-reveal')).toBeNull();
+    expect(screen.getByTestId('tournament-result')).toHaveTextContent(t.tournament.champion('BOB'));
+  });
+
+  it('a reload into the finished series: no moment, the final table at once', () => {
+    betweenGames(done);
+    expect(screen.queryByTestId('champion-reveal')).toBeNull();
+    expect(screen.getByTestId('tournament-result')).toHaveTextContent(t.tournament.champion('BOB'));
   });
 });

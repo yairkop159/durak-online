@@ -48,7 +48,9 @@ import { gameOverCue } from '../../audio/soundPlan';
 import { DurakReveal } from '../../moments/DurakReveal';
 import { teamName, teamOf } from '../../game/teams';
 import { MomentBanner } from '../../moments/MomentBanner';
-import { TournamentActions, TournamentPill } from '../../tournament/TournamentPanel';
+import { championLine, TournamentActions, TournamentPill } from '../../tournament/TournamentPanel';
+import { planChampionReveal } from '../../anim/championReveal';
+import { ChampionReveal } from '../../moments/ChampionReveal';
 import { tournamentLeave } from '../../tournament/tournament';
 import { useMomentQueue } from '../../moments/useMomentQueue';
 
@@ -145,6 +147,13 @@ export function TableScreen({ source }: { source: TableSource }) {
     [game?.gameId, gameFinished, gameOver, reduced],
   );
   const [revealDoneFor, setRevealDoneFor] = useState<string | null>(null);
+  // The tournament's champion moment follows the reveal of the series' last game (one we watched end).
+  const seriesOver = online && room?.tournament?.status === 'finished' ? room.tournament : null;
+  const championPlan = useMemo(
+    () => (game && gameFinished && sawRunning.current === game.gameId ? planChampionReveal(seriesOver, { reduced, speed }) : null),
+    [game?.gameId, gameFinished, seriesOver?.id, seriesOver?.status, reduced],
+  );
+  const [championDoneFor, setChampionDoneFor] = useState<string | null>(null);
 
   // The screen stays on while the game runs (released when it ends, re-taken after the page was hidden).
   // (A local game, the tutorial, has no room: it runs while its game does.)
@@ -184,6 +193,7 @@ export function TableScreen({ source }: { source: TableSource }) {
   const effects = moment ? seatEffects(moment.moment) : null;
   const effectOf = (id: string): SeatEffectProp => (moment && effects?.has(id) ? { kind: effects.get(id)!, id: moment.id } : null);
   const revealing = finished && overlayReady && revealPlan !== null && revealDoneFor !== game.gameId;
+  const championing = finished && overlayReady && !revealing && championPlan !== null && championDoneFor !== game.gameId;
 
   // First-game tips: shown for the current situation until dismissed or acted on once.
   // A short landscape screen has no room for them (they show in portrait and on bigger screens).
@@ -311,7 +321,15 @@ export function TableScreen({ source }: { source: TableSource }) {
         />
       )}
 
-      {finished && overlayReady && !revealing && gameOver?.endReason !== 'restarted' && (
+      {championing && championPlan && seriesOver && (
+        <ChampionReveal
+          plan={championPlan}
+          caption={championLine(seriesOver, nameOf, viewerId)}
+          onDone={() => setChampionDoneFor(game.gameId)}
+        />
+      )}
+
+      {finished && overlayReady && !revealing && !championing && gameOver?.endReason !== 'restarted' && (
         <GameOverOverlay
           view={view}
           gameOver={gameOver}
@@ -348,7 +366,7 @@ export function TableScreen({ source }: { source: TableSource }) {
     </>
   );
   // While the durak reveal runs, my side of the table slides away.
-  const hideOnReveal = `transition duration-500 ${revealing ? 'translate-y-24 opacity-0' : ''}`;
+  const hideOnReveal = `transition duration-500 ${revealing || championing ? 'translate-y-24 opacity-0' : ''}`;
 
   if (short) {
     // Short landscape (a phone on its side): height is scarce, width is not. Three columns, each the
