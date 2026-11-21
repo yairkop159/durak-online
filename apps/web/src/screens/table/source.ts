@@ -29,6 +29,11 @@ export interface TableSource {
   readonly online?: {
     readonly reactions: ReactionsInView;
     readonly rematch: () => void;
+    /** Between games of a series (the server checks who may). */
+    readonly tournamentNext: () => void;
+    readonly tournamentEnd: () => void;
+    /** Local time the last room:state arrived (countdowns from room:state, like the restart vote). */
+    readonly roomReceivedAt: number;
   };
   /** A guided lesson (the tutorial): highlights, hints and feedback around the real table. */
   readonly guide?: TableGuide;

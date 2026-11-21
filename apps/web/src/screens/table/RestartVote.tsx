@@ -86,6 +86,11 @@ export function RestartVotePanel({ viewerId }: { viewerId: string | null }) {
       ) : (
         <span className="text-muted">{t.restart.waiting(vote.accepted.length, total)}</span>
       )}
+      {room.tournament?.status === 'running' && (
+        <span className="basis-full text-center text-xs text-muted" data-testid="restart-unanimous">
+          {t.tournament.restartUnanimous}
+        </span>
+      )}
     </div>
   );
 }

@@ -12,7 +12,7 @@ export function OnlineTable() {
   const client = useClient();
   const state = useClientState();
   const reactions = useReactions();
-  const { game, room, gameOver, ratings, lastError } = state;
+  const { game, room, gameOver, ratings, lastError, roomReceivedAt } = state;
   const reconnecting = isReconnecting(state);
   const members = room?.members;
   const outcome = game ? leaveOutcome(game.view, members) : 'none';
@@ -35,9 +35,15 @@ export function OnlineTable() {
           navigate('/');
         },
       },
-      online: { reactions, rematch: () => client.rematch() },
+      online: {
+        reactions,
+        rematch: () => client.rematch(),
+        tournamentNext: () => client.tournamentNext(),
+        tournamentEnd: () => client.tournamentEnd(),
+        roomReceivedAt,
+      },
     }),
-    [client, game, members, room, gameOver, ratings, lastError, reconnecting, outcome, reactions],
+    [client, game, members, room, gameOver, ratings, lastError, reconnecting, outcome, reactions, roomReceivedAt],
   );
   return <TableScreen source={source} />;
 }

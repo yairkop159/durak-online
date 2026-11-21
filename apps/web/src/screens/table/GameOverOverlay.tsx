@@ -1,7 +1,7 @@
-import { isTeamGame, type GameOverPayload, type PlayerView } from '@durak/shared';
+import { isTeamGame, type GameOverPayload, type PlayerView, type TournamentView } from '@durak/shared';
 import { TEAM_TEXT, teamName, teamOf, viewerResult } from '../../game/teams';
 import { motion } from 'motion/react';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { SUIT_SYMBOL } from '../../components/cards/PlayingCard';
 import { Avatar, Button, Panel } from '../../components/ui';
 import { t } from '../../i18n';
@@ -13,6 +13,7 @@ import { ReactionButton } from '../../reactions/ReactionPicker';
 import type { ReactionsInView } from '../../reactions/useReactions';
 import { GameStatsSection } from './GameStats';
 import { RatingResult } from './RatingResult';
+import { TournamentSummary } from '../../tournament/TournamentPanel';
 
 type Mood = 'celebrate' | 'durak' | 'neutral';
 
@@ -31,6 +32,7 @@ export function GameOverOverlay({
   ratings = null,
   onRematch,
   action,
+  tournament = null,
 }: {
   view: PlayerView;
   gameOver: GameOverPayload | null;
@@ -46,6 +48,11 @@ export function GameOverOverlay({
   /** Reactions keep flowing on the result screen ("עוד סיבוב?"). */
   reactions?: ReactionsInView | null;
   canReact?: boolean;
+  /**
+   * The room's series: its standings are shown, and between games `actions` (next game / end /
+   * waiting, leave) replace "back to the lobby". Once the series is over, back to the lobby ends it.
+   */
+  tournament?: { readonly view: TournamentView; readonly actions: ReactNode | null } | null;
 }) {
   const durak = gameOver ? gameOver.durakId : view.phase.kind === 'finished' ? view.phase.durak : null;
   const reason = gameOver?.endReason ?? 'normal';
@@ -122,6 +129,7 @@ export function GameOverOverlay({
           )}
           <p className="text-xs text-muted">{t.gameOver.reasons[reason]}</p>
           <RatingResult ratings={ratings} viewerId={view.viewerId} seatOrder={seatOrder} nameOf={nameOf} showOthers={!statsShown} />
+          {tournament && <TournamentSummary tournament={tournament.view} nameOf={nameOf} viewerId={view.viewerId} />}
           {finishOrder.length > 0 && (
             <div className="w-full">
               <h3 className="mb-1.5 text-sm font-semibold">{t.gameOver.finishOrder}</h3>
@@ -159,6 +167,8 @@ export function GameOverOverlay({
               <Button size="lg" className="w-full" onClick={action.run}>
                 {action.label}
               </Button>
+            ) : tournament?.actions ? (
+              tournament.actions
             ) : canRematch && onRematch ? (
               <Button size="lg" className="w-full" onClick={onRematch}>
                 {t.gameOver.backToLobby}

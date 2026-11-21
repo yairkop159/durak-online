@@ -1,4 +1,15 @@
-import { TEAM_GAME_PLAYERS, teamOfSeat, type BotDifficulty, type RoomMember, type RoomStatePayload, type SessionIssuedPayload, type TeamIndex } from '@durak/shared';
+import {
+  TEAM_GAME_PLAYERS,
+  TOURNAMENT_GAME_COUNTS,
+  TOURNAMENT_MIN_HUMANS,
+  teamOfSeat,
+  type BotDifficulty,
+  type RoomMember,
+  type RoomStatePayload,
+  type SessionIssuedPayload,
+  type TeamIndex,
+  type TournamentGameCount,
+} from '@durak/shared';
 import { useState } from 'react';
 import { BotPill } from '../components/BotPill';
 import { DifficultyPicker } from '../components/DifficultyPicker';
@@ -17,7 +28,12 @@ export function LobbyScreen({ room, session }: { room: RoomStatePayload; session
   const client = useClient();
   const isHost = room.hostId === session.playerId;
   const teams = room.config.teams;
-  const canStart = teams ? room.members.length === TEAM_GAME_PLAYERS : room.members.length >= 2;
+  const series = room.tournamentSetup;
+  const humans = room.members.filter((m) => !m.isBot && !m.leftGame).length;
+  const enoughHumans = !series || humans >= TOURNAMENT_MIN_HUMANS;
+  const canStart = (teams ? room.members.length === TEAM_GAME_PLAYERS : room.members.length >= 2) && enoughHumans;
+  // The host's last pick, kept while the switch is off.
+  const [games, setGames] = useState<TournamentGameCount>(series?.games ?? 3);
   const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
   // Host seat swap (team mode): the first tapped member, waiting for the second.
   const [picked, setPicked] = useState<string | null>(null);
@@ -63,8 +79,42 @@ export function LobbyScreen({ room, session }: { room: RoomStatePayload; session
           <p className="text-xs text-muted" data-testid="lobby-mode">
             {t.home.modes[room.config.mode]}
             {teams && ` · ${t.teams.modeLine}`}
+            {series && ` · ${t.tournament.lobbyLine(series.games)}`}
           </p>
         </div>
+
+        {isHost && (
+          <div className="flex flex-col gap-2" data-testid="lobby-tournament">
+            <TeamsSwitch
+              checked={series !== null}
+              onChange={(on) => client.setTournament(on ? games : null)}
+              label={`🏆 ${t.tournament.toggle}`}
+              hint={t.tournament.toggleHint}
+              testId="tournament-switch"
+            />
+            {series && (
+              <div role="radiogroup" aria-label={t.tournament.games} className="grid grid-cols-3 gap-1.5" data-testid="tournament-games">
+                {TOURNAMENT_GAME_COUNTS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    role="radio"
+                    aria-checked={series.games === n}
+                    onClick={() => {
+                      setGames(n);
+                      client.setTournament(n);
+                    }}
+                    className={`min-h-11 rounded-btn py-1.5 text-sm font-bold ring-1 transition-colors ${
+                      series.games === n ? 'bg-accent text-accent-ink ring-accent' : 'bg-surface-2 ring-line hover:bg-surface-3'
+                    }`}
+                  >
+                    {t.tournament.gamesOption(n)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {isHost && room.maxPlayers === TEAM_GAME_PLAYERS && (
           <TeamsSwitch checked={teams} onChange={(on) => client.setTeams(on)} />
@@ -128,7 +178,13 @@ export function LobbyScreen({ room, session }: { room: RoomStatePayload; session
 
       {isHost ? (
         <Button onClick={() => client.startGame()} disabled={!canStart}>
-          {canStart ? t.lobby.start : teams ? t.teams.needFour : t.lobby.needMorePlayers}
+          {canStart
+            ? t.lobby.start
+            : !enoughHumans
+              ? t.tournament.needHumans
+              : teams
+                ? t.teams.needFour
+                : t.lobby.needMorePlayers}
         </Button>
       ) : (
         <p className="text-center text-muted">{t.lobby.waitingForHost}</p>

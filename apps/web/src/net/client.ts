@@ -9,6 +9,7 @@ import {
   type GameMode,
   type ReactionId,
   type RoomStatePayload,
+  type TournamentGameCount,
   type SessionIssuedPayload,
 } from '@durak/shared';
 import { ReactionBucket } from '../reactions/bucket';
@@ -208,6 +209,24 @@ export class GameClient {
   setTeams(teams: boolean): void {
     const session = this.boundSession();
     if (session) this.transport.emit('room:setTeams', { roomId: session.roomId, teams });
+  }
+
+  /** Host, lobby: play a series of `games` games (null = single games). */
+  setTournament(games: TournamentGameCount | null): void {
+    const session = this.boundSession();
+    if (session) this.transport.emit('room:setTournament', { roomId: session.roomId, games });
+  }
+
+  /** Between games of a series: deal the next game (the host, or anyone once the host is away). */
+  tournamentNext(): void {
+    const session = this.boundSession();
+    if (session) this.transport.emit('tournament:next', { roomId: session.roomId });
+  }
+
+  /** Between games of a series: end it now (no champion). */
+  tournamentEnd(): void {
+    const session = this.boundSession();
+    if (session) this.transport.emit('tournament:end', { roomId: session.roomId });
   }
 
   /** Host, lobby: swap two members' seats (teams follow seats). */

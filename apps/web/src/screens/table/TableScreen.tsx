@@ -48,6 +48,8 @@ import { gameOverCue } from '../../audio/soundPlan';
 import { DurakReveal } from '../../moments/DurakReveal';
 import { teamName, teamOf } from '../../game/teams';
 import { MomentBanner } from '../../moments/MomentBanner';
+import { TournamentActions, TournamentPill } from '../../tournament/TournamentPanel';
+import { tournamentLeave } from '../../tournament/tournament';
 import { useMomentQueue } from '../../moments/useMomentQueue';
 
 const GAME_ERRORS: ReadonlySet<string> = new Set(GAME_ERROR_CODES);
@@ -274,8 +276,14 @@ export function TableScreen({ source }: { source: TableSource }) {
     />
   );
 
+  // A tournament: the pill while a series game runs, the series' consequence in the leave confirm.
+  const series = online ? (room?.tournament ?? null) : null;
+  const seriesLeave = tournamentLeave(series ? room : null, viewerId);
+  const leaveExtra = seriesLeave === 'bot' ? t.tournament.leaveBot : seriesLeave === 'ends' ? t.tournament.leaveEnds : null;
+  const leaveButton = <LeaveButton outcome={source.leave.outcome} onLeave={source.leave.run} extra={leaveExtra} />;
   const tools = (
     <>
+      {series && series.status === 'running' && room?.status === 'playing' && <TournamentPill tournament={series} />}
       {online && canProposeRestart(view, room) && <RestartButton disabled={!!room?.restartVote || reconnecting} />}
       <HelpButton />
       <SettingsButton />
@@ -310,6 +318,26 @@ export function TableScreen({ source }: { source: TableSource }) {
           nameOf={nameOf}
           canRematch={!spectator && !!online}
           {...(online ? { onRematch: online.rematch } : {})}
+          {...(series && room
+            ? {
+                tournament: {
+                  view: series,
+                  actions:
+                    series.status === 'running' && online ? (
+                      <TournamentActions
+                        room={room}
+                        viewerId={viewerId}
+                        roomReceivedAt={online.roomReceivedAt}
+                        now={source.now}
+                        nameOf={nameOf}
+                        onNext={online.tournamentNext}
+                        onEnd={online.tournamentEnd}
+                        {...(!spectator ? { leave: leaveButton } : {})}
+                      />
+                    ) : null,
+                },
+              }
+            : {})}
           {...(guide?.gameOverAction ? { action: guide.gameOverAction } : {})}
           reduced={reduced}
           reactions={reactions}
@@ -338,7 +366,7 @@ export function TableScreen({ source }: { source: TableSource }) {
           >
             <aside className="flex w-28 shrink-0 flex-col gap-1.5" data-testid="seat-column">
               <div className="flex">
-                <LeaveButton outcome={source.leave.outcome} onLeave={source.leave.run} />
+                {leaveButton}
               </div>
               <ul className="flex min-h-0 flex-1 flex-col justify-evenly gap-1" aria-label="opponents">
                 {opponentsInOrder(view).map((p) => (
@@ -406,7 +434,7 @@ export function TableScreen({ source }: { source: TableSource }) {
           className="relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-2 pt-2 pr-[max(var(--sai-right),0.5rem)] pl-[max(var(--sai-left),0.5rem)] sm:gap-3 sm:pt-3 sm:pr-[max(var(--sai-right),1rem)] sm:pl-[max(var(--sai-left),1rem)] [@media(max-height:820px)]:gap-2"
           data-layout={mode}
         >
-          <TopBar leave={<LeaveButton outcome={source.leave.outcome} onLeave={source.leave.run} />} extra={tools} />
+          <TopBar leave={leaveButton} extra={tools} />
           {online && <RestartVotePanel viewerId={view.viewerId} />}
           {opponents}
 
