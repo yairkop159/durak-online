@@ -204,6 +204,8 @@ const room = (status: 'lobby' | 'playing' | 'finished', list = members) => ({
   spectatorCount: 0,
   status,
   restartVote: null,
+  tournamentSetup: null,
+  tournament: null,
 });
 
 transport.connect();

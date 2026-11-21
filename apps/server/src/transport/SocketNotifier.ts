@@ -35,6 +35,8 @@ export function toRoomStatePayload(room: Room, now: number): RoomStatePayload {
           awaiting: vote.voters.filter((id) => !vote.accepted.includes(id)),
         }
       : null,
+    tournamentSetup: null,
+    tournament: null,
   };
 }
 
