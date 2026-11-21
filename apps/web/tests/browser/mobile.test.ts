@@ -644,15 +644,18 @@ describe.skipIf(!executablePath)('phones (mobile emulation, touch)', () => {
         // Every standings row is readable: scrolled into view, inside the screen, not under the actions.
         expect(await ratingVisibility(page, 'tournament-progress', 'standing-bob', 'standing-fay')).toEqual([]);
         expect(await page.getByTestId('standing-dana').textContent()).toContain(t.tournament.left);
-        // Names stay readable next to the markers: never truncated to nothing.
-        for (const [id, name] of [['me', 'ME'], ['dana', 'Dana']] as const) {
-          const shown = await page.getByTestId(`standing-${id}`).locator('td:nth-child(2) .truncate').evaluate((el) => ({
-            text: el.textContent ?? '',
-            width: el.getBoundingClientRect().width,
-            full: el.scrollWidth,
-          }));
+        // Names stay readable: shown whole, or at least MIN_NAME_PX of a long one. Both widths are
+        // the exact layout widths (a Range over the text vs the box): scrollWidth is rounded to whole
+        // pixels and made a fully shown 23.5 px name look truncated under other fonts (CI, Linux).
+        const MIN_NAME_PX = 40;
+        for (const [id, name] of [['me', 'ME'], ['bob', 'BOB'], ['dana', 'Dana']] as const) {
+          const shown = await page.getByTestId(`standing-${id}`).locator('td:nth-child(2) .truncate').evaluate((el) => {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            return { text: el.textContent ?? '', box: el.getBoundingClientRect().width, natural: range.getBoundingClientRect().width };
+          });
           expect(shown.text.startsWith(name.slice(0, 2)), id).toBe(true);
-          expect(shown.width, id).toBeGreaterThanOrEqual(Math.min(shown.full, 40));
+          expect(shown.box, id).toBeGreaterThanOrEqual(Math.min(shown.natural, MIN_NAME_PX));
         }
         await shot(page, `tournament-standings-${size}`);
 

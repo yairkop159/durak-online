@@ -45,7 +45,6 @@ export function TournamentStandings({
           <th scope="col" className="w-7 px-1 text-center font-medium">{t.tournament.columns.rank}</th>
           <th scope="col" className="px-1 text-start font-medium">{t.tournament.columns.name}</th>
           <th scope="col" className="px-1 text-center font-medium">{t.tournament.columns.points}</th>
-          <th scope="col" className="px-1 text-center font-medium">{t.tournament.columns.last}</th>
           <th scope="col" className="px-1 text-center font-medium">{t.tournament.columns.duraks}</th>
         </tr>
       </thead>
@@ -68,7 +67,7 @@ export function TournamentStandings({
               <td className="max-w-0 px-1 py-1.5">
                 <div className="flex items-center gap-1.5">
                   {team !== null && <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-full ${TEAM_DOT[team]}`} />}
-                  <span dir="auto" className={`truncate font-semibold ${team !== null ? TEAM_TEXT[team] : ''}`}>{rowName(tv, row, nameOf)}</span>
+                  <span dir="auto" className={`min-w-14 truncate text-right font-semibold ${team !== null ? TEAM_TEXT[team] : ''}`}>{rowName(tv, row, nameOf)}</span>
                   {/* The row is highlighted; the name keeps the width (narrow phones). */}
                   {mine && <span className="sr-only"> ({t.tournament.you})</span>}
                 </div>
@@ -77,9 +76,14 @@ export function TournamentStandings({
                   <div className="truncate text-xs text-muted">{row.playerIds.map(nameOf).join(' · ')}</div>
                 )}
               </td>
-              <td className="px-1 py-1.5 text-center text-base font-black tabular-nums" dir="ltr">{formatPoints(row.points)}</td>
-              <td className="px-1 py-1.5 text-center tabular-nums text-muted" dir="ltr">
-                {row.lastPoints === null ? '–' : `+${formatPoints(row.lastPoints)}`}
+              {/* This game's points sit under the total: one column less leaves the names room. */}
+              <td className="px-1 py-1 text-center tabular-nums" dir="ltr">
+                <span className="block text-base leading-tight font-black">{formatPoints(row.points)}</span>
+                {row.lastPoints !== null && (
+                  <span className="block text-xs leading-tight text-muted" data-testid={`last-${row.key}`}>
+                    <span className="sr-only">{t.tournament.columns.last}: </span>+{formatPoints(row.lastPoints)}
+                  </span>
+                )}
               </td>
               <td className="rounded-e-lg px-1 py-1.5 text-center tabular-nums" dir="ltr">{row.duraks}</td>
             </tr>
