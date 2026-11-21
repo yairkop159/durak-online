@@ -1,7 +1,7 @@
 import type { EntrantKey, RoomStatePayload, StandingRow, TeamIndex, TournamentView } from '@durak/shared';
 import { useState, type ReactNode } from 'react';
 import { ConfirmDialog } from '../components/Modal';
-import { Button, Pill } from '../components/ui';
+import { Button } from '../components/ui';
 import { TEAM_DOT, TEAM_TEXT, teamName } from '../game/teams';
 import { t } from '../i18n';
 import { secondsLeft, useCountdown } from '../net/clock';
@@ -68,10 +68,11 @@ export function TournamentStandings({
               <td className="max-w-0 px-1 py-1.5">
                 <div className="flex items-center gap-1.5">
                   {team !== null && <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-full ${TEAM_DOT[team]}`} />}
-                  <span className={`truncate font-semibold ${team !== null ? TEAM_TEXT[team] : ''}`}>{rowName(tv, row, nameOf)}</span>
-                  {mine && <span className="shrink-0 text-xs text-muted">({t.tournament.you})</span>}
-                  {left && !tv.teams && <Pill tone="muted">{t.tournament.left}</Pill>}
+                  <span dir="auto" className={`truncate font-semibold ${team !== null ? TEAM_TEXT[team] : ''}`}>{rowName(tv, row, nameOf)}</span>
+                  {/* The row is highlighted; the name keeps the width (narrow phones). */}
+                  {mine && <span className="sr-only"> ({t.tournament.you})</span>}
                 </div>
+                {left && !tv.teams && <div className="text-xs text-warn">{t.tournament.left}</div>}
                 {tv.teams && (
                   <div className="truncate text-xs text-muted">{row.playerIds.map(nameOf).join(' · ')}</div>
                 )}
@@ -142,6 +143,7 @@ export function TournamentActions({
   onNext,
   onEnd,
   leave,
+  extra,
 }: {
   room: RoomStatePayload;
   viewerId: string | null;
@@ -153,6 +155,8 @@ export function TournamentActions({
   onEnd: () => void;
   /** The leave button (players only). */
   leave?: ReactNode;
+  /** More small controls for the same row (the reaction button). */
+  extra?: ReactNode;
 }) {
   const tv = room.tournament!;
   const [confirming, setConfirming] = useState(false);
@@ -168,14 +172,9 @@ export function TournamentActions({
   return (
     <div className="flex w-full flex-col items-center gap-2" data-testid="tournament-actions">
       {lead ? (
-        <>
-          <Button size="lg" className="w-full" onClick={onNext} data-testid="tournament-next">
-            {t.tournament.next(next, tv.gamesPlanned)}
-          </Button>
-          <Button variant="secondary" className="w-full" onClick={() => setConfirming(true)} data-testid="tournament-end">
-            {t.tournament.end}
-          </Button>
-        </>
+        <Button size="lg" className="w-full [@media(max-height:500px)]:min-h-11 [@media(max-height:500px)]:text-base" onClick={onNext} data-testid="tournament-next">
+          {t.tournament.next(next, tv.gamesPlanned)}
+        </Button>
       ) : (
         <p className="text-center text-sm text-muted" role="status" data-testid="tournament-waiting">
           {host ? t.tournament.waitingForHost(nameOf(host.playerId)) : null}
@@ -185,7 +184,18 @@ export function TournamentActions({
         </p>
       )}
       {lead && room.hostId !== viewerId && <p className="text-center text-xs text-muted">{t.tournament.hostAway}</p>}
-      {leave}
+      {/* Side by side: short landscape phones have little height for the pinned actions. */}
+      {(lead || leave || extra) && (
+        <div className="flex w-full flex-wrap items-center justify-center gap-2">
+          {extra}
+          {lead && (
+            <Button variant="secondary" className="flex-1 whitespace-nowrap" onClick={() => setConfirming(true)} data-testid="tournament-end">
+              {t.tournament.end}
+            </Button>
+          )}
+          {leave}
+        </div>
+      )}
       {confirming && (
         <ConfirmDialog
           title={t.tournament.endConfirm.title}

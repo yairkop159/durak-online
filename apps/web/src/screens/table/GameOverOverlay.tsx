@@ -52,7 +52,7 @@ export function GameOverOverlay({
    * The room's series: its standings are shown, and between games `actions` (next game / end /
    * waiting, leave) replace "back to the lobby". Once the series is over, back to the lobby ends it.
    */
-  tournament?: { readonly view: TournamentView; readonly actions: ReactNode | null } | null;
+  tournament?: { readonly view: TournamentView; readonly actions: ((extra: ReactNode) => ReactNode) | null } | null;
 }) {
   const durak = gameOver ? gameOver.durakId : view.phase.kind === 'finished' ? view.phase.durak : null;
   const reason = gameOver?.endReason ?? 'normal';
@@ -162,13 +162,14 @@ export function GameOverOverlay({
           )}
           {/* The actions stay in view while the stats scroll (a short landscape phone). */}
           <div className="sticky bottom-0 -mx-5 -mb-5 flex w-[calc(100%+2.5rem)] flex-col items-center gap-3 rounded-b-[22px] bg-surface px-5 pt-2 pb-5" data-testid="game-over-actions">
-            {canReact && <ReactionButton />}
+            {/* Between series games the reaction button shares the actions' row (short phones). */}
+            {canReact && !tournament?.actions && <ReactionButton />}
             {action ? (
               <Button size="lg" className="w-full" onClick={action.run}>
                 {action.label}
               </Button>
             ) : tournament?.actions ? (
-              tournament.actions
+              tournament.actions(canReact ? <ReactionButton /> : null)
             ) : canRematch && onRematch ? (
               <Button size="lg" className="w-full" onClick={onRematch}>
                 {t.gameOver.backToLobby}

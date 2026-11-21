@@ -1,7 +1,7 @@
 import { getLegalMovesForView } from '@durak/game-engine';
 import { GAME_ERROR_CODES, type Card, type ClientMove } from '@durak/shared';
 import { LayoutGroup, useReducedMotion } from 'motion/react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnchorProvider, AnchorRegistry } from '../../anim/anchors';
 import { FlightLayer } from '../../anim/FlightLayer';
 import { planFlights, useBoardAnimation, type Flight } from '../../anim/useBoardAnimation';
@@ -341,8 +341,9 @@ export function TableScreen({ source }: { source: TableSource }) {
                 tournament: {
                   view: series,
                   actions:
-                    series.status === 'running' && online ? (
+                    series.status === 'running' && online ? (extra: ReactNode) => (
                       <TournamentActions
+                        extra={extra}
                         room={room}
                         viewerId={viewerId}
                         roomReceivedAt={online.roomReceivedAt}

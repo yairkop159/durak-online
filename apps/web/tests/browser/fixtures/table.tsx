@@ -18,6 +18,13 @@
  * in a team game (carl, my partner, attacks dana; dana transfers to me); `?scenario=teams-lobby` the
  * host's team lobby (three members, one free seat, swap buttons); `?scenario=teams-gameover` a
  * finished, rated team game that my team lost (carl is the durak).
+ * Tournaments (a series of 5): `?scenario=tournament` is the crowded six-player table during game 3
+ * (the "🏆 3/5" pill in the top bar); `?scenario=tournament-standings` the six-player game over with
+ * the standings and the host's "next game" / "end" / "leave" between games (the worst case: six rows,
+ * the stats and the rating list); `?scenario=tournament-champion` the same after the last game (a
+ * reload: no champion moment, the final table and the champion line); `?scenario=tournament-teams`
+ * the team game over with team standings; `?scenario=tournament-lobby` the host's lobby with the
+ * series switch on (5 games).
  */
 import {
   DEFAULT_GAME_CONFIG,
@@ -26,6 +33,8 @@ import {
   type ClientToServerEvents,
   type PlayerView,
   type ServerToClientEvents,
+  type StandingRow,
+  type TournamentView,
 } from '@durak/shared';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -67,10 +76,13 @@ class PageTransport implements Transport {
 const ROOM = 'room1234';
 const card = (rank: Card['rank'], suit: Card['suit']): Card => ({ rank, suit });
 const scenario = new URLSearchParams(window.location.search).get('scenario') ?? 'default';
-const gameOverScenario = scenario === 'gameover' || scenario === 'gameover-reload';
-const teams = scenario === 'teams' || scenario === 'teams-lobby' || scenario === 'teams-gameover';
-const crowded = scenario === 'crowded' || scenario === 'crowded6' || gameOverScenario || teams;
-const six = scenario === 'crowded6' || gameOverScenario;
+const seriesScenario = scenario.startsWith('tournament');
+const gameOverScenario =
+  scenario === 'gameover' || scenario === 'gameover-reload' || scenario === 'tournament-standings' || scenario === 'tournament-champion';
+const teamsGameOver = scenario === 'teams-gameover' || scenario === 'tournament-teams';
+const teams = scenario === 'teams' || scenario === 'teams-lobby' || teamsGameOver;
+const crowded = scenario === 'crowded' || scenario === 'crowded6' || scenario === 'tournament' || gameOverScenario || teams;
+const six = scenario === 'crowded6' || scenario === 'tournament' || gameOverScenario;
 const OTHERS = six ? ['bob', 'carl', 'dana', 'eli', 'fay'] : teams ? ['bob', 'carl', 'dana'] : ['bob', 'carl'];
 /** Step 1's attacker and defender; the defender transfers to me in step 2. Teams: always opponents. */
 const FIRST_ATTACKER = teams ? 'carl' : 'bob';
@@ -194,6 +206,38 @@ const member = (id: string, bot = false) => ({
   leftGame: false,
 });
 const members = PLAYERS.map((id) => member(id));
+
+/** The room's series (tournament scenarios): 5 games, standings derived like the server's. */
+function series(): TournamentView | null {
+  if (!seriesScenario || scenario === 'tournament-lobby') return null;
+  const finished = scenario === 'tournament-champion';
+  const row = (key: string, points: number, rank: number, extra: Partial<StandingRow> = {}): StandingRow => ({
+    key,
+    playerIds: [key],
+    points,
+    duraks: rank === PLAYERS.length ? 2 : rank > 3 ? 1 : 0,
+    firsts: rank === 1 ? 2 : 0,
+    lastPoints: Math.max(0, 5 - rank),
+    eligible: true,
+    rank,
+    ...extra,
+  });
+  const standings = teams
+    ? [row('team1', 2, 1, { playerIds: ['bob', 'dana'] }), row('team0', 1, 2, { playerIds: ['me', 'carl'] })]
+    : [row('bob', finished ? 19 : 9, 1), row('carl', 7.5, 2), row('me', 7.5, 2), row('dana', 5, 4, { eligible: false }), row('eli', 4, 5), row('fay', 0, 6)];
+  return {
+    id: 't1',
+    status: finished ? 'finished' : 'running',
+    teams,
+    gamesPlanned: 5,
+    gamesPlayed: finished ? 5 : scenario === 'tournament' ? 2 : 3,
+    roster: PLAYERS.map((id) => ({ playerId: id, nickname: NICKNAMES[id]!, isBot: false, left: id === 'dana' && !teams })),
+    standings,
+    champions: finished ? ['bob'] : [],
+    leadOpenAt: null,
+    serverTime: Date.now(),
+  };
+}
 const game = (step: Step) => ({ roomId: ROOM, gameId: 'g1', version: step, view: view(step), turnDeadline: Date.now() + 60_000, serverTime: Date.now() });
 const room = (status: 'lobby' | 'playing' | 'finished', list = members) => ({
   roomId: ROOM,
@@ -204,8 +248,8 @@ const room = (status: 'lobby' | 'playing' | 'finished', list = members) => ({
   spectatorCount: 0,
   status,
   restartVote: null,
-  tournamentSetup: null,
-  tournament: null,
+  tournamentSetup: seriesScenario ? { games: 5 as const } : null,
+  tournament: series(),
 });
 
 transport.connect();
@@ -214,7 +258,10 @@ if (scenario === 'teams-lobby') {
   // Seats: me (team 0), the bot (team 1), carl (team 0); seat 3 (team 1) is free.
   transport.send('room:state', room('lobby', [member('me'), member('b1', true), member('carl')]));
   fixture.ready = true;
-} else if (scenario === 'teams-gameover') {
+} else if (scenario === 'tournament-lobby') {
+  transport.send('room:state', room('lobby', [member('me'), member('b1', true), member('carl')]));
+  fixture.ready = true;
+} else if (teamsGameOver) {
   // bob and dana went out: my team lost, carl (my partner, more cards) is the durak.
   const over: PlayerView = {
     ...view(2),
