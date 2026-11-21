@@ -1,6 +1,7 @@
 import { RATING_START, ratingEntry } from '@durak/shared';
 import { isRated, ratedSeats, ratingsAfter, type GameResultInput } from '../../src/ratings/gameResult.js';
 import { RatingsUnavailableError, type RecordOutcome, type ResultStore } from '../../src/ratings/ports.js';
+import type { TournamentResultInput } from '../../src/ratings/tournamentResult.js';
 
 /**
  * A ResultStore that behaves like PrismaResultStore without Postgres: idempotent by gameId, rates
@@ -13,6 +14,21 @@ export class MemoryResultStore implements ResultStore {
   calls = 0;
   down = false;
   hold: Promise<void> | null = null;
+
+  readonly tournaments = new Map<string, TournamentResultInput>();
+  readonly tournamentsWon = new Map<string, number>();
+
+  /** Idempotent by tournamentId; credited profiles get +1, like PrismaResultStore. */
+  async recordTournament(input: TournamentResultInput): Promise<{ readonly kind: 'recorded' | 'duplicate' }> {
+    this.calls++;
+    if (this.down) throw new RatingsUnavailableError();
+    if (this.tournaments.has(input.tournamentId)) return { kind: 'duplicate' };
+    this.tournaments.set(input.tournamentId, input);
+    for (const s of input.seats) {
+      if (s.credited && s.profileId !== null) this.tournamentsWon.set(s.profileId, (this.tournamentsWon.get(s.profileId) ?? 0) + 1);
+    }
+    return { kind: 'recorded' };
+  }
 
   async recordGame(input: GameResultInput): Promise<RecordOutcome> {
     this.calls++;

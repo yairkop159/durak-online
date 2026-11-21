@@ -5,6 +5,7 @@ import type { Room, Session, StoredGame } from '../src/domain/types.js';
 import { toRoomStatePayload } from '../src/transport/SocketNotifier.js';
 import { noBind, setupServices, unwrap } from './helpers/serviceHarness.js';
 import { chooseMove } from './helpers/viewStrategy.js';
+import { MemoryResultStore } from './helpers/memoryResultStore.js';
 
 type Ctx = ReturnType<typeof setupServices>;
 const longTurns = { turnTimeoutMs: 10 * 60_000 };
@@ -22,10 +23,12 @@ async function loadGame(ctx: Ctx, roomId: string): Promise<StoredGame> {
 }
 
 /** A lobby with `humans` humans (+ bots) and a series of `games` set up, started. */
+const prof = (i: number) => `profile${i}`.padEnd(22, 'x');
+
 async function series(ctx: Ctx, humans: number, games: 3 | 5 | 7 = 3, bots: BotDifficulty[] = []) {
-  const host = await unwrap(ctx.rooms.createRoom({ nickname: 'h0', maxPlayers: humans + bots.length }, noBind));
+  const host = await unwrap(ctx.rooms.createRoom({ nickname: 'h0', maxPlayers: humans + bots.length, profileId: prof(0) }, noBind));
   const sessions = [host];
-  for (let i = 1; i < humans; i++) sessions.push(await unwrap(ctx.rooms.joinRoom(host.roomId, `h${i}`, noBind)));
+  for (let i = 1; i < humans; i++) sessions.push(await unwrap(ctx.rooms.joinRoom(host.roomId, `h${i}`, noBind, prof(i))));
   for (const d of bots) await unwrap(ctx.rooms.addBot(host, d));
   await unwrap(ctx.rooms.setTournament(host, games));
   await unwrap(ctx.rooms.startGame(host));
@@ -281,5 +284,41 @@ describe('restart vote in a series', () => {
     await ctx.rooms.markDisconnected(guest, async () => true);
     await unwrap(ctx.votes.propose(host));
     expect(ctx.notifier.of('voteEnded').at(-1)!.ended!.outcome).toBe('passed');
+  });
+});
+
+describe('the series result reaches the match history (through the result queue)', () => {
+  it('a finished series is queued once, after its last game; a re-submission is a duplicate', async () => {
+    const store = new MemoryResultStore();
+    const ctx = setupServices({ settings: longTurns, results: store });
+    const { roomId, sessions } = await series(ctx, 2, 3);
+    for (let n = 0; n < 3; n++) {
+      await playOut(ctx, roomId, sessions);
+      if (n < 2) await unwrap(ctx.rooms.tournamentNext(sessions[0]!));
+    }
+    await ctx.time.advanceBy(0);
+    expect(store.stored.size).toBe(3);
+    expect([...store.tournaments.values()].map((t) => [t.status, t.gamesPlayed])).toEqual([['finished', 3]]);
+    const credited = [...store.tournamentsWon.keys()];
+    expect(credited.length).toBeGreaterThan(0);
+    expect(credited.every((id) => [prof(0), prof(1)].includes(id))).toBe(true);
+
+    expect(await ctx.recorder!.resubmitFinished(ctx.repos)).toBeGreaterThan(0);
+    await ctx.time.advanceBy(0);
+    expect(store.tournaments.size).toBe(1);
+    expect([...store.tournamentsWon.values()].every((v) => v === 1)).toBe(true);
+  });
+
+  it('an early end (host ends it between games) is stored with no champion', async () => {
+    const store = new MemoryResultStore();
+    const ctx = setupServices({ settings: longTurns, results: store });
+    const { roomId, sessions } = await series(ctx, 2, 5);
+    await playOut(ctx, roomId, sessions);
+    await unwrap(ctx.rooms.tournamentEnd(sessions[0]!));
+    await ctx.time.advanceBy(0);
+    const stored = [...store.tournaments.values()];
+    expect(stored.map((t) => t.status)).toEqual(['endedEarly']);
+    expect(stored[0]!.seats.some((s) => s.champion)).toBe(false);
+    expect(store.tournamentsWon.size).toBe(0);
   });
 });

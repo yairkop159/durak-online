@@ -304,6 +304,8 @@ export interface Strings {
     readonly games: string;
     readonly wins: string;
     readonly duraks: string;
+    /** Tournaments this profile won. */
+    readonly tournamentsWon: string;
     readonly recent: string;
     readonly noGames: string;
     readonly results: Record<PlayerResult, string>;
@@ -796,6 +798,7 @@ export const he: Strings = {
     games: 'משחקים',
     wins: 'ניצחונות',
     duraks: 'פעמים דוראק',
+    tournamentsWon: 'זכיות בטורניר',
     recent: 'משחקים אחרונים',
     noGames: 'עוד אין משחקים. המשחקים הבאים יופיעו כאן.',
     results: { win: 'ניצחון', durak: 'דוראק', draw: 'תיקו', forfeit: 'הפסד טכני', unfinished: 'לא הסתיים', teamLoss: 'הפסד קבוצתי' },

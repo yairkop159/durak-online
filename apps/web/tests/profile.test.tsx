@@ -55,6 +55,7 @@ const profile = (over: Partial<PublicProfile> = {}): PublicProfile => ({
   wins: 3,
   duraks: 1,
   forfeits: 0,
+  tournamentsWon: 1,
   rank: 2,
   recent: [
     {

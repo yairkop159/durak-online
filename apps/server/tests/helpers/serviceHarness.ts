@@ -162,7 +162,14 @@ export function setupServices(options: ServiceHarnessOptions = {}) {
     committer,
     votes,
     ...(recorder ? { ratingStatus: (room: Room, game: StoredGame) => recorder.statusFor(room, game) } : {}),
-    ...(options.onTournamentClosed ? { onTournamentClosed: options.onTournamentClosed } : {}),
+    ...(options.onTournamentClosed || recorder
+      ? {
+          onTournamentClosed: (room: Room) => {
+            recorder?.recordTournament(room);
+            options.onTournamentClosed?.(room);
+          },
+        }
+      : {}),
   });
   const games = new GameService({ repos, mutex, notifier, committer });
   const runner = options.bots?.runner ?? new InProcessRunner({ recordJobs: true });

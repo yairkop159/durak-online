@@ -28,10 +28,13 @@ model Profile {
   wins              Int       @default(0)
   duraks            Int       @default(0)
   forfeits          Int       @default(0)
+  /// Tournaments this profile won (co-champions each count one; never for a bot champion).
+  tournamentsWon    Int       @default(0) @map("tournaments_won")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  seats GamePlayer[]
+  seats             GamePlayer[]
+  tournamentSeats   TournamentPlayer[]
 
   @@index([rating(sort: Desc), id], map: "profiles_leaderboard_idx")
   @@map("profiles")
@@ -91,4 +94,47 @@ model GamePlayer {
   @@id([gameId, seat])
   @@index([profileId, gameId])
   @@map("game_players")
+}
+
+/// A finished or early-ended tournament (a series of games in one room) with at least one
+/// profiled human. id = the server's tournament id.
+model Tournament {
+  id           String   @id
+  roomId       String   @map("room_id")
+  mode         String
+  teams        Boolean
+  gamesPlanned Int      @map("games_planned")
+  gamesPlayed  Int      @map("games_played")
+  /// finished | endedEarly (an early end has no champion)
+  status       String
+  startedAt    DateTime @map("started_at")
+  endedAt      DateTime @map("ended_at")
+
+  players TournamentPlayer[]
+
+  @@index([endedAt])
+  @@map("tournaments")
+}
+
+/// One roster seat of a stored tournament. Bots and unprofiled humans have no profile_id.
+model TournamentPlayer {
+  tournamentId String   @map("tournament_id")
+  seat         Int
+  profileId    String?  @map("profile_id")
+  nickname     String
+  isBot        Boolean  @map("is_bot")
+  /// The human left during the series (a bot played the seat; never champion).
+  left         Boolean
+  /// Points of the seat (classic) or of its team (2v2); multiples of 0.5.
+  points       Float
+  duraks       Int
+  rank         Int
+  champion     Boolean
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  profile    Profile?   @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  @@id([tournamentId, seat])
+  @@index([profileId])
+  @@map("tournament_players")
 }

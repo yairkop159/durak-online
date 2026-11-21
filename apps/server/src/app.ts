@@ -260,6 +260,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     votes,
     maxRooms: limits.maxRooms,
     ratingStatus: (room, game) => recorder.statusFor(room, game),
+    onTournamentClosed: (room) => recorder.recordTournament(room),
   });
   const games = new GameService({ repos, mutex, notifier, committer });
 

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { Session, StoredGame } from '../src/domain/types.js';
 import { isRated, ratingsAfter, seatResult, type GameResultInput } from '../src/ratings/gameResult.js';
 import { RatingsUnavailableError, type RecordOutcome, type ResultStore } from '../src/ratings/ports.js';
+import type { TournamentResultInput } from '../src/ratings/tournamentResult.js';
 import { noBind, setupServices, unwrap } from './helpers/serviceHarness.js';
 import { chooseMove } from './helpers/viewStrategy.js';
 
@@ -12,6 +13,14 @@ class CapturingStore implements ResultStore {
   readonly recorded = new Map<string, GameResultInput>();
   calls = 0;
   down = false;
+  readonly tournaments: TournamentResultInput[] = [];
+  async recordTournament(input: TournamentResultInput): Promise<{ readonly kind: 'recorded' | 'duplicate' }> {
+    this.calls++;
+    if (this.down) throw new RatingsUnavailableError();
+    if (this.tournaments.some((t) => t.tournamentId === input.tournamentId)) return { kind: 'duplicate' };
+    this.tournaments.push(input);
+    return { kind: 'recorded' };
+  }
   async recordGame(input: GameResultInput): Promise<RecordOutcome> {
     this.calls++;
     if (this.down) throw new RatingsUnavailableError();

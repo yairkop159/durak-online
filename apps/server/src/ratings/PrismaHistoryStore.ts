@@ -69,6 +69,7 @@ export class PrismaHistoryStore implements HistoryStore {
       wins: profile.wins,
       duraks: profile.duraks,
       forfeits: profile.forfeits,
+      tournamentsWon: profile.tournamentsWon,
       rank,
       recent,
     };

@@ -97,10 +97,11 @@ function ProfileDetails({ profile }: { profile: PublicProfile }) {
             <div className="text-xs text-muted">{t.profile.rating}</div>
           </div>
         </div>
-        <dl className="grid grid-cols-3 gap-2 text-center">
+        <dl className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
           <Stat label={t.profile.games} value={profile.games} />
           <Stat label={t.profile.wins} value={profile.wins} />
           <Stat label={t.profile.duraks} value={profile.duraks} />
+          <Stat label={t.profile.tournamentsWon} value={profile.tournamentsWon} />
         </dl>
       </Panel>
       <Panel className="flex flex-col gap-3">

@@ -113,7 +113,10 @@ suite('migration upgrade path: team_mode on a database with Phase 10 data (real 
       );
     }
     const snapshot = async () => ({
-      profiles: await q('SELECT * FROM profiles ORDER BY id'),
+      // The Phase 10 columns exactly (later migrations add columns of their own).
+      profiles: await q(
+        'SELECT id, nickname, device_key_hash, transfer_code_hash, transfer_expires_at, rating, games, rated_games, wins, duraks, forfeits, created_at, updated_at FROM profiles ORDER BY id',
+      ),
       games: await q('SELECT id, room_id, mode, player_count, end_reason, rated, bot_assisted, durak_profile_id, started_at, ended_at FROM games ORDER BY id'),
       players: await q('SELECT * FROM game_players ORDER BY game_id, seat'),
     });
