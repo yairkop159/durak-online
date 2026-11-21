@@ -132,6 +132,28 @@ describe.skipIf(!executablePath)('real browser: controls are clickable', () => {
         });
       }, 30_000);
     }
+
+    it(`tutorial lesson (${vp.name}): the guide panel never blocks the hand, the table or Take; raw clicks play the lesson`, async () => {
+      await withPage(env!, { viewport: vp }, async (page) => {
+        await page.goto(`${base}tutorial/defend-suit`);
+        await page.getByTestId('guide').waitFor();
+        await page.waitForTimeout(700);
+        expect(await coveredControls(page, '[data-testid="hand"] [data-card]')).toEqual([]);
+        const click = async (selector: string) => {
+          const box = (await page.locator(selector).first().boundingBox())!;
+          await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.4);
+        };
+        // A wrong try (Take), explained; then the feedback's own button.
+        await click(`button:has-text("${t.table.take}")`);
+        await page.locator('[data-testid="guide"][data-phase="wrong"]').waitFor({ timeout: 2000 });
+        expect(await coveredControls(page, '[data-testid="hand"] [data-card]')).toEqual([]);
+        await click(`[data-testid="guide"] button:has-text("${t.tutorial.tryAgain}")`);
+        await page.locator('[data-testid="guide"][data-phase="playing"]').waitFor({ timeout: 2000 });
+        await click('[data-testid="hand"] [data-card="10C"]');
+        await click('[data-testid="pair-0"] button');
+        await page.locator('[data-testid="guide"][data-phase="success"]').waitFor({ timeout: 4000 });
+      });
+    }, 30_000);
   }
 
   // The table screen fits one viewport: however full the table and the hand, nothing scrolls.

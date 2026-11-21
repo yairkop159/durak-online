@@ -83,6 +83,7 @@ export function HandFan({
   shakeHand,
   onShakeHandEnd,
   onCardClick,
+  cardState,
   short = false,
 }: {
   hand: readonly Card[];
@@ -93,6 +94,8 @@ export function HandFan({
   shakeHand: boolean;
   onShakeHandEnd: () => void;
   onCardClick: (card: Card) => void;
+  /** Overrides a card's look (the tutorial highlights only the cards its lesson is about). */
+  cardState?: (card: Card, base: CardState) => CardState;
   /** A short landscape screen: the hand is beside the side panel and may be taller than 15dvh. */
   short?: boolean;
 }) {
@@ -123,7 +126,8 @@ export function HandFan({
           const id = cardId(card);
           const selected = selection.kind === 'hand' && selection.card.suit === card.suit && selection.card.rank === card.rank;
           const playable = interactive && isPlayable(card, moves, selection);
-          const state: CardState = !interactive ? 'plain' : selected ? 'selected' : playable ? 'playable' : 'dimmed';
+          const base: CardState = !interactive ? 'plain' : selected ? 'selected' : playable ? 'playable' : 'dimmed';
+          const state = cardState ? cardState(card, base) : base;
           return (
             <li
               key={id}

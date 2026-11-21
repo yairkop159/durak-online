@@ -9,8 +9,11 @@ import { isAttackTarget, type Selection } from '../../game/selection';
 import { t } from '../../i18n';
 import { motionTokens as M } from '../../theme/motion';
 
+/** The tutorial's "look here" ring around the face-up trump. */
+const TRUMP_HIGHLIGHT = 'ring-[3px] ring-accent ring-offset-2 ring-offset-surface';
+
 /** The stock with visible depth, the trump rotated 90° under it, and a count chip. */
-export function DeckPile({ view, small = false }: { view: PlayerView; small?: boolean }) {
+export function DeckPile({ view, small = false, highlightTrump = false }: { view: PlayerView; small?: boolean; highlightTrump?: boolean }) {
   const registry = useAnchorRegistry();
   const layers = view.deckCount <= 1 ? 0 : Math.min(3, Math.ceil(view.deckCount / 8));
   const trumpSuit = (
@@ -34,7 +37,7 @@ export function DeckPile({ view, small = false }: { view: PlayerView; small?: bo
       >
         <div className="relative h-10 w-12">
           <div ref={registry.ref(anchorKey.trump)} className={`absolute top-0 left-5 ${view.deckCount === 0 ? 'opacity-45 grayscale-[.4]' : ''}`}>
-            <PlayingCard card={view.trumpCard} size="xs" />
+            <PlayingCard card={view.trumpCard} size="xs" {...(highlightTrump ? { className: TRUMP_HIGHLIGHT } : {})} />
           </div>
           {layers > 0 && (
             <div ref={registry.ref(anchorKey.deck)} className="absolute top-0 left-0">
@@ -63,7 +66,7 @@ export function DeckPile({ view, small = false }: { view: PlayerView; small?: bo
           ref={registry.ref(anchorKey.trump)}
           className={`absolute top-[6px] left-[34px] rotate-90 sm:top-[9px] sm:left-[44px] ${view.deckCount === 0 ? 'opacity-45 grayscale-[.4]' : ''}`}
         >
-          <PlayingCard card={view.trumpCard} size="sm" />
+          <PlayingCard card={view.trumpCard} size="sm" {...(highlightTrump ? { className: TRUMP_HIGHLIGHT } : {})} />
         </div>
         {layers > 0 && (
           <div ref={registry.ref(anchorKey.deck)} className="absolute top-1 left-0">

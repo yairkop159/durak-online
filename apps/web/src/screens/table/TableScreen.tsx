@@ -12,6 +12,7 @@ import {
   clickAttackCard,
   clickHandCard,
   clickTransfer,
+  isPlayable,
   transferTarget,
   type ClickResult,
   type Selection,
@@ -19,8 +20,6 @@ import {
 import { sortHand } from '../../game/sortHand';
 import { t } from '../../i18n';
 import { useCountdown } from '../../net/clock';
-import { useClient, useClientState } from '../../net/react';
-import { isReconnecting } from '../../net/store';
 import { GameOverOverlay } from './GameOverOverlay';
 import { HandFan } from './HandFan';
 import { ActionBar, Countdown, StatusBanner } from './parts';
@@ -39,7 +38,8 @@ import { ANIMATION_SPEED_FACTOR } from '../../settings/settings';
 import { DeckPile, DiscardPile, TableArea } from './TableSurface';
 import { useLayoutMode } from '../../layout/layoutMode';
 import { useWakeLock } from '../../phone/wakeLock';
-import { useReactions } from '../../reactions/useReactions';
+import type { ReactionsInView } from '../../reactions/useReactions';
+import type { TableSource } from './source';
 import { ReactionAnnouncer } from '../../reactions/ReactionBubble';
 import { ReactionButton } from '../../reactions/ReactionPicker';
 import { seatEffects } from '../../anim/moments';
@@ -52,6 +52,8 @@ import { useMomentQueue } from '../../moments/useMomentQueue';
 
 const GAME_ERRORS: ReadonlySet<string> = new Set(GAME_ERROR_CODES);
 const LAST_BOUT_PEEK_MS = 2500;
+/** Sources without quick reactions (the tutorial). */
+const NO_REACTIONS: ReactionsInView = { enabled: false, byPlayer: new Map(), latest: null };
 
 /** True for `ms` after `trigger` changes to a truthy key (false right away for a falsy one). */
 function useFlash(key: number | null, ms: number): boolean {
@@ -76,15 +78,14 @@ function useDelayed(key: number, delayMs: number): boolean {
   return delayMs <= 0 || readyFor === key;
 }
 
-export function TableScreen() {
-  const client = useClient();
-  const state = useClientState();
-  const { game, room, gameOver, ratings, lastError } = state;
+/** The game table. `source` drives it: a real room (`OnlineTable`) or the tutorial. */
+export function TableScreen({ source }: { source: TableSource }) {
+  const { game, room, gameOver, ratings, lastError, members, online, guide } = source;
   // Disconnected or re-binding the seat: moves would be dropped, so don't offer any.
-  const reconnecting = isReconnecting(state);
+  const reconnecting = source.reconnecting;
   // Selection belongs to one game version: any new state (ours or anyone's move) clears it.
   const [picked, setPicked] = useState<{ version: number; selection: Selection }>({ version: -1, selection: NO_SELECTION });
-  const remaining = useCountdown(game, client.now);
+  const remaining = useCountdown(game, source.now);
   const reduced = useReducedMotion() ?? false;
   const mode = useLayoutMode();
   const short = mode === 'short';
@@ -144,7 +145,8 @@ export function TableScreen() {
   const [revealDoneFor, setRevealDoneFor] = useState<string | null>(null);
 
   // The screen stays on while the game runs (released when it ends, re-taken after the page was hidden).
-  useWakeLock(!!view && !gameFinished && room?.status === 'playing');
+  // (A local game, the tutorial, has no room: it runs while its game does.)
+  useWakeLock(!!view && !gameFinished && (!online || room?.status === 'playing'));
 
   const soundTurn = !!view && viewerId !== null && !gameFinished && !reconnecting && moves.length > 0;
   useGameSounds({
@@ -156,21 +158,21 @@ export function TableScreen() {
     table: view ? { config: view.config, players: view.players } : undefined,
     stingerByReveal: revealPlan !== null,
   });
-  const reactions = useReactions();
+  const reactions = online?.reactions ?? NO_REACTIONS;
   const moment = useMomentQueue(anim, { speed, enabled: !!view && !gameFinished && !reconnecting });
 
   if (!game || !view) return null;
 
   const selection = picked.version === game.version ? picked.selection : NO_SELECTION;
-  const members = room?.members;
   const nameOf = (id: string) => nicknameOf(id, members);
   const spectator = view.viewerId === null;
   const finished = view.phase.kind === 'finished' || room?.status === 'finished';
-  const interactive = !spectator && !finished && !reconnecting;
+  // A guided lesson pauses the table while it shows feedback.
+  const interactive = !spectator && !finished && !reconnecting && !guide?.blocked;
   const me = view.players.find((p) => p.id === view.viewerId);
   const myMember = me ? members?.find((m) => m.playerId === me.id) : undefined;
   // Seated players who still hold their seat (not spectators, not a seat a bot took over).
-  const canReact = reactions.enabled && !!myMember && !myMember.leftGame && !myMember.isBot;
+  const canReact = !!online && reactions.enabled && !!myMember && !myMember.leftGame && !myMember.isBot;
   const awaited = awaitedPlayers(view, interactive ? moves : []);
   const ringOf = (id: string): TurnRing => ({
     progress: !finished && awaited.has(id) ? (fraction ?? 1) : null,
@@ -183,10 +185,10 @@ export function TableScreen() {
 
   // First-game tips: shown for the current situation until dismissed or acted on once.
   // A short landscape screen has no room for them (they show in portrait and on bigger screens).
-  const tip = settings.showTips && interactive && !short ? tipFor(view, moves, settings.tipsSeen) : null;
+  const tip = settings.showTips && interactive && !short && !guide ? tipFor(view, moves, settings.tipsSeen) : null;
   const sendMove = (move: ClientMove) => {
     if (tip && tipLearnedBy(tip, move)) settingsStore.markTipSeen(tip);
-    client.sendMove(move);
+    source.sendMove(move);
   };
   const apply = ({ move, selection: next }: ClickResult) => {
     setPicked({ version: game.version, selection: next });
@@ -261,19 +263,25 @@ export function TableScreen() {
       interactive={interactive}
       shakeHand={shakeHand}
       onShakeHandEnd={() => setShakeHand(false)}
-      onCardClick={(card: Card) => interactive && apply(clickHandCard(card, moves, selection))}
+      onCardClick={(card: Card) => {
+        if (!interactive) return;
+        // A lesson explains a tap the table can't use (or takes it as a "pick").
+        if (guide?.onHandTap?.(card, isPlayable(card, moves, selection))) return;
+        apply(clickHandCard(card, moves, selection));
+      }}
+      {...(guide?.handCardState ? { cardState: guide.handCardState } : {})}
       short={short}
     />
   );
 
   const tools = (
     <>
-      {canProposeRestart(view, room) && <RestartButton disabled={!!room?.restartVote || reconnecting} />}
+      {online && canProposeRestart(view, room) && <RestartButton disabled={!!room?.restartVote || reconnecting} />}
       <HelpButton />
       <SettingsButton />
     </>
   );
-  const deckPile = <DeckPile view={view} small={short} />;
+  const deckPile = <DeckPile view={view} small={short} highlightTrump={guide?.highlightTrump ?? false} />;
   const discardPile = <DiscardPile view={view} showLastBout={peek && view.table.length === 0} small={short} />;
   const overlays = (
     <>
@@ -300,7 +308,9 @@ export function TableScreen() {
           view={view}
           gameOver={gameOver}
           nameOf={nameOf}
-          canRematch={!spectator}
+          canRematch={!spectator && !!online}
+          {...(online ? { onRematch: online.rematch } : {})}
+          {...(guide?.gameOverAction ? { action: guide.gameOverAction } : {})}
           reduced={reduced}
           reactions={reactions}
           canReact={canReact}
@@ -328,7 +338,7 @@ export function TableScreen() {
           >
             <aside className="flex w-28 shrink-0 flex-col gap-1.5" data-testid="seat-column">
               <div className="flex">
-                <LeaveButton view={view} members={members} />
+                <LeaveButton outcome={source.leave.outcome} onLeave={source.leave.run} />
               </div>
               <ul className="flex min-h-0 flex-1 flex-col justify-evenly gap-1" aria-label="opponents">
                 {opponentsInOrder(view).map((p) => (
@@ -349,7 +359,7 @@ export function TableScreen() {
             </aside>
 
             <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <RestartVotePanel viewerId={view.viewerId} />
+              {online && <RestartVotePanel viewerId={view.viewerId} />}
               <section
                 className="flex min-h-0 w-full flex-1 items-center rounded-table bg-gradient-to-b from-surface-2 to-surface p-1.5 shadow-table ring-1 ring-line"
                 dir="ltr"
@@ -370,7 +380,9 @@ export function TableScreen() {
                 {discardPile}
               </div>
               <div className="flex min-h-0 flex-1 flex-col justify-end gap-1.5">
-                {!finished && status}
+                {guide?.panel}
+                {/* With a lesson's guide the status line repeats it: the narrow side column keeps the guide. */}
+                {!finished && !guide && status}
                 {!spectator && me && (
                   <div className="flex flex-wrap items-center justify-between gap-1.5">
                     {mySeat}
@@ -394,8 +406,8 @@ export function TableScreen() {
           className="relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-2 pt-2 pr-[max(var(--sai-right),0.5rem)] pl-[max(var(--sai-left),0.5rem)] sm:gap-3 sm:pt-3 sm:pr-[max(var(--sai-right),1rem)] sm:pl-[max(var(--sai-left),1rem)] [@media(max-height:820px)]:gap-2"
           data-layout={mode}
         >
-          <TopBar view={view} members={members} extra={tools} />
-          <RestartVotePanel viewerId={view.viewerId} />
+          <TopBar leave={<LeaveButton outcome={source.leave.outcome} onLeave={source.leave.run} />} extra={tools} />
+          {online && <RestartVotePanel viewerId={view.viewerId} />}
           {opponents}
 
           <section
@@ -408,7 +420,7 @@ export function TableScreen() {
             {mode === 'phone' ? (
               // Phones: the stock and the discard pile become one small strip, the table gets the full width.
               <div className="flex shrink-0 items-center justify-between px-1" data-testid="piles">
-                <DeckPile view={view} small />
+                <DeckPile view={view} small highlightTrump={guide?.highlightTrump ?? false} />
                 <DiscardPile view={view} showLastBout={peek && view.table.length === 0} small />
               </div>
             ) : (
@@ -421,6 +433,7 @@ export function TableScreen() {
           {!finished && status}
 
           <div className={`flex shrink-0 flex-col items-center gap-1.5 pb-[var(--sai-bottom)] sm:gap-2 ${hideOnReveal}`}>
+            {guide?.panel}
             {tip && <TipBanner tip={tip} onDismiss={() => settingsStore.markTipSeen(tip)} />}
             {!spectator && me && (
               <>

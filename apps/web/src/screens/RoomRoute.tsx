@@ -5,7 +5,7 @@ import { navigate } from '../routing';
 import type { ClientState } from '../net/store';
 import { JoinPrompt } from './JoinPrompt';
 import { LobbyScreen } from './LobbyScreen';
-import { TableScreen } from './table/TableScreen';
+import { OnlineTable } from './OnlineTable';
 
 /** True when `/room/:roomId` shows the game table (the same choice RoomRoute makes). */
 export function showsTable(state: ClientState, roomId: string): boolean {
@@ -38,7 +38,7 @@ export function RoomRoute({ roomId }: { roomId: string }) {
 
   if (room.status === 'lobby') return <LobbyScreen room={room} session={session} />;
   if (!game || game.roomId !== roomId) return <Loading />;
-  return <TableScreen />;
+  return <OnlineTable />;
 }
 
 function Loading() {

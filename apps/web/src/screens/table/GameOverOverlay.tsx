@@ -5,7 +5,6 @@ import { useMemo } from 'react';
 import { SUIT_SYMBOL } from '../../components/cards/PlayingCard';
 import { Avatar, Button, Panel } from '../../components/ui';
 import { t } from '../../i18n';
-import { useClient } from '../../net/react';
 import type { ClientRatings } from '../../net/store';
 import { entriesById } from '../../game/ratingDelta';
 import { navigate } from '../../routing';
@@ -30,6 +29,8 @@ export function GameOverOverlay({
   reactions = null,
   canReact = false,
   ratings = null,
+  onRematch,
+  action,
 }: {
   view: PlayerView;
   gameOver: GameOverPayload | null;
@@ -37,12 +38,15 @@ export function GameOverOverlay({
   ratings?: ClientRatings | null;
   nameOf: (id: string) => string;
   canRematch: boolean;
+  /** "Back to the lobby" (a real room). */
+  onRematch?: () => void;
+  /** Replaces rematch / home as the main action (the tutorial: back to its menu). */
+  action?: { readonly label: string; readonly run: () => void };
   reduced?: boolean;
   /** Reactions keep flowing on the result screen ("עוד סיבוב?"). */
   reactions?: ReactionsInView | null;
   canReact?: boolean;
 }) {
-  const client = useClient();
   const durak = gameOver ? gameOver.durakId : view.phase.kind === 'finished' ? view.phase.durak : null;
   const reason = gameOver?.endReason ?? 'normal';
   const finishOrder = gameOver?.finishOrder ?? view.finishOrder;
@@ -151,8 +155,12 @@ export function GameOverOverlay({
           {/* The actions stay in view while the stats scroll (a short landscape phone). */}
           <div className="sticky bottom-0 -mx-5 -mb-5 flex w-[calc(100%+2.5rem)] flex-col items-center gap-3 rounded-b-[22px] bg-surface px-5 pt-2 pb-5" data-testid="game-over-actions">
             {canReact && <ReactionButton />}
-            {canRematch ? (
-              <Button size="lg" className="w-full" onClick={() => client.rematch()}>
+            {action ? (
+              <Button size="lg" className="w-full" onClick={action.run}>
+                {action.label}
+              </Button>
+            ) : canRematch && onRematch ? (
+              <Button size="lg" className="w-full" onClick={onRematch}>
                 {t.gameOver.backToLobby}
               </Button>
             ) : (
