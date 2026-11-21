@@ -6,14 +6,18 @@ export type Route =
   | { readonly name: 'room'; readonly roomId: string }
   /** /profile = mine (profileId null), /profile/:id = someone's public profile. */
   | { readonly name: 'profile'; readonly profileId: string | null }
-  | { readonly name: 'leaderboard' };
+  | { readonly name: 'leaderboard' }
+  /** /tutorial = the menu (lesson null), /tutorial/:lesson = a lesson or `practice` (validated by the screen). */
+  | { readonly name: 'tutorial'; readonly lesson: string | null };
 
 export const RULES_PATH = '/rules';
 export const PROFILE_PATH = '/profile';
 export const LEADERBOARD_PATH = '/leaderboard';
+export const TUTORIAL_PATH = '/tutorial';
 
 const ROOM_PATH = /^\/room\/([A-Za-z0-9_-]{4,32})\/?$/;
 const PROFILE_ID_PATH = /^\/profile\/([A-Za-z0-9_-]{22})\/?$/;
+const TUTORIAL_LESSON_PATH = /^\/tutorial\/([a-z][a-z-]{1,23})\/?$/;
 
 const is = (pathname: string, path: string) => pathname === path || pathname === `${path}/`;
 
@@ -21,6 +25,9 @@ export function parseRoute(pathname: string): Route {
   if (is(pathname, RULES_PATH)) return { name: 'rules' };
   if (is(pathname, PROFILE_PATH)) return { name: 'profile', profileId: null };
   if (is(pathname, LEADERBOARD_PATH)) return { name: 'leaderboard' };
+  if (is(pathname, TUTORIAL_PATH)) return { name: 'tutorial', lesson: null };
+  const tutorial = TUTORIAL_LESSON_PATH.exec(pathname);
+  if (tutorial?.[1]) return { name: 'tutorial', lesson: tutorial[1] };
   const profile = PROFILE_ID_PATH.exec(pathname);
   if (profile?.[1]) return { name: 'profile', profileId: profile[1] };
   const match = ROOM_PATH.exec(pathname);
@@ -29,6 +36,10 @@ export function parseRoute(pathname: string): Route {
 
 export function profilePath(profileId: string): string {
   return `${PROFILE_PATH}/${profileId}`;
+}
+
+export function tutorialPath(lesson: string): string {
+  return `${TUTORIAL_PATH}/${lesson}`;
 }
 
 export function roomPath(roomId: string): string {

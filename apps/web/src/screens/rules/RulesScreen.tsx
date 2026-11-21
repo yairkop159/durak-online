@@ -1,6 +1,7 @@
 import { Panel } from '../../components/ui';
 import { t } from '../../i18n';
-import { navigate } from '../../routing';
+import { navigate, TUTORIAL_PATH } from '../../routing';
+import { AppLink } from '../profile/PageShell';
 import { RulesContent } from './RulesContent';
 
 /** /rules: the rules and the interface guide as a page (linked from Home). */
@@ -17,6 +18,13 @@ export function RulesScreen() {
           {t.common.backHome}
         </button>
       </header>
+      {/* Only on this page: inside a room the rules are a dialog, and leaving the room would drop the seat. */}
+      <AppLink
+        href={TUTORIAL_PATH}
+        className="inline-flex min-h-11 items-center self-start rounded-pill bg-accent/12 px-4 text-sm font-semibold text-accent ring-1 ring-accent/40 hover:bg-accent/20"
+      >
+        🎓 {t.tutorial.rulesLink}
+      </AppLink>
       <Panel>
         <RulesContent />
       </Panel>

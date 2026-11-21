@@ -7,7 +7,9 @@ import { Button, Panel, inputClass } from '../components/ui';
 import { t } from '../i18n';
 import { useClient, useClientState } from '../net/react';
 import { useDeviceProfile, useProfiles } from '../profile/react';
-import { LEADERBOARD_PATH, navigate, PROFILE_PATH, roomPath, RULES_PATH } from '../routing';
+import { LEADERBOARD_PATH, navigate, PROFILE_PATH, roomPath, RULES_PATH, TUTORIAL_PATH, tutorialPath } from '../routing';
+import { useTutorialProgress } from '../tutorial/progress';
+import { useTutorialEnv } from '../tutorial/react';
 import { AppLink } from './profile/PageShell';
 
 const PLAYER_COUNTS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => MIN_PLAYERS + i);
@@ -91,6 +93,7 @@ export function HomeScreen() {
         <h1 className="text-4xl font-black tracking-tight">{t.appTitle}</h1>
         <p className="mt-2 text-muted">{t.home.subtitle}</p>
       </header>
+      <TutorialOffer />
       <Panel>
         <form onSubmit={submit} className="flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
@@ -184,6 +187,12 @@ export function HomeScreen() {
       </Panel>
       <nav className="flex flex-wrap items-center justify-center gap-x-2">
         <AppLink
+          href={TUTORIAL_PATH}
+          className="inline-flex min-h-11 items-center px-3 text-sm font-semibold text-accent underline-offset-4 hover:underline"
+        >
+          🎓 {t.tutorial.homeButton}
+        </AppLink>
+        <AppLink
           href={RULES_PATH}
           className="inline-flex min-h-11 items-center px-3 text-sm font-semibold text-accent underline-offset-4 hover:underline"
         >
@@ -197,5 +206,36 @@ export function HomeScreen() {
         </AppLink>
       </nav>
     </div>
+  );
+}
+
+/**
+ * The one-time "new to Durak?" card: Home only (never the join prompt or a room), until it is
+ * answered. The tutorial stays one tap away from Home's links and from the rules page.
+ */
+function TutorialOffer() {
+  const { progress } = useTutorialEnv();
+  const { offerSeen } = useTutorialProgress(progress);
+  if (offerSeen) return null;
+  return (
+    <section className="flex flex-col gap-2 rounded-[22px] bg-accent/10 p-4 ring-1 ring-accent/45" aria-labelledby="tutorial-offer-title" data-testid="tutorial-offer">
+      <h2 id="tutorial-offer-title" className="text-lg font-bold">
+        🎓 {t.tutorial.offer.title}
+      </h2>
+      <p className="text-sm text-muted">{t.tutorial.offer.body}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          onClick={() => {
+            progress.markOfferSeen();
+            navigate(tutorialPath('trump'));
+          }}
+        >
+          {t.tutorial.offer.start}
+        </Button>
+        <Button variant="secondary" onClick={() => progress.markOfferSeen()}>
+          {t.tutorial.offer.later}
+        </Button>
+      </div>
+    </section>
   );
 }
