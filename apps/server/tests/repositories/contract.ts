@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Repositories } from '../../src/repositories/interfaces.js';
 import { ACTIVE_TTL_SECONDS, FINISHED_TTL_SECONDS, SESSION_TTL_SECONDS } from '../../src/repositories/ttl.js';
-import { makeGame, makeRoom, makeSession } from './fixtures.js';
+import { makeGame, makeRoom, makeSession, makeTournamentRoom } from './fixtures.js';
 
 export type KeyKind = 'room' | 'game' | 'session';
 
@@ -59,6 +59,24 @@ export function describeRepositoryContract(name: string, makeHarness: () => Prom
         expectTtl(await h.ttl('room', room.id), ACTIVE_TTL_SECONDS);
         await h.repos.rooms.save({ ...room, status: 'finished' });
         expectTtl(await h.ttl('room', room.id), FINISHED_TTL_SECONDS);
+      });
+
+      it('a finished room between games of a running tournament keeps the 6h TTL (every write path)', async () => {
+        const running = makeTournamentRoom('running');
+        await h.repos.rooms.save(running);
+        expectTtl(await h.ttl('room', running.id), ACTIVE_TTL_SECONDS);
+        // The game-over write of a series game (atomic room + finished game).
+        await h.repos.atomic.saveRoomAndGame(running, makeGame(running.id, true));
+        expectTtl(await h.ttl('room', running.id), ACTIVE_TTL_SECONDS);
+        expectTtl(await h.ttl('game', running.id), FINISHED_TTL_SECONDS);
+        // Saving the finished game alone never shortens the series room's TTL.
+        await h.repos.games.save(makeGame(running.id, true));
+        expectTtl(await h.ttl('room', running.id), ACTIVE_TTL_SECONDS);
+        // Once the series is over, the room expires like any finished room.
+        for (const status of ['finished', 'endedEarly'] as const) {
+          await h.repos.rooms.save(makeTournamentRoom(status, running.id));
+          expectTtl(await h.ttl('room', running.id), FINISHED_TTL_SECONDS);
+        }
       });
     });
 

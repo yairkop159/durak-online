@@ -35,6 +35,8 @@ export interface GameChangeListener {
 export interface GameChangeInfo {
   /** The bots-only fast-forward played the rest of the game inside this commit. */
   readonly fastForwarded: boolean;
+  /** This commit ended the room's running tournament (finished or ended early). */
+  readonly tournamentClosed: boolean;
 }
 
 /**

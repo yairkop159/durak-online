@@ -2,6 +2,7 @@ import { sanitizeStateForPlayer } from '@durak/game-engine';
 import { DEFAULT_GAME_CONFIG } from '@durak/shared';
 import type { GameRatingsPayload, GameStatePayload, ReactionPayload, RestartVoteEndedPayload, RoomStatePayload } from '@durak/shared';
 import type { Room, Session, StoredGame } from '../domain/types.js';
+import { tournamentView } from '../services/tournament.js';
 import type { RoomNotifier } from '../services/ports.js';
 import type { Clock } from '../services/scheduling.js';
 import { channels, type IoServer } from './socketTypes.js';
@@ -35,8 +36,8 @@ export function toRoomStatePayload(room: Room, now: number): RoomStatePayload {
           awaiting: vote.voters.filter((id) => !vote.accepted.includes(id)),
         }
       : null,
-    tournamentSetup: null,
-    tournament: null,
+    tournamentSetup: room.tournamentSetup ? { games: room.tournamentSetup.games } : null,
+    tournament: tournamentView(room, now),
   };
 }
 

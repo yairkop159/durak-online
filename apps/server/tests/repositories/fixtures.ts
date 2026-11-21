@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { createGame, initKnowledge, sanitizeStateForPlayer } from '@durak/game-engine';
-import type { Room, Session, StoredGame } from '../../src/domain/types.js';
+import type { Room, Session, StoredGame, Tournament } from '../../src/domain/types.js';
 
 export const uid = () => randomBytes(5).toString('hex');
 
@@ -22,6 +22,25 @@ export function makeRoom(id = uid(), status: Room['status'] = 'lobby'): Room {
     restartCooldowns: {},
     tournamentSetup: null,
     tournament: null,
+  };
+}
+
+/** A finished room between games of a series (or after it, for another status). */
+export function makeTournamentRoom(status: Tournament['status'], id = uid()): Room {
+  const room = makeRoom(id, 'finished');
+  return {
+    ...room,
+    tournamentSetup: { games: 3 },
+    tournament: {
+      id: 't_fixture',
+      status,
+      teams: false,
+      gamesPlanned: 3,
+      startedAt: 1_700_000_000_000,
+      endedAt: status === 'running' ? null : 1_700_000_900_000,
+      roster: room.members.map((m) => ({ playerId: m.playerId, nickname: m.nickname, isBot: m.isBot, left: false, profileId: m.profileId })),
+      results: [{ gameId: 'g_1', points: { p_host: 2, p_guest: 1, p_bot: 0 }, duraks: ['p_bot'], firsts: ['p_host'] }],
+    },
   };
 }
 

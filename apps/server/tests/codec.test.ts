@@ -1,7 +1,7 @@
 import { applyMove } from '@durak/game-engine';
 import { describe, expect, it, vi } from 'vitest';
 import { RoomSchema, StoredGameSchema, decode, encode } from '../src/repositories/redis/codec.js';
-import { makeGame, makeRoom } from './repositories/fixtures.js';
+import { makeGame, makeRoom, makeTournamentRoom } from './repositories/fixtures.js';
 
 const log = () => ({ error: vi.fn() });
 
@@ -169,6 +169,31 @@ describe('codec: team mode', () => {
     const room = makeRoom('room1');
     const logger = log();
     expect(decode(RoomSchema, encode({ ...room, config: { teams: 'yes' } }), 'k', logger)).toBeNull();
+    expect(logger.error).toHaveBeenCalledOnce();
+  });
+});
+
+describe('codec: tournaments', () => {
+  it('a room stored before tournaments decodes with no setup, no series and unknown disconnect times', () => {
+    const { tournamentSetup: _s, tournament: _t, ...room } = makeRoom('room1');
+    const old = { ...room, members: room.members.map(({ disconnectedAt: _d, ...m }) => m) };
+    const logger = log();
+    const decoded = decode(RoomSchema, encode(old), 'k', logger);
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(decoded).toEqual(makeRoom('room1'));
+  });
+
+  it('a game stored before tournaments decodes with finishGroups = []', () => {
+    const { finishGroups: _g, ...old } = makeGame('room1', true);
+    expect(decode(StoredGameSchema, encode(old), 'k', log())?.finishGroups).toEqual([]);
+  });
+
+  it('round-trips a running series; a bad one is a corrupted value, never a throw', () => {
+    const room = makeTournamentRoom('running', 'room1');
+    expect(decode(RoomSchema, encode(room), 'k', log())).toEqual(room);
+    const logger = log();
+    const bad = { ...room, tournament: { ...room.tournament!, gamesPlanned: 4 } };
+    expect(decode(RoomSchema, encode(bad), 'k', logger)).toBeNull();
     expect(logger.error).toHaveBeenCalledOnce();
   });
 });

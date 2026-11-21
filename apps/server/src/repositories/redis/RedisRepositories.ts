@@ -59,16 +59,14 @@ export class RedisGameRepository implements GameRepository {
 
   /**
    * Also refreshes the room key's TTL in the same transaction, so a long game cannot
-   * outlive its room. (Room and game share a status: both finished, or neither.)
+   * outlive its room. A finished game only ever extends the room (EXPIRE GT): between games of a
+   * running tournament the room keeps its active TTL (`roomTtlSeconds`), like the in-memory repo.
    */
   async save(game: StoredGame): Promise<void> {
     const ttl = gameTtlSeconds(game);
-    await execOrThrow(
-      this.ctx.redis
-        .multi()
-        .set(this.ctx.keys.game(game.roomId), encode(game), 'EX', ttl)
-        .expire(this.ctx.keys.room(game.roomId), ttl),
-    );
+    const roomKey = this.ctx.keys.room(game.roomId);
+    const multi = this.ctx.redis.multi().set(this.ctx.keys.game(game.roomId), encode(game), 'EX', ttl);
+    await execOrThrow(game.state.phase.kind === 'finished' ? multi.expire(roomKey, ttl, 'GT') : multi.expire(roomKey, ttl));
   }
 
   /** SET … XX KEEPTTL: only an existing key, and its remaining TTL is kept; the room key is untouched. */

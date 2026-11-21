@@ -231,6 +231,7 @@ export function buildServer(options: BuildServerOptions = {}): DurakServer {
     notifier,
     timers,
     listeners: () => (bots ? [bots, reactions, recorder] : [reactions, recorder]),
+    now: () => clock.now(),
   });
   timers.attachCommitter(committer);
 

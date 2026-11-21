@@ -23,6 +23,7 @@ export async function markAllMembersDisconnected(
   redis: Redis,
   keys: RedisKeys,
   log: RepoLogger,
+  now: number = Date.now(),
 ): Promise<{ scanned: number; updated: number }> {
   let scanned = 0;
   let updated = 0;
@@ -34,7 +35,10 @@ export async function markAllMembersDisconnected(
       if (!room || room.members.every((m) => m.isBot || !m.connected)) continue;
       const offline: Room = {
         ...room,
-        members: room.members.map((m) => (m.isBot ? m : { ...m, connected: false })),
+        // A ghost went offline with the old process: from now on, as far as anyone can tell.
+        members: room.members.map((m) =>
+          m.isBot ? m : { ...m, connected: false, disconnectedAt: m.connected ? now : m.disconnectedAt },
+        ),
       };
       await redis.set(key, encode(offline), 'KEEPTTL');
       updated++;

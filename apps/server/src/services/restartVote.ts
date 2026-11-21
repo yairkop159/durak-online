@@ -6,9 +6,20 @@ export function canVote(member: RoomMember): boolean {
   return !member.isBot && !member.leftGame && member.connected && !member.afk;
 }
 
-/** The voters of a new vote: every other member who can vote. Bots and absent humans don't block. */
+/**
+ * Who must agree in this room. Normally: every other human who can vote right now (bots and
+ * absent humans don't block). In a running tournament: every other human seat that hasn't left,
+ * offline and AFK ones included, so a restart (which erases the game from the series) needs a
+ * unanimous yes; a voter who can't answer lets the vote expire.
+ */
+function isVoter(room: Room, member: RoomMember): boolean {
+  if (room.tournament?.status === 'running') return !member.isBot && !member.leftGame;
+  return canVote(member);
+}
+
+/** The voters of a new vote (see `isVoter`). */
 export function votersFor(room: Room, proposerId: PlayerId): PlayerId[] {
-  return room.members.filter((m) => m.playerId !== proposerId && canVote(m)).map((m) => m.playerId);
+  return room.members.filter((m) => m.playerId !== proposerId && isVoter(room, m)).map((m) => m.playerId);
 }
 
 export type VoteStatus =
@@ -19,7 +30,8 @@ export type VoteStatus =
 /**
  * Re-evaluates an open vote against the room as it is now (pure):
  * - the proposer no longer holds a human seat (left, or the game was taken over) -> cancelled;
- * - voters who went offline, AFK or left are dropped (absent humans never block);
+ * - voters who are no longer voters are dropped: offline, AFK or left normally (absent humans
+ *   never block); in a running tournament only those who left;
  * - every remaining voter accepted -> passed.
  */
 export function settleVote(room: Room, vote: RestartVote): VoteStatus {
@@ -27,7 +39,7 @@ export function settleVote(room: Room, vote: RestartVote): VoteStatus {
   if (!proposer || proposer.isBot || proposer.leftGame) return { kind: 'cancelled', vote };
   const voters = vote.voters.filter((id) => {
     const m = room.members.find((member) => member.playerId === id);
-    return !!m && canVote(m);
+    return !!m && isVoter(room, m);
   });
   const settled: RestartVote = { ...vote, voters, accepted: vote.accepted.filter((id) => voters.includes(id)) };
   if (voters.every((id) => settled.accepted.includes(id))) return { kind: 'passed', vote: settled };
