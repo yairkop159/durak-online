@@ -1,4 +1,5 @@
 import type { GameOverPayload } from '@durak/shared';
+import { viewerResult, type TeamTable } from '../game/teams';
 import type { BoardAnimation } from '../anim/useBoardAnimation';
 import type { MomentType } from '../anim/moments';
 import { cardStart } from '../anim/timeline';
@@ -67,7 +68,14 @@ export function tickSecond(remainingMs: number | null, isMyTurn: boolean): numbe
 }
 
 /** The end-of-game stinger from the viewer's point of view (none for spectators or non-results). */
-export function gameOverCue(gameOver: GameOverPayload, viewerId: string | null): 'win' | 'durak' | null {
+export function gameOverCue(
+  gameOver: GameOverPayload,
+  viewerId: string | null,
+  /** The table (config + seats): in team mode the durak's partner lost too. */
+  table?: Omit<TeamTable, 'viewerId'>,
+): 'win' | 'durak' | null {
   if (viewerId === null || gameOver.endReason === 'abandoned' || gameOver.endReason === 'restarted') return null;
-  return gameOver.durakId === viewerId ? 'durak' : 'win';
+  if (gameOver.durakId === viewerId) return 'durak';
+  if (table && viewerResult({ ...table, viewerId }, gameOver.durakId) === 'lost') return 'durak';
+  return 'win';
 }

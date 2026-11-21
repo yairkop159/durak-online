@@ -1,5 +1,5 @@
-import type { GameEndReason, GameMode, PlayerResult } from '@durak/shared';
-import { eloDeltas, type EloPlayer } from './elo.js';
+import { TEAM_GAME_PLAYERS, teamOfSeat, type GameEndReason, type GameMode, type PlayerResult } from '@durak/shared';
+import { eloDeltas, teamEloDeltas, type EloPlayer, type TeamEloPlayer } from './elo.js';
 
 /**
  * One seat of a finished game, as the match history stores it. A plain snapshot taken inside the
@@ -24,6 +24,8 @@ export interface GameResultInput {
   readonly gameId: string;
   readonly roomId: string;
   readonly mode: GameMode;
+  /** A 2v2 team game (seats 0+2 vs 1+3). Absent = a classic game. */
+  readonly teams?: boolean;
   readonly startedAt: number;
   readonly endedAt: number;
   readonly endReason: GameEndReason;
@@ -36,16 +38,25 @@ export function endReasonIsRated(reason: GameEndReason): boolean {
   return reason === 'normal' || reason === 'forfeit';
 }
 
+/** The losing team of a finished team game (the durak's team), or null (no durak, or not a team game). */
+export function losingTeamOf(input: GameResultInput): 0 | 1 | null {
+  if (input.teams !== true || input.durakId === null) return null;
+  const durak = input.seats.find((s) => s.playerId === input.durakId);
+  return durak ? teamOfSeat(durak.seat) : null;
+}
+
 export function seatResult(input: GameResultInput, seat: ResultSeat): PlayerResult {
   if (seat.forfeited) return 'forfeit';
   if (input.durakId === seat.playerId) return 'durak';
   if (!endReasonIsRated(input.endReason)) return 'unfinished';
   if (input.durakId === null) return 'draw';
+  // Teams: the durak's partner lost with the durak.
+  if (input.teams === true && teamOfSeat(seat.seat) === losingTeamOf(input)) return 'teamLoss';
   return 'win';
 }
 
 export function isLoss(result: PlayerResult): boolean {
-  return result === 'durak' || result === 'forfeit';
+  return result === 'durak' || result === 'forfeit' || result === 'teamLoss';
 }
 
 /**
@@ -64,9 +75,22 @@ export function ratedSeats(input: GameResultInput): ResultSeat[] {
   return seats;
 }
 
-/** Rated iff it ended normally or by forfeit and at least two profiled humans played. Bots never count. */
+/**
+ * A team game is rated only when all four seats were humans with distinct profiles at the deal
+ * (a bot partner would inflate the human's rating). A seat a bot took over later still counts as
+ * its human's (botAssisted), as everywhere else.
+ */
+export function teamsHaveFourHumans(input: GameResultInput): boolean {
+  return input.seats.length === TEAM_GAME_PLAYERS && ratedSeats(input).length === TEAM_GAME_PLAYERS;
+}
+
+/**
+ * Rated iff it ended normally or by forfeit and at least two profiled humans played (team games:
+ * all four seats profiled humans). Bots never count.
+ */
 export function isRated(input: GameResultInput): boolean {
-  return endReasonIsRated(input.endReason) && ratedSeats(input).length >= 2;
+  if (!endReasonIsRated(input.endReason)) return false;
+  return input.teams === true ? teamsHaveFourHumans(input) : ratedSeats(input).length >= 2;
 }
 
 /**
@@ -74,6 +98,15 @@ export function isRated(input: GameResultInput): boolean {
  * rating before the game (read under a row lock in the same transaction that writes the result).
  */
 export function ratingsAfter(input: GameResultInput, current: ReadonlyMap<string, number>): Map<string, number> {
+  if (input.teams === true) {
+    const teamPlayers: TeamEloPlayer[] = ratedSeats(input).map((seat) => {
+      const rating = current.get(seat.profileId as string);
+      if (rating === undefined) throw new Error(`ratingsAfter: no rating for ${seat.profileId}`);
+      return { profileId: seat.profileId as string, rating, team: teamOfSeat(seat.seat), forfeited: seat.forfeited };
+    });
+    const deltas = teamEloDeltas(teamPlayers, losingTeamOf(input));
+    return new Map(teamPlayers.map((p) => [p.profileId, p.rating + (deltas.get(p.profileId) ?? 0)]));
+  }
   const players: EloPlayer[] = ratedSeats(input).map((seat) => {
     const rating = current.get(seat.profileId as string);
     if (rating === undefined) throw new Error(`ratingsAfter: no rating for ${seat.profileId}`);

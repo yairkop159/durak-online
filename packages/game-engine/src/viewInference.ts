@@ -1,4 +1,4 @@
-import { HAND_SIZE, cardId, type Card, type PlayerId, type PlayerView, type TablePair } from '@durak/shared';
+import { HAND_SIZE, cardId, seatsAreOpponents, type Card, type PlayerId, type PlayerView, type TablePair } from '@durak/shared';
 
 /**
  * Inference from two consecutive sanitized views: nothing else goes in, so nothing hidden can come
@@ -144,8 +144,17 @@ export function inferBoutResolution(prev: PlayerView, next: PlayerView): BoutRes
     if (isDefense) candidates = [last.defenderId];
     else if (leftViewerHand(prev, next, closingCard)) candidates = [prev.viewerId!];
     else {
+      // A throw-in: any other player still in who attacks the defender (team mode: not the partner).
+      const defenderSeat = prev.players.findIndex((p) => p.id === last.defenderId);
       candidates = prev.players
-        .filter((p) => p.id !== last.defenderId && p.id !== prev.viewerId && !p.finished && p.handCount > 0)
+        .filter(
+          (p, seat) =>
+            p.id !== last.defenderId &&
+            p.id !== prev.viewerId &&
+            !p.finished &&
+            p.handCount > 0 &&
+            seatsAreOpponents(prev.config, seat, defenderSeat),
+        )
         .map((p) => p.id);
     }
     for (const closer of candidates) {

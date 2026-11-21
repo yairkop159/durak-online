@@ -26,8 +26,9 @@ export type RulesSectionId =
   | 'transfer'
   | 'draw'
   | 'out'
-  | 'durak';
-export type GuideSectionId = 'highlight' | 'defendTaps' | 'buttons' | 'countdown' | 'afk' | 'reconnect' | 'leave' | 'restart';
+  | 'durak'
+  | 'teams';
+export type GuideSectionId = 'highlight' | 'defendTaps' | 'buttons' | 'countdown' | 'afk' | 'reconnect' | 'leave' | 'restart' | 'teamColors';
 
 export interface HelpSection<Id extends string> {
   readonly id: Id;
@@ -188,6 +189,27 @@ export interface Strings {
     readonly deckOutTrumpToYou: string;
   };
   /** The durak reveal at the end of a game. */
+  /** 2v2 team mode (Home, lobby, table, game over). */
+  readonly teams: {
+    readonly toggle: string;
+    readonly toggleHint: string;
+    readonly vsComputerToggle: string;
+    readonly vsComputerHint: string;
+    /** Team display names, by team index (team 0 = seats 0+2, team 1 = seats 1+3). */
+    readonly names: readonly [string, string];
+    readonly modeLine: string;
+    readonly partner: string;
+    readonly yourTeam: string;
+    readonly emptySeat: string;
+    readonly swapHint: string;
+    readonly swapPick: (name: string) => string;
+    readonly swapWith: (name: string) => string;
+    readonly needFour: string;
+    readonly onlyFourSeats: string;
+    readonly teamWon: string;
+    readonly teamLost: string;
+    readonly teamLostNamed: (team: string) => string;
+  };
   readonly reveal: {
     readonly stamp: string;
     readonly draw: string;
@@ -284,6 +306,8 @@ export interface Strings {
     readonly results: Record<PlayerResult, string>;
     readonly unrated: string;
     readonly botAssisted: string;
+    /** Tag on a 2v2 team game in the history. */
+    readonly teamsTag: string;
     readonly vs: (names: string) => string;
     readonly noProfile: string;
     readonly unavailable: string;
@@ -467,6 +491,25 @@ export const he: Strings = {
     deckOutTrumpTo: (name) => `החפיסה נגמרה! השליט אצל ${name}`,
     deckOutTrumpToYou: 'החפיסה נגמרה! השליט אצלך',
   },
+  teams: {
+    toggle: '2 נגד 2 (קבוצות)',
+    toggleHint: 'שתי קבוצות של שניים. בני הזוג יושבים זה מול זה ומשחקים יחד.',
+    vsComputerToggle: 'אני ובוט שותף נגד שני בוטים',
+    vsComputerHint: 'משחק קבוצות: את השותף ואת היריבים משחקים בוטים באותה רמת קושי',
+    names: ['הקבוצה הכחולה', 'הקבוצה הכתומה'],
+    modeLine: 'משחק קבוצות: 2 נגד 2',
+    partner: 'שותף',
+    yourTeam: 'הקבוצה שלך',
+    emptySeat: 'מקום פנוי',
+    swapHint: 'כדי להחליף מקומות: לוחצים על שחקן ואז על שחקן אחר.',
+    swapPick: (name) => `בחירת ${name} להחלפת מקום`,
+    swapWith: (name) => `החלפה עם ${name}`,
+    needFour: 'משחק קבוצות מתחיל כשכל ארבעת המקומות תפוסים',
+    onlyFourSeats: 'משחק קבוצות אפשרי רק בחדר של ארבעה שחקנים',
+    teamWon: 'הקבוצה שלך ניצחה!',
+    teamLost: 'הקבוצה שלך הפסידה',
+    teamLostNamed: (team) => `${team} הפסידה`,
+  },
   reveal: {
     stamp: 'דוראק!',
     draw: 'תיקו!',
@@ -502,6 +545,7 @@ export const he: Strings = {
     unrated: {
       notEnoughProfiles: 'המשחק לא דורג: צריך לפחות שני שחקנים עם פרופיל',
       notFinished: 'המשחק לא דורג: המשחק לא הסתיים',
+      teamsNeedFourHumans: 'משחק קבוצות מדורג רק כשכל ארבעת השחקנים אנשים עם פרופיל',
     },
     column: 'דירוג',
     others: 'שינויי דירוג',
@@ -626,8 +670,28 @@ export const he: Strings = {
         title: 'מי הדוראק?',
         body: ['האחרון שנשאר עם קלפים ביד. אם השחקנים האחרונים נפטרו מהקלפים באותו סיבוב – תיקו, ואין דוראק.'],
       },
+      {
+        id: 'teams',
+        title: 'משחק קבוצות (2 נגד 2)',
+        body: [
+          'ארבעה שחקנים בשתי קבוצות. בני הזוג יושבים זה מול זה, כך שהשחקן הבא בתור הוא תמיד יריב.',
+          'תוקפים תמיד את היריב הפעיל הבא בכיוון השעון. אם שחקן יצא מהמשחק ובא אחריו השותף שלכם – מדלגים עליו אל היריב שאחריו.',
+          'רק הקבוצה התוקפת מוסיפה קלפים. השותף של המגן לא מוסיף ולא אומר "סיים" – הסיבוב לא מחכה לו. אסור אף פעם לתקוף את השותף.',
+          'בפרבודנוי מעבירים רק ליריב הפעיל הבא. אם ביריבים נשאר שחקן אחד, ההעברה חוזרת אליו.',
+          'מי שנפטר מכל הקלפים יוצא, והשותף ממשיך לבד. כשרק לקבוצה אחת נשארו קלפים – היא הפסידה. הדוראק הוא מי שמחזיק בה הכי הרבה קלפים (בתיקו: הראשון בכיוון השעון מהמגן האחרון).',
+          'אם השחקנים האחרונים של שתי הקבוצות נפטרו מהקלפים באותו סיבוב – תיקו. לא רואים את הקלפים של השותף.',
+        ],
+      },
     ],
     guide: [
+      {
+        id: 'teamColors',
+        title: 'צבעי הקבוצות',
+        body: [
+          'במשחק קבוצות לכל מושב יש מסגרת ונקודה בצבע הקבוצה: כחולה או כתומה. על השותף שלכם כתוב "שותף".',
+          'בחדר ההמתנה המארח מחליף מקומות בלחיצה על ⇅ ליד שחקן אחד ואז ליד שחקן אחר.',
+        ],
+      },
       {
         id: 'highlight',
         title: 'קלפים מודגשים ומעומעמים',
@@ -703,9 +767,10 @@ export const he: Strings = {
     duraks: 'פעמים דוראק',
     recent: 'משחקים אחרונים',
     noGames: 'עוד אין משחקים. המשחקים הבאים יופיעו כאן.',
-    results: { win: 'ניצחון', durak: 'דוראק', draw: 'תיקו', forfeit: 'הפסד טכני', unfinished: 'לא הסתיים' },
+    results: { win: 'ניצחון', durak: 'דוראק', draw: 'תיקו', forfeit: 'הפסד טכני', unfinished: 'לא הסתיים', teamLoss: 'הפסד קבוצתי' },
     unrated: 'לא מדורג',
     botAssisted: 'בוט שיחק חלק מהמשחק',
+    teamsTag: '2 נגד 2',
     vs: (names) => `נגד ${names}`,
     noProfile: 'הפרופיל נוצר אוטומטית במשחק הראשון. יש לך פרופיל במכשיר אחר? אפשר להעביר אותו לכאן עם קוד.',
     unavailable: 'הפרופילים והדירוג לא זמינים כרגע. המשחק עצמו עובד כרגיל.',
@@ -777,6 +842,7 @@ export const he: Strings = {
     VOTE_IN_PROGRESS: 'כבר יש הצבעה פתוחה',
     VOTE_COOLDOWN: 'הצעת משחק חדש לפני רגע. אפשר להציע שוב בעוד דקה',
     NO_ACTIVE_VOTE: 'ההצבעה כבר הסתיימה',
+    TEAMS_NEED_FOUR: 'משחק קבוצות צריך חדר של ארבעה שחקנים, וכל ארבעת המקומות תפוסים',
     INVALID_PLAYER_COUNT: 'מספר שחקנים לא תקין',
     DUPLICATE_PLAYER: 'שחקן כפול',
     INVALID_CONFIG: 'הגדרות משחק לא תקינות',

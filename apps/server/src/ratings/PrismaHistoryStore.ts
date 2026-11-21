@@ -48,6 +48,7 @@ export class PrismaHistoryStore implements HistoryStore {
       gameId: mine.gameId,
       endedAt: mine.game.endedAt.getTime(),
       mode: mine.game.mode as GameMode,
+      teams: mine.game.teams,
       endReason: mine.game.endReason as GameEndReason,
       rated: mine.game.rated,
       result: mine.result as PlayerResult,

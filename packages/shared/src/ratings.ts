@@ -15,6 +15,8 @@ export const UNRATED_REASONS = [
   'notEnoughProfiles',
   /** The game was abandoned or restarted. */
   'notFinished',
+  /** A 2v2 team game is rated only when all four seats were humans with a profile at the deal. */
+  'teamsNeedFourHumans',
 ] as const;
 export type UnratedReason = (typeof UNRATED_REASONS)[number];
 

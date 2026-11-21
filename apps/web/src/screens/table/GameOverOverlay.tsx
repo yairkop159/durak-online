@@ -1,4 +1,5 @@
-import type { GameOverPayload, PlayerView } from '@durak/shared';
+import { isTeamGame, type GameOverPayload, type PlayerView } from '@durak/shared';
+import { TEAM_TEXT, teamName, teamOf, viewerResult } from '../../game/teams';
 import { motion } from 'motion/react';
 import { useMemo } from 'react';
 import { SUIT_SYMBOL } from '../../components/cards/PlayingCard';
@@ -55,11 +56,21 @@ export function GameOverOverlay({
   else if (durak === view.viewerId) headline = t.gameOver.youAreDurak;
   else headline = t.gameOver.durak(nameOf(durak));
 
+  // 2v2: the headline is the team result; the durak (or the forfeit) moves to the line under it.
+  const result = viewerResult(view, durak);
+  const losing = durak !== null && isTeamGame(view.config) && reason !== 'abandoned' ? teamOf(view, durak) : null;
+  let durakLine: string | null = null;
+  if (losing !== null && durak !== null) {
+    durakLine = headline;
+    headline = result === 'won' ? t.teams.teamWon : result === 'lost' ? t.teams.teamLost : t.teams.teamLostNamed(teamName(losing));
+  }
+
   // The stats table carries the others' rating changes; without it (after a reload) they get a list.
   const statsShown = gameOver !== null && reason !== 'abandoned' && Object.keys(gameOver.stats).length > 0;
   const seatOrder = view.players.map((p) => p.id);
 
-  const mood: Mood = reason === 'abandoned' ? 'neutral' : durak !== null && durak === view.viewerId ? 'durak' : 'celebrate';
+  const mood: Mood =
+    reason === 'abandoned' ? 'neutral' : result === 'lost' || (durak !== null && durak === view.viewerId) ? 'durak' : 'celebrate';
 
   return (
     <div
@@ -98,6 +109,13 @@ export function GameOverOverlay({
           >
             {headline}
           </motion.p>
+          {durakLine !== null && losing !== null && (
+            <p data-testid="game-over-durak" className="-mt-2 text-base font-bold">
+              <span className={TEAM_TEXT[losing]}>{teamName(losing)}</span>
+              <span className="text-muted"> · </span>
+              {durakLine}
+            </p>
+          )}
           <p className="text-xs text-muted">{t.gameOver.reasons[reason]}</p>
           <RatingResult ratings={ratings} viewerId={view.viewerId} seatOrder={seatOrder} nameOf={nameOf} showOthers={!statsShown} />
           {finishOrder.length > 0 && (

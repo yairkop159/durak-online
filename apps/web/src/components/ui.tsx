@@ -41,7 +41,7 @@ export function Panel({ children, className = '' }: { children: ReactNode; class
   return <div className={`rounded-[22px] bg-surface/90 p-5 shadow-panel ring-1 ring-line backdrop-blur ${className}`}>{children}</div>;
 }
 
-export type PillTone = 'neutral' | 'attack' | 'defend' | 'accent' | 'warn' | 'muted';
+export type PillTone = 'neutral' | 'attack' | 'defend' | 'accent' | 'warn' | 'muted' | 'teamA' | 'teamB';
 
 const PILL: Record<PillTone, string> = {
   neutral: 'bg-white/8 text-text/85 ring-line',
@@ -50,6 +50,8 @@ const PILL: Record<PillTone, string> = {
   accent: 'bg-accent/12 text-accent ring-accent/30',
   warn: 'bg-warn/12 text-warn ring-warn/30',
   muted: 'bg-white/5 text-muted ring-line',
+  teamA: 'bg-team-a/15 text-team-a ring-team-a/45',
+  teamB: 'bg-team-b/15 text-team-b ring-team-b/45',
 };
 
 /** Status label (role, AFK, offline…). A plain span: not focusable, no hover, no pointer. */

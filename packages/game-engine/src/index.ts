@@ -12,6 +12,7 @@ export {
   boutCardLimit,
   drawOrder,
   nextActiveIndex,
+  nextDefenderIndex,
   playerIndex,
   isFinished,
 } from './rules.js';

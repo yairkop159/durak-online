@@ -1,7 +1,8 @@
-import { GAME_MODES, MAX_PLAYERS, MIN_PLAYERS, type BotDifficulty, type GameMode } from '@durak/shared';
+import { GAME_MODES, MAX_PLAYERS, MIN_PLAYERS, TEAM_GAME_PLAYERS, type BotDifficulty, type GameMode } from '@durak/shared';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { DifficultyPicker } from '../components/DifficultyPicker';
 import { SettingsButton } from '../components/SettingsDialog';
+import { TeamsSwitch } from '../components/TeamsSwitch';
 import { Button, Panel, inputClass } from '../components/ui';
 import { t } from '../i18n';
 import { useClient, useClientState } from '../net/react';
@@ -34,6 +35,11 @@ export function HomeScreen() {
   const [mode, setMode] = useState<GameMode>('podkidnoy');
   const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
   const [bots, setBots] = useState(1);
+  // 2v2: offered with 4 players (create) and with 3 opponents (vs computer: me + a bot partner).
+  const [teams, setTeams] = useState(false);
+  const [vsTeams, setVsTeams] = useState(false);
+  const teamsOn = teams && players === TEAM_GAME_PLAYERS;
+  const vsTeamsOn = vsTeams && bots === TEAM_GAME_PLAYERS - 1;
   const [submitted, setSubmitted] = useState(false);
 
   // The room we just created: go there once the session arrives.
@@ -56,14 +62,14 @@ export function HomeScreen() {
     if (needNickname()) return;
     setSubmitted(true);
     const name = nickname.trim();
-    client.createRoom({ nickname: name, maxPlayers: players, mode, deviceKey: profiles.seatKey(name) });
+    client.createRoom({ nickname: name, maxPlayers: players, mode, teams: teamsOn, deviceKey: profiles.seatKey(name) });
   };
 
   const vsComputer = () => {
     if (needNickname()) return;
     setSubmitted(true);
     const name = nickname.trim();
-    client.playVsComputer({ nickname: name, mode, difficulty, bots, deviceKey: profiles.seatKey(name) });
+    client.playVsComputer({ nickname: name, mode, difficulty, bots, teams: vsTeamsOn, deviceKey: profiles.seatKey(name) });
   };
 
   return (
@@ -124,6 +130,7 @@ export function HomeScreen() {
                 </button>
               ))}
             </div>
+            {players === TEAM_GAME_PLAYERS && <TeamsSwitch checked={teams} onChange={setTeams} />}
           </fieldset>
 
           <fieldset className="flex flex-col gap-2">
@@ -166,6 +173,9 @@ export function HomeScreen() {
               ))}
             </div>
             <span className="text-xs text-muted">{t.home.vsComputerHint}</span>
+            {bots === TEAM_GAME_PLAYERS - 1 && (
+              <TeamsSwitch checked={vsTeams} onChange={setVsTeams} label={t.teams.vsComputerToggle} hint={t.teams.vsComputerHint} testId="vs-teams-switch" />
+            )}
           </fieldset>
           <Button type="button" variant="secondary" aria-disabled={missingNickname} onClick={vsComputer}>
             🤖 {t.home.vsComputer}

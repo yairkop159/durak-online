@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { GameConfigInputSchema, MAX_PLAYERS, MIN_PLAYERS } from './config.js';
+import { GameConfigInputSchema, MAX_PLAYERS, MIN_PLAYERS, type GameMode } from './config.js';
+import { TEAM_GAME_PLAYERS } from './teams.js';
 import { ClientMoveSchema } from './moves.js';
 import type { GameErrorCode } from './errors.js';
 import { ReactionIdSchema, type ReactionId } from './reactions.js';
@@ -21,6 +22,8 @@ export const ClientEvents = {
   RestartPropose: 'room:restartPropose',
   RestartRespond: 'room:restartRespond',
   React: 'room:react',
+  SetTeams: 'room:setTeams',
+  SwapSeats: 'room:swapSeats',
 } as const;
 export type ClientEventName = (typeof ClientEvents)[keyof typeof ClientEvents];
 
@@ -54,7 +57,11 @@ export const CreateRoomPayloadSchema = z
     config: GameConfigInputSchema.optional(),
     deviceKey: SeatDeviceKeySchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine((p) => p.config?.teams !== true || p.maxPlayers === TEAM_GAME_PLAYERS, {
+    message: `Team mode needs exactly ${TEAM_GAME_PLAYERS} players`,
+    path: ['config', 'teams'],
+  });
 
 export const JoinRoomPayloadSchema = z
   .object({
@@ -83,6 +90,15 @@ export const AddBotPayloadSchema = z.object({ roomId: RoomIdSchema, difficulty: 
 export const RemoveBotPayloadSchema = z
   .object({ roomId: RoomIdSchema, playerId: z.string().min(1).max(64) })
   .strict();
+
+/** Host only, lobby only, 4-seat rooms only: turn 2v2 team mode on or off. */
+export const SetTeamsPayloadSchema = z.object({ roomId: RoomIdSchema, teams: z.boolean() }).strict();
+
+/** Host only, lobby only: swap two members' seats (teams follow seats: 0+2 vs 1+3). */
+export const SwapSeatsPayloadSchema = z
+  .object({ roomId: RoomIdSchema, a: z.string().min(1).max(64), b: z.string().min(1).max(64) })
+  .strict()
+  .refine((p) => p.a !== p.b, { message: 'Cannot swap a seat with itself', path: ['b'] });
 
 /** A seated human proposes to end the running game and deal a new one (same seats and config). */
 export const RestartProposePayloadSchema = z.object({ roomId: RoomIdSchema }).strict();
@@ -129,6 +145,8 @@ export const ClientEventSchemas = {
   [ClientEvents.RestartPropose]: RestartProposePayloadSchema,
   [ClientEvents.RestartRespond]: RestartRespondPayloadSchema,
   [ClientEvents.React]: ReactPayloadSchema,
+  [ClientEvents.SetTeams]: SetTeamsPayloadSchema,
+  [ClientEvents.SwapSeats]: SwapSeatsPayloadSchema,
 } as const satisfies Record<ClientEventName, z.ZodTypeAny>;
 
 export type CreateRoomPayload = z.infer<typeof CreateRoomPayloadSchema>;
@@ -143,6 +161,8 @@ export type RemoveBotPayload = z.infer<typeof RemoveBotPayloadSchema>;
 export type RestartProposePayload = z.infer<typeof RestartProposePayloadSchema>;
 export type RestartRespondPayload = z.infer<typeof RestartRespondPayloadSchema>;
 export type ReactPayload = z.infer<typeof ReactPayloadSchema>;
+export type SetTeamsPayload = z.infer<typeof SetTeamsPayloadSchema>;
+export type SwapSeatsPayload = z.infer<typeof SwapSeatsPayloadSchema>;
 
 export interface RoomMember {
   readonly playerId: string;
@@ -169,10 +189,19 @@ export interface RestartVoteState {
   readonly awaiting: readonly string[];
 }
 
+/** The room's public game settings (fixed at create, except `teams`, which the host may toggle). */
+export interface RoomConfigSummary {
+  readonly mode: GameMode;
+  /** 2v2 team mode; teams follow member order (seats 0+2 vs 1+3). */
+  readonly teams: boolean;
+}
+
 export interface RoomStatePayload {
   readonly roomId: string;
   readonly hostId: string;
   readonly maxPlayers: number;
+  readonly config: RoomConfigSummary;
+  /** In seat order (seat = index); in team mode, even seats are team 0 and odd seats team 1. */
   readonly members: readonly RoomMember[];
   readonly spectatorCount: number;
   readonly status: 'lobby' | 'playing' | 'finished';
@@ -275,6 +304,8 @@ export const SERVER_ERROR_CODES = [
   'VOTE_COOLDOWN',
   /** No open restart vote that this player may answer (ended, or another vote id). */
   'NO_ACTIVE_VOTE',
+  /** Team mode needs a 4-seat room, and the game starts only with all four seats filled. */
+  'TEAMS_NEED_FOUR',
 ] as const;
 export type ServerErrorCode = (typeof SERVER_ERROR_CODES)[number];
 
@@ -297,6 +328,8 @@ export interface ClientToServerEvents {
   'room:restartPropose': (payload: RestartProposePayload) => void;
   'room:restartRespond': (payload: RestartRespondPayload) => void;
   'room:react': (payload: ReactPayload) => void;
+  'room:setTeams': (payload: SetTeamsPayload) => void;
+  'room:swapSeats': (payload: SwapSeatsPayload) => void;
 }
 
 export interface ServerToClientEvents {

@@ -382,6 +382,87 @@ describe.skipIf(!executablePath)('phones (mobile emulation, touch)', () => {
       });
     }, TEST_TIMEOUT_MS);
 
+    it(`team lobby ${size}: teams grouped, the switch and the swap buttons >= 44 px and tappable; a swap goes out`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base, 'teams-lobby');
+        await page.getByTestId('lobby-teams').waitFor();
+        await page.waitForTimeout(300);
+        const lobby = await audit(page, false);
+        expect(lobby.problems).toEqual([]);
+        expect(await page.getByTestId('teams-switch').getAttribute('aria-checked')).toBe('true');
+        expect(await page.getByText(t.teams.emptySeat, { exact: true }).count()).toBe(1);
+        await page.getByTestId('swap-b1').scrollIntoViewIfNeeded();
+        await tapCenter(page, '[data-testid="swap-b1"]');
+        await page.getByTestId('swap-carl').scrollIntoViewIfNeeded();
+        await tapCenter(page, '[data-testid="swap-carl"]');
+        await page.waitForFunction(() =>
+          (window as unknown as { __fixture: { emitted: { event: string }[] } }).__fixture.emitted.some((e) => e.event === 'room:swapSeats'),
+        );
+        await shot(page, `teams-lobby-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`2v2 table ${size}: fits the screen; every seat shows its team, my partner's pill is fully visible; tap Take`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base, 'teams');
+        await page.getByRole('button', { name: t.table.take }).waitFor();
+        await page.waitForTimeout(700);
+        await shot(page, `teams-table-${size}`);
+        const table = await audit(page, true, HAND_CARD);
+        expect(table.problems).toEqual([]);
+        expect(await coveredControls(page, HAND_CARD)).toEqual([]);
+        const hand = await handSlices(page);
+        expect(hand.problems).toEqual([]);
+        // Team marks on all four seats, my partner opposite me with an unclipped pill.
+        for (const [id, team] of [['me', '0'], ['bob', '1'], ['carl', '0'], ['dana', '1']] as const) {
+          expect(await page.getByTestId(`team-${id}`).getAttribute('data-team'), id).toBe(team);
+        }
+        const seat = (await page.getByTestId('seat-carl').boundingBox())!;
+        const pill = (await page.getByTestId('seat-carl').getByText(t.teams.partner).boundingBox())!;
+        expect(pill.width).toBeGreaterThan(10);
+        expect(pill.x).toBeGreaterThanOrEqual(seat.x - 0.5);
+        expect(pill.x + pill.width).toBeLessThanOrEqual(seat.x + seat.width + 0.5);
+        expect(pill.x).toBeGreaterThanOrEqual(0);
+        expect(pill.x + pill.width).toBeLessThanOrEqual(vp.width);
+        expect(await page.getByText(t.teams.partner).count()).toBe(1);
+
+        const before = (await emittedEvents(page)).filter((e) => e === 'game:move').length;
+        await tapCenter(page, `button:text-is("${t.table.take}")`);
+        await page.waitForFunction(
+          (n) => (window as unknown as { __fixture: { emitted: { event: string }[] } }).__fixture.emitted.filter((e) => e.event === 'game:move').length > n,
+          before,
+        );
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it(`2v2 game over ${size}: "my team lost", the losing team and the durak on screen; nothing scrolls; controls >= 44 px`, async () => {
+      await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
+        await openFixture(page, env!.base, 'teams-gameover');
+        await page.getByTestId('game-over-headline').waitFor();
+        await page.waitForTimeout(800); // the panel's spring
+        expect(await page.getByTestId('game-over-headline').textContent()).toContain(t.teams.teamLost);
+        // The team result and the durak are on screen as the overlay opens, without scrolling.
+        const line = page.getByTestId('game-over-durak');
+        expect(await line.textContent()).toContain(t.gameOver.durak('CARL'));
+        const box = (await line.boundingBox())!;
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
+        expect(box.x + box.width).toBeLessThanOrEqual(vp.width);
+        // As in the six-player audit: open the stats table (below the fold on short screens) first.
+        const showAll = page.locator(`button:text-is("${t.stats.showAll}")`);
+        await showAll.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+        await tapCenter(page, `button:text-is("${t.stats.showAll}")`);
+        await page.getByTestId('stats-table').waitFor();
+        const over = await audit(page, true);
+        expect(over.problems).toEqual([]);
+        const back = (await page.getByRole('button', { name: t.gameOver.backToLobby }).boundingBox())!;
+        expect(back.y).toBeGreaterThanOrEqual(0);
+        expect(back.y + back.height).toBeLessThanOrEqual(vp.height);
+        expect(await ratingVisibility(page, 'rating-delta')).toEqual([]);
+        await shot(page, `teams-gameover-${size}`);
+      });
+    }, TEST_TIMEOUT_MS);
+
     it(`game over after a reload ${size}: my rating change and the others' list fit; nothing scrolls sideways; controls >= 44 px`, async () => {
       await withPage(env!, phoneContext(vp.width, vp.height), async (page) => {
         await openFixture(page, env!.base, 'gameover-reload');

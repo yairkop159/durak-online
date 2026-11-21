@@ -14,6 +14,12 @@ export const GameConfigSchema = z
     firstBoutMaxCards: z.number().int().min(1).max(6),
     /** Maximum attack cards in any later bout (classic rule: 6). */
     boutMaxCards: z.number().int().min(1).max(6),
+    /**
+     * 2v2 team mode (exactly 4 players; partners sit opposite: seats 0+2 vs 1+3). Absent or false =
+     * every player for themselves. Optional so every existing config, view and record is unchanged.
+     * See teams.ts and CLAUDE.md "Teams".
+     */
+    teams: z.boolean().optional(),
   })
   .strict();
 

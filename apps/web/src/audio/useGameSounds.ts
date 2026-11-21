@@ -2,6 +2,7 @@ import type { GameOverPayload } from '@durak/shared';
 import { useEffect, useRef } from 'react';
 import type { BoardAnimation } from '../anim/useBoardAnimation';
 import { useAudio, useHaptic } from '../settings/react';
+import type { TeamTable } from '../game/teams';
 import { gameOverCue, soundsFor, tickSecond, turnCue } from './soundPlan';
 
 /**
@@ -15,6 +16,7 @@ export function useGameSounds({
   remaining,
   gameOver,
   viewerId,
+  table,
   stingerByReveal = false,
 }: {
   anim: BoardAnimation;
@@ -22,6 +24,8 @@ export function useGameSounds({
   remaining: number | null;
   gameOver: GameOverPayload | null;
   viewerId: string | null;
+  /** Config + seats, so a team loss sounds like one. */
+  table?: Omit<TeamTable, 'viewerId'> | undefined;
   /** The durak reveal plays the stinger itself, when its stamp lands. */
   stingerByReveal?: boolean;
 }): void {
@@ -57,10 +61,11 @@ export function useGameSounds({
   useEffect(() => {
     if (!gameOver || gameOver === announced.current) return;
     announced.current = gameOver;
-    const cue = gameOverCue(gameOver, viewerId);
+    const cue = gameOverCue(gameOver, viewerId, table);
     if (cue && !stingerByReveal) {
       audio.play(cue);
       haptic(cue);
     }
+    // `table` is read when game:over arrives; it must not re-trigger the stinger.
   }, [gameOver, viewerId, audio, haptic, stingerByReveal]);
 }

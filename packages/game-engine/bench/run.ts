@@ -12,8 +12,13 @@
  *   --modes podkidnoy    podkidnoy and/or perevodnoy (default both)
  *   --workers N          worker threads (default: all cores; --realtime 1)
  *   --ms N               time budget for calibration and --realtime (default 300)
- *   --out FILE           results file (default bench/results/<iterations|realtime>-<ms>ms.jsonl)
+ *   --out FILE           results file (default bench/results/<iterations|realtime>[-teams]-<ms>ms|<N>it.jsonl)
  *   --fresh              discard the results file and start over
+ *   --teams              2v2 team mode: 4 players, an IS-MCTS TEAM (seats s and s+2, each with its own
+ *                        view and knowledge) against a team of the opponent bot; s alternates 0/1.
+ *                        Scored as the IS-MCTS team's loss rate (fair = 50%).
+ *   --iterations N       a fixed IS-MCTS budget of N iterations instead of the calibration (the
+ *                        server's medium bot is 200)
  *
  * Matrix (quick / --full): players x modes x opponents. One IS-MCTS seat against n-1 copies of the
  * opponent, the IS-MCTS seat rotating over every seat, fixed seeds. The search budget is a fixed
@@ -52,6 +57,8 @@ interface Args {
   opponents: Opponent[] | null;
   modes: GameMode[] | null;
   out: string | null;
+  teams: boolean;
+  iterations: number | null;
 }
 
 function parseList<T extends string | number>(
@@ -85,6 +92,8 @@ function parseArgs(argv: readonly string[]): Args {
     opponents: null,
     modes: null,
     out: null,
+    teams: false,
+    iterations: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -96,6 +105,8 @@ function parseArgs(argv: readonly string[]): Args {
     if (a === '--full') args.full = true;
     else if (a === '--realtime') args.realtime = true;
     else if (a === '--fresh') args.fresh = true;
+    else if (a === '--teams') args.teams = true;
+    else if (a === '--iterations') args.iterations = Math.floor(num());
     else if (a === '--games') args.games = Math.floor(num());
     else if (a === '--workers') args.workers = Math.floor(num());
     else if (a === '--ms') args.ms = num();
@@ -122,7 +133,8 @@ type ResultRecord =
 /** Identifies a game across runs: same key = same game with the same budget, so a stored outcome can be reused. */
 function taskKey(t: GameTask): string {
   const budget = t.budget.kind === 'iterations' ? `it${t.budget.iterations}` : `ms${t.budget.ms}`;
-  return `${t.players}p|${t.mode}|${t.opponent}|${budget}|seed${t.seed}|seat${t.ismctsSeat}`;
+  const key = `${t.players}p|${t.mode}|${t.opponent}|${budget}|seed${t.seed}|seat${t.ismctsSeat}`;
+  return t.teams ? `teams|${key}` : key;
 }
 
 function loadResults(file: string): ResultRecord[] {
@@ -173,6 +185,7 @@ function calibrate(players: number, ms: number): { iterations: number; samples: 
 
 interface Config {
   readonly id: number;
+  readonly teams: boolean;
   readonly players: number;
   readonly mode: GameMode;
   readonly opponent: Opponent;
@@ -220,11 +233,13 @@ function report(configs: readonly Config[], outcomes: readonly GameOutcome[]): s
   for (const cfg of configs) {
     const os = outcomes.filter((o) => o.configId === cfg.id);
     const games = os.length;
-    const mctsDurak = os.filter((o) => o.durakSeat === o.ismctsSeat).length;
-    const oppDurak = os.filter((o) => o.durakSeat !== null && o.durakSeat !== o.ismctsSeat).length;
+    // Teams: a loss is the durak sitting on the IS-MCTS team (seats of the same parity).
+    const mine = (o: GameOutcome, seat: number) => (cfg.teams ? seat % 2 === o.ismctsSeat % 2 : seat === o.ismctsSeat);
+    const mctsDurak = os.filter((o) => o.durakSeat !== null && mine(o, o.durakSeat)).length;
+    const oppDurak = os.filter((o) => o.durakSeat !== null && !mine(o, o.durakSeat)).length;
     const draws = os.filter((o) => o.durakSeat === null && !o.abandoned).length;
     const abandoned = os.filter((o) => o.abandoned).length;
-    const oppSeats = games * (cfg.players - 1);
+    const oppSeats = cfg.teams ? games : games * (cfg.players - 1);
     const iterations = os.reduce((n, o) => n + o.iterations, 0);
     const searchMs = os.reduce((n, o) => n + o.searchMs, 0);
     const searches = os.reduce((n, o) => n + o.searches, 0);
@@ -233,14 +248,14 @@ function report(configs: readonly Config[], outcomes: readonly GameOutcome[]): s
     const budget = cfg.budget.kind === 'iterations' ? `${cfg.budget.iterations} it` : `${cfg.budget.ms} ms`;
     lines.push(
       [
-        String(cfg.players).padEnd(8),
+        (cfg.teams ? '2v2' : String(cfg.players)).padEnd(8),
         cfg.mode.padEnd(11),
         cfg.opponent.padEnd(8),
         String(games).padStart(5),
         ' ',
         formatCi(mctsDurak, games).padEnd(24),
         formatCi(oppDurak, oppSeats).padEnd(29),
-        pct(1 / cfg.players).padEnd(7),
+        pct(cfg.teams ? 0.5 : 1 / cfg.players).padEnd(7),
         String(draws).padStart(5),
         String(abandoned).padStart(7),
         ' ',
@@ -250,7 +265,13 @@ function report(configs: readonly Config[], outcomes: readonly GameOutcome[]): s
         (decisionMs / Math.max(1, decisions)).toFixed(1).padStart(9),
       ].join(' '),
     );
-    if (cfg.players === 2 && cfg.opponent === 'greedy') {
+    if (cfg.teams) {
+      const m = wilson(mctsDurak, games);
+      const pass = m.hi < 0.5;
+      verdicts.push(
+        `${pass ? 'PASS' : 'FAIL'}  2v2 ${cfg.mode} vs ${cfg.opponent} team (${budget}): IS-MCTS team loses ${pct(m.p)} [${pct(m.lo)}, ${pct(m.hi)}]${pass ? ' (CI below 50%)' : ' (CI reaches 50%)'}`,
+      );
+    } else if (cfg.players === 2 && cfg.opponent === 'greedy') {
       const m = wilson(mctsDurak, games);
       const g = wilson(oppDurak, games);
       const pass = m.hi < g.lo;
@@ -259,9 +280,9 @@ function report(configs: readonly Config[], outcomes: readonly GameOutcome[]): s
       );
     }
   }
-  lines.push('', 'Opponent durak rate is per opponent seat (the opponents in one game are not independent samples).');
+  lines.push('', 'Opponent durak rate is per opponent seat (the opponents in one game are not independent samples); 2v2 rows count teams.');
   lines.push('ms/search = IS-MCTS decisions with more than one legal move; ms/move = all IS-MCTS decisions.');
-  if (verdicts.length) lines.push('', 'Target (2 players, IS-MCTS clearly better than Greedy):', ...verdicts);
+  if (verdicts.length) lines.push('', 'Targets (2 players: IS-MCTS clearly better than Greedy; 2v2: the IS-MCTS team loses < 50%):', ...verdicts);
   return lines;
 }
 
@@ -270,11 +291,13 @@ async function main(): Promise<void> {
   const started = performance.now();
   const cores = availableParallelism();
   const kind = args.realtime ? 'realtime' : 'iterations';
-  const file = args.out ?? fileURLToPath(new URL(`./results/${kind}-${args.ms}ms.jsonl`, import.meta.url));
+  const budgetLabel = args.iterations !== null ? `${args.iterations}it` : `${args.ms}ms`;
+  const file = args.out ?? fileURLToPath(new URL(`./results/${kind}${args.teams ? '-teams' : ''}-${budgetLabel}.jsonl`, import.meta.url));
   mkdirSync(dirname(file), { recursive: true });
   if (args.fresh) rmSync(file, { force: true });
 
-  const players = args.players ?? (args.realtime ? [2] : [2, 3, 4]);
+  if (args.teams && args.players && args.players.join() !== '4') throw new Error('--teams always plays 4 players');
+  const players = args.teams ? [4] : (args.players ?? (args.realtime ? [2] : [2, 3, 4]));
   const opponents: Opponent[] = args.opponents ?? (args.realtime ? ['greedy'] : [...OPPONENTS]);
   const modes = args.modes ?? [...MODES];
   const games = args.games ?? (args.realtime || args.full ? 500 : 100);
@@ -287,6 +310,11 @@ async function main(): Promise<void> {
   const calibration = new Map<number, number>();
   for (const r of stored) if (r.type === 'calibration' && r.ms === args.ms) calibration.set(r.players, r.iterations);
   for (const n of players) {
+    if (args.iterations !== null) {
+      calibration.set(n, args.iterations);
+      console.log(`  ${n} players: ${args.iterations} iterations (fixed by --iterations, no calibration)`);
+      continue;
+    }
     const known = calibration.get(n);
     if (known !== undefined) {
       console.log(`  ${n} players: ${known} iterations ≈ ${args.ms} ms  (stored)`);
@@ -304,6 +332,7 @@ async function main(): Promise<void> {
       for (const opponent of opponents) {
         configs.push({
           id: configs.length,
+          teams: args.teams,
           players: n,
           mode,
           opponent,
@@ -319,9 +348,11 @@ async function main(): Promise<void> {
       configId: cfg.id,
       players: cfg.players,
       mode: cfg.mode,
+      ...(cfg.teams ? { teams: true } : {}),
       opponent: cfg.opponent,
       seed: 100_000 * (cfg.players * 10 + (cfg.mode === 'perevodnoy' ? 1 : 0)) + i,
-      ismctsSeat: i % cfg.players,
+      // Teams: the IS-MCTS team alternates between seats 0+2 and 1+3.
+      ismctsSeat: i % (cfg.teams ? 2 : cfg.players),
       budget: cfg.budget,
     })),
   );

@@ -1,4 +1,4 @@
-import type { Card, ClientMove, PlayerView, TablePair } from '@durak/shared';
+import { isTeamGame, seatsAreOpponents, type Card, type ClientMove, type PlayerView, type TablePair } from '@durak/shared';
 import { beats } from './deck.js';
 
 /**
@@ -25,6 +25,9 @@ export function getLegalMovesForView(view: PlayerView): ClientMove[] {
   const uncovered = table.filter((p) => p.defense === null).length;
 
   if (view.defenderId !== me) {
+    // Team mode: the defender's partner sits the bout out (no throw-in, no pass).
+    const defenderSeat = view.players.findIndex((p) => p.id === view.defenderId);
+    if (!seatsAreOpponents(view.config, seat, defenderSeat)) return moves;
     const defenderCards = view.players.find((p) => p.id === view.defenderId)?.handCount ?? 0;
     if (table.length < limit && uncovered < defenderCards) {
       const ranks = tableRanks(table);
@@ -58,17 +61,19 @@ function tableRanks(table: readonly TablePair[]): Set<number> {
 function canTransfer(view: PlayerView, seat: number, card: Card, limit: number): boolean {
   if (view.config.mode !== 'perevodnoy') return false;
   if (view.table.some((p) => p.defense !== null || p.attack.rank !== card.rank)) return false;
-  const next = nextActiveSeat(view, seat);
+  const next = nextDefenderSeat(view, seat);
   if (next === seat) return false;
   const newCount = view.table.length + 1;
   return newCount <= limit && newCount <= (view.players[next]?.handCount ?? 0);
 }
 
-function nextActiveSeat(view: PlayerView, from: number): number {
+/** View mirror of `nextDefenderIndex`: the next active opponent clockwise (any active player outside team mode). */
+function nextDefenderSeat(view: PlayerView, from: number): number {
   const n = view.players.length;
+  const teams = isTeamGame(view.config);
   for (let step = 1; step <= n; step++) {
     const idx = (from + step) % n;
-    if (!view.players[idx]?.finished) return idx;
+    if (!view.players[idx]?.finished && (!teams || seatsAreOpponents(view.config, from, idx))) return idx;
   }
   return from;
 }

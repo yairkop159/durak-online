@@ -1,6 +1,8 @@
 import {
   HAND_SIZE,
   cardId,
+  isTeamGame,
+  seatsAreOpponents,
   type Card,
   type GameError,
   type GamePhase,
@@ -37,6 +39,29 @@ export function nextActiveIndex(state: GameState, from: number): number {
   return from;
 }
 
+/**
+ * The defender for an attack led from seat `from`: the next active OPPONENT clockwise. Outside team
+ * mode every other player is an opponent, so this is exactly `nextActiveIndex`. In team mode a
+ * partner still in the game is skipped. Returns `from` if nobody qualifies.
+ */
+export function nextDefenderIndex(state: GameState, from: number): number {
+  if (!isTeamGame(state.config)) return nextActiveIndex(state, from);
+  const n = state.players.length;
+  for (let step = 1; step <= n; step++) {
+    const idx = (from + step) % n;
+    if (!isFinished(state, idx) && seatsAreOpponents(state.config, from, idx)) return idx;
+  }
+  return from;
+}
+
+/**
+ * Whether seat `index` may join the attack on the current defender (open, throw in, pass): everyone
+ * but the defender outside team mode; in team mode only the defender's opponents (never a partner).
+ */
+function attacksDefender(state: GameState, index: number): boolean {
+  return index !== state.defenderIndex && seatsAreOpponents(state.config, index, state.defenderIndex);
+}
+
 /** Maximum number of attack cards allowed on the table in the current bout. */
 export function boutCardLimit(state: GameState): number {
   return state.boutNumber === 1 ? state.config.firstBoutMaxCards : state.config.boutMaxCards;
@@ -69,7 +94,7 @@ function hasRoomForAttack(state: GameState): boolean {
 
 /** Whether the player at `index` could legally throw in some card right now. */
 export function canThrowIn(state: GameState, index: number): boolean {
-  if (state.phase.kind !== 'bout' || index === state.defenderIndex || isFinished(state, index)) {
+  if (state.phase.kind !== 'bout' || !attacksDefender(state, index) || isFinished(state, index)) {
     return false;
   }
   if (!hasRoomForAttack(state)) return false;
@@ -101,6 +126,7 @@ export function validateMove(state: GameState, move: Move): GameError | null {
         return null;
       }
       if (isDefender) return gameError('NOT_YOUR_TURN', 'The defender cannot throw in');
+      if (!attacksDefender(state, idx)) return gameError('NOT_YOUR_TURN', 'You cannot throw in against your partner');
       if (!tableRanks(state.table).has(move.card.rank)) {
         return gameError('RANK_NOT_ON_TABLE', 'Thrown-in cards must match a rank already on the table');
       }
@@ -145,7 +171,7 @@ export function validateMove(state: GameState, move: Move): GameError | null {
       if (state.table.some((p) => p.attack.rank !== move.card.rank)) {
         return gameError('TRANSFER_NOT_ALLOWED', 'Transfer card must match the rank of every attack card');
       }
-      const next = nextActiveIndex(state, idx);
+      const next = nextDefenderIndex(state, idx);
       const newCount = state.table.length + 1;
       if (next === idx) return gameError('TRANSFER_NOT_ALLOWED', 'Nobody to transfer to');
       if (newCount > boutCardLimit(state)) {
@@ -170,6 +196,7 @@ export function validateMove(state: GameState, move: Move): GameError | null {
     case 'pass': {
       if (phase.kind !== 'bout') return gameError('INVALID_MOVE', 'The attacker must open the bout');
       if (isDefender) return gameError('NOT_YOUR_TURN', 'The defender cannot pass; defend or take');
+      if (!attacksDefender(state, idx)) return gameError('NOT_YOUR_TURN', 'Your partner is defending; nothing to pass');
       if (phase.passed.includes(move.playerId)) return gameError('ALREADY_PASSED', 'You already passed');
       return null;
     }
@@ -220,7 +247,7 @@ export function applyMove(state: GameState, move: Move): Result<GameState, GameE
         players: withHand(state.players, idx, removeCard(hand(state, idx), move.card)),
         table: [...state.table, { attack: move.card, defense: null }],
         attackerIndex: idx,
-        defenderIndex: nextActiveIndex(state, idx),
+        defenderIndex: nextDefenderIndex(state, idx),
         phase: { kind: 'bout', taking: false, passed: [] },
       };
       break;
@@ -255,7 +282,7 @@ function maybeEndBout(state: GameState): GameState {
   if (!phase.taking && !allCovered) return state;
 
   for (let i = 0; i < state.players.length; i++) {
-    if (i === state.defenderIndex || isFinished(state, i)) continue;
+    if (!attacksDefender(state, i) || isFinished(state, i)) continue;
     const id = state.players[i]?.id as PlayerId;
     if (!phase.passed.includes(id) && canThrowIn(state, i)) return state;
   }
@@ -320,9 +347,14 @@ function endBout(state: GameState, outcome: 'beaten' | 'taken'): GameState {
     },
   };
 
-  const remaining = base.players.filter((p) => !finishOrder.includes(p.id));
-  if (remaining.length <= 1) {
-    return { ...base, phase: { kind: 'finished', durak: remaining[0]?.id ?? null } };
+  if (isTeamGame(base.config)) {
+    const durak = teamGameOver(base, state.defenderIndex);
+    if (durak !== undefined) return { ...base, phase: { kind: 'finished', durak } };
+  } else {
+    const remaining = base.players.filter((p) => !finishOrder.includes(p.id));
+    if (remaining.length <= 1) {
+      return { ...base, phase: { kind: 'finished', durak: remaining[0]?.id ?? null } };
+    }
   }
 
   const attackerIndex =
@@ -332,10 +364,32 @@ function endBout(state: GameState, outcome: 'beaten' | 'taken'): GameState {
   return {
     ...base,
     attackerIndex,
-    defenderIndex: nextActiveIndex(base, attackerIndex),
+    defenderIndex: nextDefenderIndex(base, attackerIndex),
     phase: { kind: 'awaitingAttack' },
     boutNumber: state.boutNumber + 1,
   };
+}
+
+/**
+ * Team mode end check, after a bout's going-out step (`state` = the post-bout state, before the next
+ * attacker is chosen). Returns `undefined` while both teams still hold cards. Otherwise the game is
+ * over: `null` (a draw) when nobody holds cards, else the durak: the player of the losing team (the
+ * only team still holding cards) with the most cards; on a tie, the first of them clockwise starting
+ * at `boutDefender`, the seat that defended the bout that just ended (inclusive).
+ */
+function teamGameOver(state: GameState, boutDefender: number): PlayerId | null | undefined {
+  const n = state.players.length;
+  const remaining: number[] = [];
+  for (let step = 0; step < n; step++) {
+    const idx = (boutDefender + step) % n;
+    if (!isFinished(state, idx)) remaining.push(idx);
+  }
+  if (remaining.length === 0) return null;
+  const first = remaining[0] as number;
+  if (remaining.some((idx) => seatsAreOpponents(state.config, first, idx))) return undefined;
+  let durak = first;
+  for (const idx of remaining) if (hand(state, idx).length > hand(state, durak).length) durak = idx;
+  return (state.players[durak] as PlayerState).id;
 }
 
 // ---------------------------------------------------------------------------

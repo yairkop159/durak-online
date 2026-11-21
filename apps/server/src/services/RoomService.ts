@@ -1,5 +1,5 @@
 import { getAwaitedPlayers } from '@durak/game-engine';
-import type { BotDifficulty, GameConfigInput, GameRatingsPayload } from '@durak/shared';
+import { isTeamGame, TEAM_GAME_PLAYERS, type BotDifficulty, type GameConfigInput, type GameRatingsPayload } from '@durak/shared';
 import { fail, ok, type Result } from '../domain/result.js';
 import type { Room, RoomMember, Session, StoredGame } from '../domain/types.js';
 import type { Repositories } from '../repositories/interfaces.js';
@@ -113,6 +113,9 @@ export class RoomService {
     // A soft cap: concurrent creates may overshoot it by a few, which is fine for abuse control.
     if (Number.isFinite(maxRooms) && (await this.countRooms(maxRooms)) >= maxRooms) {
       return fail('SERVER_FULL', 'The server is full, try again later');
+    }
+    if (input.config?.teams === true && input.maxPlayers !== TEAM_GAME_PLAYERS) {
+      return fail('TEAMS_NEED_FOUR', `Team mode needs a ${TEAM_GAME_PLAYERS}-seat room`);
     }
     const roomId = await this.unusedRoomId();
     return mutex.runExclusive(roomId, async () => {
@@ -343,10 +346,60 @@ export class RoomService {
       if (room.status !== 'lobby') return fail('GAME_IN_PROGRESS', 'The game has already started');
       if (room.members.length < 2) return fail('NOT_ENOUGH_PLAYERS', 'At least 2 players are needed');
       if (!hasHuman(room.members)) return fail('NO_HUMANS', 'A game needs at least one human player');
+      if (isTeamGame(room.config) && room.members.length !== TEAM_GAME_PLAYERS) {
+        return fail('TEAMS_NEED_FOUR', `A team game starts with all ${TEAM_GAME_PLAYERS} seats filled`);
+      }
 
       const dealt = dealGame(room, this.deps.seedSource(), this.deps.now());
       if (!dealt.ok) return dealt;
       return ok(await this.deps.committer.start(dealt.value.room, dealt.value.game));
+    });
+  }
+
+  /** Host only, lobby only, 4-seat rooms only: turns 2v2 team mode on or off. */
+  async setTeams(session: Session, teams: boolean): Promise<Result<void>> {
+    const { repos, mutex, notifier } = this.deps;
+    return mutex.runExclusive(session.roomId, async () => {
+      const room = await repos.rooms.get(session.roomId);
+      if (!room) return fail('ROOM_NOT_FOUND', 'Room no longer exists');
+      if (session.role !== 'player' || room.hostId !== session.id) return fail('NOT_HOST', 'Only the host can change teams');
+      if (room.status !== 'lobby') return fail('GAME_IN_PROGRESS', 'Teams can only be changed in the lobby');
+      if (teams && room.maxPlayers !== TEAM_GAME_PLAYERS) {
+        return fail('TEAMS_NEED_FOUR', `Team mode needs a ${TEAM_GAME_PLAYERS}-seat room`);
+      }
+      if (isTeamGame(room.config) === teams) {
+        notifier.roomState(room); // idempotent
+        return ok(undefined);
+      }
+      const { teams: _old, ...rest } = room.config;
+      const updated: Room = { ...room, config: teams ? { ...rest, teams: true } : rest };
+      await repos.rooms.save(updated);
+      notifier.roomState(updated);
+      return ok(undefined);
+    });
+  }
+
+  /**
+   * Host only, lobby only: swaps two members' seats (any members, bots included). Seats are the
+   * member order, and in team mode the team follows the seat (0+2 vs 1+3), so this is how the host
+   * arranges the teams (also after a leave or a rematch shifted the seats).
+   */
+  async swapSeats(session: Session, a: string, b: string): Promise<Result<void>> {
+    const { repos, mutex, notifier } = this.deps;
+    return mutex.runExclusive(session.roomId, async () => {
+      const room = await repos.rooms.get(session.roomId);
+      if (!room) return fail('ROOM_NOT_FOUND', 'Room no longer exists');
+      if (session.role !== 'player' || room.hostId !== session.id) return fail('NOT_HOST', 'Only the host can move seats');
+      if (room.status !== 'lobby') return fail('GAME_IN_PROGRESS', 'Seats can only be changed in the lobby');
+      const ia = room.members.findIndex((m) => m.playerId === a);
+      const ib = room.members.findIndex((m) => m.playerId === b);
+      if (ia < 0 || ib < 0 || ia === ib) return fail('NOT_IN_ROOM', 'Both players must be seated in this room');
+      const members = room.members.slice();
+      [members[ia], members[ib]] = [members[ib]!, members[ia]!];
+      const updated: Room = { ...room, members };
+      await repos.rooms.save(updated);
+      notifier.roomState(updated);
+      return ok(undefined);
     });
   }
 

@@ -46,6 +46,7 @@ import { seatEffects } from '../../anim/moments';
 import { planReveal } from '../../anim/reveal';
 import { gameOverCue } from '../../audio/soundPlan';
 import { DurakReveal } from '../../moments/DurakReveal';
+import { teamName, teamOf } from '../../game/teams';
 import { MomentBanner } from '../../moments/MomentBanner';
 import { useMomentQueue } from '../../moments/useMomentQueue';
 
@@ -146,7 +147,15 @@ export function TableScreen() {
   useWakeLock(!!view && !gameFinished && room?.status === 'playing');
 
   const soundTurn = !!view && viewerId !== null && !gameFinished && !reconnecting && moves.length > 0;
-  useGameSounds({ anim, myTurn: soundTurn, remaining, gameOver, viewerId, stingerByReveal: revealPlan !== null });
+  useGameSounds({
+    anim,
+    myTurn: soundTurn,
+    remaining,
+    gameOver,
+    viewerId,
+    table: view ? { config: view.config, players: view.players } : undefined,
+    stingerByReveal: revealPlan !== null,
+  });
   const reactions = useReactions();
   const moment = useMomentQueue(anim, { speed, enabled: !!view && !gameFinished && !reconnecting });
 
@@ -277,7 +286,11 @@ export function TableScreen() {
           plan={revealPlan}
           viewerId={viewerId}
           nameOf={nameOf}
-          stinger={gameOver ? gameOverCue(gameOver, viewerId) : null}
+          stinger={gameOver ? gameOverCue(gameOver, viewerId, view) : null}
+          teamCaption={(() => {
+            const losing = revealPlan.durakId !== null ? teamOf(view, revealPlan.durakId) : null;
+            return losing === null ? null : t.teams.teamLostNamed(teamName(losing));
+          })()}
           onDone={() => setRevealDoneFor(game.gameId)}
         />
       )}

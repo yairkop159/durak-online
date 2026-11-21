@@ -134,6 +134,7 @@ const RESULT_TONE: Record<RecentGame['result'], PillTone> = {
   forfeit: 'warn',
   draw: 'neutral',
   unfinished: 'muted',
+  teamLoss: 'attack',
 };
 
 /** "+16" / "−16" (a real minus), isolated so RTL text never flips the sign. */
@@ -150,6 +151,7 @@ function RecentGameRow({ game }: { game: RecentGame }) {
         <div className="flex flex-wrap items-center gap-1.5">
           <Pill tone={RESULT_TONE[game.result]}>{t.profile.results[game.result]}</Pill>
           <span className="text-xs text-muted">{t.home.modes[game.mode]}</span>
+          {game.teams && <span className="text-xs text-muted">{t.profile.teamsTag}</span>}
           <span className="text-xs text-muted">{new Date(game.endedAt).toLocaleDateString('he-IL')}</span>
         </div>
         <span className="truncate text-sm">{t.profile.vs(others)}</span>

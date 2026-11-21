@@ -6,6 +6,8 @@ import {
   MAX_PLAYERS,
   MIN_PLAYERS,
   SUITS,
+  TEAM_GAME_PLAYERS,
+  isTeamGame,
   sameCard,
   type Card,
   type GameConfigInput,
@@ -54,6 +56,9 @@ export function createGameWithDeck(
   if (!parsedConfig.success) {
     return err(gameError('INVALID_CONFIG', parsedConfig.error.message));
   }
+  if (isTeamGame(parsedConfig.data) && playerIds.length !== TEAM_GAME_PLAYERS) {
+    return err(gameError('INVALID_CONFIG', `Team mode needs exactly ${TEAM_GAME_PLAYERS} players, got ${playerIds.length}`));
+  }
   if (!isFullDeck(deck)) {
     return err(gameError('INVALID_CONFIG', `Deck must contain each of the ${DECK_SIZE} cards exactly once`));
   }
@@ -68,6 +73,7 @@ export function createGameWithDeck(
   }
 
   const attackerIndex = chooseFirstAttacker(hands, trumpCard.suit);
+  // The next seat: always an opponent, in team mode too (partners sit opposite and everyone is in).
   const defenderIndex = (attackerIndex + 1) % playerIds.length;
 
   return ok({

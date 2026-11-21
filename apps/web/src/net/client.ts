@@ -3,6 +3,7 @@ import {
   MAX_PLAYERS,
   REACTION_BURST,
   REACTION_REFILL_MS,
+  TEAM_GAME_PLAYERS,
   type BotDifficulty,
   type ClientMove,
   type GameMode,
@@ -153,26 +154,43 @@ export class GameClient {
   }
 
   /** `deviceKey` links the seat to this device's profile for ratings (Phase 10); omitted = unrated seat. */
-  createRoom(input: { nickname: string; maxPlayers: number; mode: GameMode; deviceKey?: string | undefined }): void {
+  createRoom(input: {
+    nickname: string;
+    maxPlayers: number;
+    mode: GameMode;
+    /** 2v2 team mode (4 seats only). */
+    teams?: boolean;
+    deviceKey?: string | undefined;
+  }): void {
     this.leaveBindingIfAny();
     this.transport.emit('room:create', {
       nickname: input.nickname,
       maxPlayers: input.maxPlayers,
-      config: { mode: input.mode },
+      config: input.teams === true && input.maxPlayers === TEAM_GAME_PLAYERS ? { mode: input.mode, teams: true } : { mode: input.mode },
       ...(input.deviceKey ? { deviceKey: input.deviceKey } : {}),
     });
   }
 
-  /** One click to a game against `bots` bots (1-5): room:create -> room:addBot × bots -> game:start. */
+  /**
+   * One click to a game against `bots` bots (1-5): room:create -> room:addBot × bots -> game:start.
+   * `teams`: me + a bot partner vs 2 bots (always 3 bots; I am seat 0, my partner the bot at seat 2).
+   */
   playVsComputer(input: {
     nickname: string;
     mode: GameMode;
     difficulty: BotDifficulty;
     bots?: number;
+    teams?: boolean;
     deviceKey?: string | undefined;
   }): void {
-    const bots = Math.min(MAX_PLAYERS - 1, Math.max(1, Math.trunc(input.bots ?? 1)));
-    this.createRoom({ nickname: input.nickname, maxPlayers: bots + 1, mode: input.mode, deviceKey: input.deviceKey });
+    const bots = input.teams === true ? TEAM_GAME_PLAYERS - 1 : Math.min(MAX_PLAYERS - 1, Math.max(1, Math.trunc(input.bots ?? 1)));
+    this.createRoom({
+      nickname: input.nickname,
+      maxPlayers: bots + 1,
+      mode: input.mode,
+      teams: input.teams === true,
+      deviceKey: input.deviceKey,
+    });
     this.vsComputer = { difficulty: input.difficulty, bots, requested: 0 };
   }
 
@@ -184,6 +202,18 @@ export class GameClient {
   removeBot(playerId: string): void {
     const session = this.boundSession();
     if (session) this.transport.emit('room:removeBot', { roomId: session.roomId, playerId });
+  }
+
+  /** Host, lobby, 4-seat rooms: 2v2 team mode on or off. */
+  setTeams(teams: boolean): void {
+    const session = this.boundSession();
+    if (session) this.transport.emit('room:setTeams', { roomId: session.roomId, teams });
+  }
+
+  /** Host, lobby: swap two members' seats (teams follow seats). */
+  swapSeats(a: string, b: string): void {
+    const session = this.boundSession();
+    if (session && a !== b) this.transport.emit('room:swapSeats', { roomId: session.roomId, a, b });
   }
 
   joinRoom(roomId: string, nickname: string, deviceKey?: string): void {

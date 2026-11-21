@@ -1,6 +1,6 @@
 import type { GameRatingsPayload } from '@durak/shared';
 import type { Room, StoredGame } from '../domain/types.js';
-import { endReasonIsRated, isRated } from './gameResult.js';
+import { endReasonIsRated, isRated, teamsHaveFourHumans } from './gameResult.js';
 import { buildResultInput } from './resultInput.js';
 
 /**
@@ -8,7 +8,8 @@ import { buildResultInput } from './resultInput.js';
  * 1. the committed changes are on the game (`game.ratings`) → `rated`;
  * 2. ratings are not available (not configured, or Postgres was not ready) → null: show nothing;
  * 3. abandoned / restarted → `unrated` / `notFinished`;
- * 4. fewer than two profiled humans → `unrated` / `notEnoughProfiles`;
+ * 4. a team game without four profiled humans → `unrated` / `teamsNeedFourHumans`;
+ *    otherwise fewer than two profiled humans → `unrated` / `notEnoughProfiles`;
  * 5. otherwise → `pending` (the write has not committed yet).
  * Null for a game that is not finished. Profiles come from the deal-time snapshot, like the history.
  */
@@ -19,6 +20,9 @@ export function ratingStatusFor(room: Room, game: StoredGame, ratingsAvailable: 
   if (!ratingsAvailable) return null;
   if (!endReasonIsRated(game.endReason ?? 'normal')) return { ...base, status: 'unrated', reason: 'notFinished' };
   const input = buildResultInput(room, game, 0);
+  if (game.state.config.teams === true && (input === null || !teamsHaveFourHumans(input))) {
+    return { ...base, status: 'unrated', reason: 'teamsNeedFourHumans' };
+  }
   if (input === null || !isRated(input)) return { ...base, status: 'unrated', reason: 'notEnoughProfiles' };
   return { ...base, status: 'pending' };
 }

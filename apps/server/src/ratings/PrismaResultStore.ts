@@ -59,6 +59,7 @@ export class PrismaResultStore implements ResultStore {
           id: input.gameId,
           roomId: input.roomId,
           mode: input.mode,
+          teams: input.teams === true,
           playerCount: input.seats.length,
           endReason: input.endReason,
           rated,

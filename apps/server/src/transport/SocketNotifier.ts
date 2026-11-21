@@ -1,4 +1,5 @@
 import { sanitizeStateForPlayer } from '@durak/game-engine';
+import { DEFAULT_GAME_CONFIG } from '@durak/shared';
 import type { GameRatingsPayload, GameStatePayload, ReactionPayload, RestartVoteEndedPayload, RoomStatePayload } from '@durak/shared';
 import type { Room, Session, StoredGame } from '../domain/types.js';
 import type { RoomNotifier } from '../services/ports.js';
@@ -12,6 +13,7 @@ export function toRoomStatePayload(room: Room, now: number): RoomStatePayload {
     roomId: room.id,
     hostId: room.hostId,
     maxPlayers: room.maxPlayers,
+    config: { mode: room.config.mode ?? DEFAULT_GAME_CONFIG.mode, teams: room.config.teams === true },
     members: room.members.map((m) => ({
       playerId: m.playerId,
       nickname: m.nickname,
